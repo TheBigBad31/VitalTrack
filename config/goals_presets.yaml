@@ -1,0 +1,50 @@
+# Profils d'objectifs métaboliques prédéfinis pour VitalTrack
+# Utilisés par le dashboard (sélecteur 1-clic) et l'algorithme de recommandation
+
+default_profile: "weight_loss"
+
+profiles:
+  weight_loss:
+    id: "weight_loss"
+    title: "🔥 Perte de Poids Durable (-0,5 kg/sem)"
+    short_title: "Perte de Poids"
+    badge: "-0,5 kg/sem"
+    calorie_target_delta: -500
+    target_steps: 10000
+    protein_per_kg: 1.8
+    carb_ratio: 0.40
+    fat_ratio: 0.30
+    protein_ratio: 0.30
+    description: "Déficit calorique régulier de 500 kcal/j pour cibler -0,5 kg/semaine avec apport protéiné élevé (1,8 g/kg) afin de préserver la masse musculaire et 10 000 pas quotidiens."
+    focus: "Masse grasse & conservation musculaire"
+    recommended_cardio_min_week: 150
+
+  maintenance:
+    id: "maintenance"
+    title: "⚖️ Maintien & Équilibre Vitalité"
+    short_title: "Maintien Vitalité"
+    badge: "Équilibre 0 kcal"
+    calorie_target_delta: 0
+    target_steps: 8500
+    protein_per_kg: 1.4
+    carb_ratio: 0.45
+    fat_ratio: 0.30
+    protein_ratio: 0.25
+    description: "Équilibre calorique total (Déficit 0 kcal), répartition optimale P/G/L pour maximiser l'énergie au quotidien et 8 500 pas/j."
+    focus: "Stabilité métabolique, niveau d'énergie & longévité"
+    recommended_cardio_min_week: 120
+
+  recomposition:
+    id: "recomposition"
+    title: "💪 Recomposition Corporelle & Sport"
+    short_title: "Recomposition & Sport"
+    badge: "-200 kcal & P+ 2.2g/kg"
+    calorie_target_delta: -200
+    target_steps: 10000
+    protein_per_kg: 2.2
+    carb_ratio: 0.35
+    fat_ratio: 0.25
+    protein_ratio: 0.40
+    description: "Léger déficit de 200 kcal/j combiné à un apport protéiné très élevé (2,2 g/kg) pour stimuler la synthèse musculaire tout en réduisant l'adiposité viscérale."
+    focus: "Masse musculaire, force & calories actives d'entraînement"
+    recommended_cardio_min_week: 180

@@ -206,3 +206,54 @@ def test_api_serve_index_html(client):
     assert "text/html" in res.headers["content-type"]
     assert "VitalTrack" in res.text
     assert "📸 Analyser mon repas" in res.text
+
+
+def test_api_goals_presets(client):
+    """Vérifie le point de terminaison des profils métaboliques prédéfinis 1-clic."""
+    res = client.get("/api/goals/presets")
+    assert res.status_code == 200
+    data = res.json()
+    assert "profiles" in data
+    profiles = data["profiles"]
+    
+    # 1. Perte de poids durable (-0,5 kg/sem)
+    assert "weight_loss" in profiles
+    wl = profiles["weight_loss"]
+    assert wl["calorie_target_delta"] == -500
+    assert wl["protein_per_kg"] == 1.8
+    assert wl["target_steps"] == 10000
+
+    # 2. Maintien & vitalité (0 kcal)
+    assert "maintenance" in profiles
+    maint = profiles["maintenance"]
+    assert maint["calorie_target_delta"] == 0
+    assert maint["target_steps"] == 8500
+
+    # 3. Recomposition corporelle (-200 kcal, P+ 2.2g/kg)
+    assert "recomposition" in profiles
+    recomp = profiles["recomposition"]
+    assert recomp["calorie_target_delta"] == -200
+    assert recomp["protein_per_kg"] == 2.2
+
+
+def test_api_devices_comparison(client):
+    """Vérifie le point de terminaison du guide comparatif des balances connectées."""
+    res = client.get("/api/devices/comparison")
+    assert res.status_code == 200
+    data = res.json()
+    assert "scales" in data
+    scales = data["scales"]
+    scale_ids = [s["id"] for s in scales]
+    assert "withings" in scale_ids
+    assert "garmin" in scale_ids
+    assert "xiaomi" in scale_ids
+
+    # Withings doit être la balance n°1 recommandée
+    assert "Withings" in data["recommendation"]
+    withings_scale = next(s for s in scales if s["id"] == "withings")
+    assert "OAuth" in withings_scale["api_type"]
+    assert "Wi-Fi" in withings_scale["connectivity"]
+
+    # Bague Oura
+    assert "ring_integration" in data
+    assert "Oura" in data["ring_integration"]["name"]

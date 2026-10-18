@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from src.db import Database, get_db_path
 from src.models import ActivityEntry, FoodItem, MealEntry, MealType, WeightEntry
 from src.nutrition_engine import NutritionEngine
+import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
 from src.connectors.registry import DeviceConnectorRegistry
 from src.connectors.withings import WithingsScaleConnector
@@ -407,6 +408,159 @@ def sync_device(req: DeviceSyncRequest):
         "details": {
             "weights_synced": len(weights),
             "activities_synced": len(activities)
+        }
+    }
+
+
+
+# =====================================================================
+# Endpoints Profils d'Objectifs Métaboliques 1-Clic
+# =====================================================================
+
+GOALS_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "..", "config", "goals_presets.yaml")
+
+DEFAULT_GOALS_PRESETS = {
+    "default_profile": "weight_loss",
+    "profiles": {
+        "weight_loss": {
+            "id": "weight_loss",
+            "title": "🔥 Perte de Poids Durable (-0,5 kg/sem)",
+            "short_title": "Perte de Poids",
+            "badge": "-0,5 kg/sem",
+            "calorie_target_delta": -500,
+            "target_steps": 10000,
+            "protein_per_kg": 1.8,
+            "carb_ratio": 0.40,
+            "fat_ratio": 0.30,
+            "protein_ratio": 0.30,
+            "description": "Déficit calorique régulier de 500 kcal/j pour cibler -0,5 kg/semaine avec apport protéiné élevé (1,8 g/kg) afin de préserver la masse musculaire et 10 000 pas quotidiens.",
+            "focus": "Masse grasse & conservation musculaire",
+            "recommended_cardio_min_week": 150
+        },
+        "maintenance": {
+            "id": "maintenance",
+            "title": "⚖️ Maintien & Équilibre Vitalité",
+            "short_title": "Maintien Vitalité",
+            "badge": "Équilibre 0 kcal",
+            "calorie_target_delta": 0,
+            "target_steps": 8500,
+            "protein_per_kg": 1.4,
+            "carb_ratio": 0.45,
+            "fat_ratio": 0.30,
+            "protein_ratio": 0.25,
+            "description": "Équilibre calorique total (Déficit 0 kcal), répartition optimale P/G/L pour maximiser l'énergie au quotidien et 8 500 pas/j.",
+            "focus": "Stabilité métabolique, niveau d'énergie & longévité",
+            "recommended_cardio_min_week": 120
+        },
+        "recomposition": {
+            "id": "recomposition",
+            "title": "💪 Recomposition Corporelle & Sport",
+            "short_title": "Recomposition & Sport",
+            "badge": "-200 kcal & P+ 2.2g/kg",
+            "calorie_target_delta": -200,
+            "target_steps": 10000,
+            "protein_per_kg": 2.2,
+            "carb_ratio": 0.35,
+            "fat_ratio": 0.25,
+            "protein_ratio": 0.40,
+            "description": "Léger déficit de 200 kcal/j combiné à un apport protéiné très élevé (2,2 g/kg) pour stimuler la synthèse musculaire tout en réduisant l'adiposité viscérale.",
+            "focus": "Masse musculaire, force & calories actives d'entraînement",
+            "recommended_cardio_min_week": 180
+        }
+    }
+}
+
+@app.get("/api/goals/presets")
+def get_goals_presets():
+    """Retourne la configuration des profils métaboliques prédéfinis 1-clic."""
+    if os.path.isfile(GOALS_CONFIG_FILE):
+        try:
+            with open(GOALS_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if data and "profiles" in data:
+                    return data
+        except Exception:
+            pass
+    return DEFAULT_GOALS_PRESETS
+
+
+@app.get("/api/devices/comparison")
+def get_devices_comparison():
+    """Guide comparatif technique pour le choix de la balance connectée et l'interconnexion bague."""
+    return {
+        "title": "Guide Comparatif des Balances Connectées & Configuration Bague",
+        "author": "Ingénieur Vision Nutrition & Coach Métabolique",
+        "last_updated": "2026-10-18",
+        "recommendation": "Withings Body Smart / Body Comp",
+        "recommendation_summary": "Withings est la solution n°1 recommandée grâce à son API OAuth2 officielle ouverte, gratuite et sans restriction de clés développeur, permettant la synchronisation automatique cloud-to-cloud directe du poids et de l'impédancemétrie.",
+        "scales": [
+            {
+                "id": "withings",
+                "name": "Withings Body Smart / Body Comp",
+                "brand": "Withings",
+                "price_approx": "100 € - 199 €",
+                "connectivity": ["Wi-Fi", "Bluetooth"],
+                "api_type": "OAuth 2.0 REST API Cloud-to-Cloud directe",
+                "api_openness": "Excellente (API ouverte, documentation complète, jetons illimités)",
+                "metrics": [
+                    "Poids (résolution 50g)",
+                    "Masse grasse (%)",
+                    "Masse musculaire (kg)",
+                    "Masse osseuse (kg)",
+                    "Masse hydrique (%)",
+                    "Graisse viscérale",
+                    "Rythme cardiaque stationnaire"
+                ],
+                "ease_of_sync": "5/5 (100% automatique après pesée via Wi-Fi direct)",
+                "vitaltrack_support": "Natif (connecteur `WithingsScaleConnector` dans `src/connectors/withings.py`)",
+                "verdict": "Choix Recommandé n°1 : Ingestion instantanée sans intermédiaire."
+            },
+            {
+                "id": "garmin",
+                "name": "Garmin Index S2",
+                "brand": "Garmin",
+                "price_approx": "149 €",
+                "connectivity": ["Wi-Fi", "ANT+", "Bluetooth"],
+                "api_type": "Garmin Connect Developer Program / Health Sync Webhook",
+                "api_openness": "Moyenne (L'API officielle Garmin Connect nécessite une validation d'entreprise ; synchronisation possible via pont Health Sync ou Apple Santé)",
+                "metrics": [
+                    "Poids",
+                    "IMC",
+                    "Masse grasse (%)",
+                    "Masse musculaire squelettique",
+                    "Masse osseuse",
+                    "Masse hydrique (%)"
+                ],
+                "ease_of_sync": "3.5/5 (Nécessite soit un pont webhook Apple Santé/Android, soit accès pro)",
+                "vitaltrack_support": "Via Webhook universel (`/api/webhook/health`) ou template (`TemplateHealthConnector`)",
+                "verdict": "Excellent choix pour les adeptes de montres Garmin via pont Health Connect."
+            },
+            {
+                "id": "xiaomi",
+                "name": "Xiaomi Mi Body Composition Scale 2",
+                "brand": "Xiaomi",
+                "price_approx": "25 € - 35 €",
+                "connectivity": ["Bluetooth uniquement (BLE)"],
+                "api_type": "Aucune API Cloud publique ; synchro via Mi Fitness / Zepp Life -> Health Connect",
+                "api_openness": "Faible (fermé, Bluetooth local uniquement)",
+                "metrics": [
+                    "Poids",
+                    "Masse grasse (%)",
+                    "Masse musculaire",
+                    "Masse hydrique (%)",
+                    "Graisse viscérale",
+                    "Métabolisme de base estimé"
+                ],
+                "ease_of_sync": "3/5 (Obligation d'ouvrir l'app mobile en Bluetooth pour remonter les données vers Health Connect)",
+                "vitaltrack_support": "Via Webhook Health Connect (`/api/webhook/health`)",
+                "verdict": "Option très économique mais nécessite l'intermédiaire du smartphone."
+            }
+        ],
+        "ring_integration": {
+            "name": "Oura Ring Gen 3 / Horizon & Bagues de Santé",
+            "api_type": "Oura Cloud API v2 (Bearer Token OAuth2 / Personal Access Token)",
+            "sync_flow": "Synchronisation matinale automatique : Récupération du score de sommeil, du BMR, du HRV nocturne, de la fréquence cardiaque au repos et de la température cutanée.",
+            "status": "Connecteur natif opérationnel (`OuraRingConnector` dans `src/connectors/oura.py`)"
         }
     }
 
