@@ -522,6 +522,93 @@ def connect_device_wizard(connect_in: DeviceConnectInput):
     }
 
 
+# =====================================================================
+# Endpoints Sauvegarde / Restauration & Persistance Anti-Perte Vercel
+# =====================================================================
+
+class BackupRestoreInput(BaseModel):
+    data: Dict[str, Any]
+    overwrite: bool = False
+
+
+@app.get("/api/backup/export")
+def export_backup():
+    """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique."""
+    backup_data = db.export_full_backup()
+    return backup_data
+
+
+@app.post("/api/backup/import")
+def import_backup(payload: BackupRestoreInput):
+    """Restaure ou synchronise les données depuis un export JSON ou le localStorage/IndexedDB."""
+    result = db.import_full_backup(payload.data, overwrite=payload.overwrite)
+    return result
+
+
+@app.post("/api/profile/reset-demo")
+def reset_demo():
+    """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
+    db.reset_demo_data()
+    return {
+        "status": "success",
+        "message": "Données de démonstration 30 jours réinitialisées avec succès"
+    }
+
+
+@app.post("/api/profile/clear-history")
+def clear_history():
+    """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
+    db.clear_all_history(keep_profile=True)
+    return {
+        "status": "success",
+        "message": "Historique effacé. Vous pouvez démarrer votre suivi réel !"
+    }
+
+
+# =====================================================================
+# Endpoints Webhooks Universels (Health Connect, RingConn, Apple Santé)
+# =====================================================================
+
+@app.post("/api/webhook/health")
+@app.post("/api/webhooks/health-connect")
+@app.post("/api/webhooks/ringconn")
+def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(None)):
+    """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
+    connector = MobileHealthWebhookConnector()
+    if token and not connector.authenticate_request(token):
+        raise HTTPException(status_code=401, detail="Token webhook invalide")
+
+    weight_entry, act_entry = connector.process_webhook_payload(payload)
+    saved_weight = None
+    saved_act = None
+
+    if weight_entry:
+        saved_weight = db.insert_weight(weight_entry).model_dump()
+    if act_entry:
+        saved_act = db.insert_activity(act_entry).model_dump()
+
+    # Mettre à jour l'état de l'appareil associé
+    source_name = payload.get("source", "health_connect")
+    dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+    db.update_user_device(
+        device_id=dev_id,
+        name=dev_id.replace("_", " ").title(),
+        device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),
+        connected=True,
+        auth_type="webhook"
+    )
+
+    return {
+        "status": "success",
+        "message": "Données de santé webhook ingérées avec succès",
+        "ingested": {
+            "weight": saved_weight,
+            "activity": saved_act
+        }
+    }
+
+
+
 
 
 # =====================================================================

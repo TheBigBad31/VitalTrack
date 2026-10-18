@@ -619,3 +619,246 @@ class Database:
                         FoodItem(name="Pain complet", portion_g=30.0, calories_kcal=75.0, protein_g=2.7, carbs_g=15.0, fat_g=0.5, fiber_g=1.8, confidence_score=0.88),
                     ]
                 ))
+
+    def export_full_backup(self) -> Dict[str, Any]:
+        """Exporte l'intégralité du profil et de l'historique sous forme de dictionnaire JSON."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Profil
+            cursor.execute("SELECT * FROM user_profile ORDER BY id ASC LIMIT 1")
+            prof_row = cursor.fetchone()
+            profile_dict = dict(prof_row) if prof_row else self.get_user_profile()
+
+            # Appareils
+            cursor.execute("SELECT * FROM user_devices ORDER BY id ASC")
+            devices_list = [dict(r) for r in cursor.fetchall()]
+
+            # Pesées
+            cursor.execute("SELECT * FROM weights ORDER BY date ASC")
+            weights_list = [dict(r) for r in cursor.fetchall()]
+
+            # Activités
+            cursor.execute("SELECT * FROM activities ORDER BY date ASC")
+            activities_list = [dict(r) for r in cursor.fetchall()]
+
+            # Repas
+            cursor.execute("SELECT * FROM meals ORDER BY date ASC, id ASC")
+            meals_rows = cursor.fetchall()
+            meals_list = []
+            for r in meals_rows:
+                m = dict(r)
+                if m.get("items_json"):
+                    try:
+                        m["items"] = json.loads(m["items_json"])
+                    except Exception:
+                        m["items"] = []
+                else:
+                    m["items"] = []
+                meals_list.append(m)
+
+        return {
+            "version": "1.0",
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "profile": profile_dict,
+            "devices": devices_list,
+            "weights": weights_list,
+            "activities": activities_list,
+            "meals": meals_list
+        }
+
+    def import_full_backup(self, data: Dict[str, Any], overwrite: bool = False) -> Dict[str, Any]:
+        """Restaure ou synchronise des données de sauvegarde JSON dans SQLite.
+        
+        Si overwrite=True, vide les tables au préalable.
+        Sinon effectue des INSERT OR REPLACE / ON CONFLICT.
+        """
+        imported_counts = {"weights": 0, "activities": 0, "meals": 0, "devices": 0}
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            if overwrite:
+                cursor.execute("DELETE FROM weights")
+                cursor.execute("DELETE FROM activities")
+                cursor.execute("DELETE FROM meals")
+
+            # 1. Profil
+            if "profile" in data and isinstance(data["profile"], dict):
+                p = data["profile"]
+                now_str = datetime.now(timezone.utc).isoformat()
+                cursor.execute("""
+                    INSERT INTO user_profile (id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, updated_at)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name,
+                        gender = excluded.gender,
+                        age = excluded.age,
+                        height_cm = excluded.height_cm,
+                        target_weight_kg = excluded.target_weight_kg,
+                        goal_profile_id = excluded.goal_profile_id,
+                        target_steps = excluded.target_steps,
+                        target_calories_intake = excluded.target_calories_intake,
+                        protein_target_per_kg = excluded.protein_target_per_kg,
+                        preferred_ring = excluded.preferred_ring,
+                        preferred_scale = excluded.preferred_scale,
+                        updated_at = excluded.updated_at
+                """, (
+                    p.get("name", "Sébastien"),
+                    p.get("gender", "male"),
+                    int(p.get("age", 35)),
+                    float(p.get("height_cm", 178.0)),
+                    float(p.get("target_weight_kg", 77.0)),
+                    p.get("goal_profile_id", "weight_loss"),
+                    int(p.get("target_steps", 10000)),
+                    float(p.get("target_calories_intake", 2000.0)),
+                    float(p.get("protein_target_per_kg", 1.8)),
+                    p.get("preferred_ring", "ringconn"),
+                    p.get("preferred_scale", "withings"),
+                    now_str
+                ))
+
+            # 2. Appareils
+            for dev in data.get("devices", []):
+                dev_id = dev.get("device_id")
+                if not dev_id:
+                    continue
+                cursor.execute("""
+                    INSERT INTO user_devices (device_id, name, device_type, connected, auth_type, api_key, account_email, last_sync, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(device_id) DO UPDATE SET
+                        name = excluded.name,
+                        device_type = excluded.device_type,
+                        connected = excluded.connected,
+                        auth_type = excluded.auth_type,
+                        api_key = COALESCE(excluded.api_key, user_devices.api_key),
+                        account_email = COALESCE(excluded.account_email, user_devices.account_email),
+                        last_sync = excluded.last_sync,
+                        updated_at = excluded.updated_at
+                """, (
+                    dev_id,
+                    dev.get("name", dev_id),
+                    dev.get("device_type", "unknown"),
+                    1 if dev.get("connected") else 0,
+                    dev.get("auth_type", "demo"),
+                    dev.get("api_key"),
+                    dev.get("account_email"),
+                    dev.get("last_sync"),
+                    dev.get("updated_at") or datetime.now(timezone.utc).isoformat()
+                ))
+                imported_counts["devices"] += 1
+
+            # 3. Pesées
+            for w in data.get("weights", []):
+                d_str = w.get("date")
+                if not d_str:
+                    continue
+                cursor.execute("""
+                    INSERT INTO weights (date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(date) DO UPDATE SET
+                        weight_kg = excluded.weight_kg,
+                        body_fat_pct = excluded.body_fat_pct,
+                        muscle_mass_kg = excluded.muscle_mass_kg,
+                        water_pct = excluded.water_pct,
+                        bmi = excluded.bmi,
+                        trend_7d_kg = excluded.trend_7d_kg,
+                        source = excluded.source,
+                        notes = excluded.notes
+                """, (
+                    d_str[:10],
+                    float(w["weight_kg"]),
+                    float(w["body_fat_pct"]) if w.get("body_fat_pct") is not None else None,
+                    float(w["muscle_mass_kg"]) if w.get("muscle_mass_kg") is not None else None,
+                    float(w["water_pct"]) if w.get("water_pct") is not None else None,
+                    float(w["bmi"]) if w.get("bmi") is not None else None,
+                    float(w["trend_7d_kg"]) if w.get("trend_7d_kg") is not None else None,
+                    w.get("source", "manual"),
+                    w.get("notes"),
+                    w.get("created_at") or datetime.now(timezone.utc).isoformat()
+                ))
+                imported_counts["weights"] += 1
+
+            # 4. Activités
+            for a in data.get("activities", []):
+                d_str = a.get("date")
+                if not d_str:
+                    continue
+                cursor.execute("""
+                    INSERT INTO activities (date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(date) DO UPDATE SET
+                        steps = excluded.steps,
+                        active_calories_kcal = excluded.active_calories_kcal,
+                        bmr_kcal = excluded.bmr_kcal,
+                        total_burned_kcal = excluded.total_burned_kcal,
+                        workout_minutes = excluded.workout_minutes,
+                        workout_type = excluded.workout_type,
+                        resting_hr_bpm = excluded.resting_hr_bpm,
+                        hrv_ms = excluded.hrv_ms,
+                        sleep_score = excluded.sleep_score,
+                        source = excluded.source
+                """, (
+                    d_str[:10],
+                    int(a.get("steps", 0)),
+                    float(a.get("active_calories_kcal", 0.0)),
+                    float(a.get("bmr_kcal", 0.0)),
+                    float(a.get("total_burned_kcal", 0.0)),
+                    int(a.get("workout_minutes", 0)),
+                    a.get("workout_type"),
+                    int(a["resting_hr_bpm"]) if a.get("resting_hr_bpm") is not None else None,
+                    float(a["hrv_ms"]) if a.get("hrv_ms") is not None else None,
+                    int(a["sleep_score"]) if a.get("sleep_score") is not None else None,
+                    a.get("source", "health_connect"),
+                    a.get("created_at") or datetime.now(timezone.utc).isoformat()
+                ))
+                imported_counts["activities"] += 1
+
+            # 5. Repas
+            for m in data.get("meals", []):
+                d_str = m.get("date")
+                if not d_str:
+                    continue
+                raw_items = m.get("items", [])
+                items_json = m.get("items_json") or json.dumps(raw_items)
+                cursor.execute("""
+                    INSERT INTO meals (date, meal_type, total_calories_kcal, protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    d_str[:10],
+                    m.get("meal_type", "lunch"),
+                    float(m.get("total_calories_kcal", 0.0)),
+                    float(m.get("protein_g", 0.0)),
+                    float(m.get("carbs_g", 0.0)),
+                    float(m.get("fat_g", 0.0)),
+                    float(m["fiber_g"]) if m.get("fiber_g") is not None else None,
+                    m.get("photo_data_url"),
+                    items_json,
+                    m.get("created_at") or datetime.now(timezone.utc).isoformat()
+                ))
+                imported_counts["meals"] += 1
+
+            conn.commit()
+
+        return {
+            "status": "success",
+            "imported": imported_counts,
+            "message": f"Restauration terminée : {imported_counts['weights']} pesées, {imported_counts['activities']} activités, {imported_counts['meals']} repas."
+        }
+
+    def clear_all_history(self, keep_profile: bool = True):
+        """Efface tout l'historique (pesées, activités, repas) pour réinitialiser ou démarrer un profil vierge."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM weights")
+            cursor.execute("DELETE FROM activities")
+            cursor.execute("DELETE FROM meals")
+            if not keep_profile:
+                cursor.execute("DELETE FROM user_profile")
+                cursor.execute("DELETE FROM user_devices")
+            conn.commit()
+
+    def reset_demo_data(self):
+        """Réinitialise et recharge le jeu complet de démonstration sur 30 jours."""
+        self.clear_all_history(keep_profile=True)
+        self._seed_demo_data_if_empty()

@@ -13,10 +13,15 @@ from src.connectors.webhook import MobileHealthWebhookConnector
 from src.connectors.template import TemplateHealthConnector
 
 
+from src.connectors.ringconn import RingConnConnector
+
 CONNECTOR_REGISTRY = {
     "withings": WithingsScaleConnector,
     "oura": OuraRingConnector,
+    "ringconn": RingConnConnector,
+    "health_connect": MobileHealthWebhookConnector,
     "mobile_webhook": MobileHealthWebhookConnector,
+    "apple_health": MobileHealthWebhookConnector,
     "template": TemplateHealthConnector,
 }
 

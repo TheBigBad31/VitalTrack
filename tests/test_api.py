@@ -17,10 +17,34 @@ from fastapi.testclient import TestClient
 from src.app import app
 
 
+import tempfile
+import os
+from src.db import Database
+import src.app as app_module
+
 @pytest.fixture
 def client():
-    """Client de test FastAPI."""
-    return TestClient(app)
+    """Client de test FastAPI avec base temporaire isolée."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        temp_path = f.name
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+    test_db = Database(db_path=temp_path)
+    old_db = app_module.db
+    old_nutrition_db = app_module.nutrition_engine.db
+    app_module.db = test_db
+    app_module.nutrition_engine.db = test_db
+
+    yield TestClient(app)
+
+    app_module.db = old_db
+    app_module.nutrition_engine.db = old_nutrition_db
+    if os.path.exists(temp_path):
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
 
 
 def test_api_health(client):
@@ -328,11 +352,74 @@ def test_vercel_endpoints_status_200(client):
         "/api/activity",
         "/api/activities",
         "/api/devices",
-        "/api/profile"
+        "/api/profile",
+        "/api/backup/export"
     ]
     for ep in endpoints:
         res = client.get(ep)
         assert res.status_code == 200, f"Endpoint {ep} a renvoyé {res.status_code} au lieu de 200"
+
+
+def test_backup_export_and_import(client):
+    """Vérifie l'export complet JSON et la restauration/synchronisation."""
+    # 1. Export
+    exp_res = client.get("/api/backup/export")
+    assert exp_res.status_code == 200
+    backup = exp_res.json()
+    assert "profile" in backup
+    assert "weights" in backup
+    assert "activities" in backup
+    assert "meals" in backup
+    assert len(backup["weights"]) >= 30
+
+    # 2. Test Clear History
+    clear_res = client.post("/api/profile/clear-history")
+    assert clear_res.status_code == 200
+    w_empty = client.get("/api/weights").json()
+    assert len(w_empty) == 0
+
+    # 3. Test Import / Restore
+    imp_res = client.post("/api/backup/import", json={"data": backup, "overwrite": True})
+    assert imp_res.status_code == 200
+    imp_data = imp_res.json()
+    assert imp_data["status"] == "success"
+    assert imp_data["imported"]["weights"] >= 30
+
+    w_restored = client.get("/api/weights").json()
+    assert len(w_restored) >= 30
+
+
+def test_reset_demo_data(client):
+    """Vérifie la réinitialisation des données de démo 30 jours."""
+    client.post("/api/profile/clear-history")
+    assert len(client.get("/api/weights").json()) == 0
+
+    res = client.post("/api/profile/reset-demo")
+    assert res.status_code == 200
+    assert len(client.get("/api/weights").json()) >= 30
+
+
+def test_health_webhook_endpoints(client):
+    """Vérifie la réception de pesées et d'activités via les endpoints webhooks."""
+    webhook_payload = {
+        "date": "2026-10-17",
+        "source": "ringconn_gen3",
+        "weight_kg": 78.9,
+        "body_fat_pct": 19.1,
+        "steps": 14200,
+        "active_calories_kcal": 610.0,
+        "resting_hr_bpm": 55,
+        "hrv_ms": 64.0,
+        "sleep_score": 89
+    }
+    res = client.post("/api/webhooks/ringconn", json=webhook_payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["ingested"]["weight"] is not None
+    assert data["ingested"]["weight"]["weight_kg"] == 78.9
+    assert data["ingested"]["activity"] is not None
+    assert data["ingested"]["activity"]["steps"] == 14200
 
 
 def test_daily_sync_execution():
