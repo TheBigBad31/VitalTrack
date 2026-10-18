@@ -32,6 +32,7 @@ from src.vision_nutrition import PhotoCalorieEstimator
 from src.connectors.registry import DeviceConnectorRegistry
 from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
+from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
 
 # Initialisation de FastAPI
@@ -57,10 +58,11 @@ calorie_estimator = PhotoCalorieEstimator()
 
 # Initialisation du registre IoT
 device_registry = DeviceConnectorRegistry()
+device_registry.register(RingConnConnector(), device_id="ringconn", name="RingConn Smart Ring (Gen 1 / Gen 2 / Gen 3)", device_type="ring")
+device_registry.register(MobileHealthWebhookConnector(), device_id="health_connect", name="Google Health Connect (Google Health / Android)", device_type="mobile_aggregator")
 device_registry.register(WithingsScaleConnector(), device_id="withings", name="Withings Body Scan & Scales", device_type="scale")
 device_registry.register(OuraRingConnector(), device_id="oura", name="Oura Ring Gen3", device_type="ring")
 device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health", name="Apple Santé (HealthKit)", device_type="mobile_aggregator")
-device_registry.register(MobileHealthWebhookConnector(), device_id="health_connect", name="Google Health Connect", device_type="mobile_aggregator")
 
 
 
@@ -113,6 +115,31 @@ class DeviceSyncRequest(BaseModel):
     device_id: str
 
 
+class UserProfileInput(BaseModel):
+    name: Optional[str] = "Sébastien"
+    gender: Optional[Literal["male", "female"]] = "male"
+    age: Optional[int] = Field(35, ge=10, le=120)
+    height_cm: Optional[float] = Field(178.0, ge=80.0, le=250.0)
+    target_weight_kg: Optional[float] = Field(77.0, ge=30.0, le=300.0)
+    goal_profile_id: Optional[str] = "weight_loss"
+    target_steps: Optional[int] = Field(10000, ge=1000, le=50000)
+    target_calories_intake: Optional[float] = Field(2000.0, ge=800.0, le=6000.0)
+    protein_target_per_kg: Optional[float] = Field(1.8, ge=0.8, le=3.5)
+    preferred_ring: Optional[str] = "ringconn"
+    preferred_scale: Optional[str] = "withings"
+
+
+class DeviceConnectInput(BaseModel):
+    device_id: str
+    name: Optional[str] = None
+    device_type: Optional[str] = None
+    auth_type: Optional[str] = "connected"  # "cloud_api", "google_health", "bluetooth", "connected"
+    api_key: Optional[str] = None
+    account_email: Optional[str] = None
+    connected: bool = True
+
+
+
 # =====================================================================
 # Endpoints de Santé et Métadonnées
 # =====================================================================
@@ -157,10 +184,17 @@ def get_dashboard_data():
     if not today_activity and activities:
         today_activity = activities[-1]
 
+    # Profil utilisateur personnalisé
+    profile = db.get_user_profile()
+    saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices()}
+
     daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
         target_date=today_activity.date if today_activity else today,
-        user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5
+        user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5,
+        user_height_cm=profile.get("height_cm", 178.0),
+        user_age=profile.get("age", 35),
+        gender=profile.get("gender", "male")
     )
 
     # Répartition des repas par jour pour les graphiques empilés (7 derniers jours)
@@ -175,19 +209,24 @@ def get_dashboard_data():
             day_dict["total"] = round(day_dict["total"] + m.total_calories_kcal, 1)
         meals_by_day[d_str] = day_dict
 
-    # État des objets connectés
+    # État des objets connectés avec statut de connexion de l'utilisateur
     device_statuses = []
     for d in device_registry.list_all():
+        saved_d = saved_devices.get(d.id, {})
+        is_conn = bool(saved_d.get("connected") or d.is_configured())
         device_statuses.append({
             "id": d.id,
             "name": d.name,
             "device_type": d.device_type,
-            "is_configured": d.is_configured(),
-            "status": "connected" if d.is_configured() else "demo",
-            "last_sync": datetime.now(timezone.utc).isoformat()
+            "is_configured": is_conn,
+            "status": "connected" if is_conn else "demo",
+            "auth_type": saved_d.get("auth_type", "demo"),
+            "account_email": saved_d.get("account_email"),
+            "last_sync": saved_d.get("last_sync") or datetime.now(timezone.utc).isoformat()
         })
 
     return {
+        "profile": profile,
         "summary": {
             "current_weight_kg": latest_weight.weight_kg if latest_weight else 79.8,
             "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else 80.0,
@@ -196,13 +235,13 @@ def get_dashboard_data():
             "muscle_mass_kg": latest_weight.muscle_mass_kg if latest_weight else 38.0,
             "water_pct": latest_weight.water_pct if latest_weight else 56.5,
             "bmi": latest_weight.bmi if latest_weight else 25.2,
-            "target_weight_kg": 77.0,
+            "target_weight_kg": profile.get("target_weight_kg", 77.0),
             "steps": today_activity.steps if today_activity else 10500,
-            "steps_target": 10000,
+            "steps_target": profile.get("target_steps", 10000),
             "calories_intake_kcal": energy_balance["calories_intake_kcal"],
             "calories_burned_kcal": energy_balance["calories_burned_kcal"],
             "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],
-            "target_calories_intake": 2000.0,
+            "target_calories_intake": profile.get("target_calories_intake", 2000.0),
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
             "macros": daily_nutrition["macros"],
@@ -427,6 +466,63 @@ def sync_device(req: DeviceSyncRequest):
     }
 
 
+# =====================================================================
+# Endpoints Profil Utilisateur & Assistant de Connexion
+# =====================================================================
+
+@app.get("/api/profile")
+def get_user_profile():
+    """Renvoie le profil utilisateur personnalisé et ses préférences d'objets."""
+    profile = db.get_user_profile()
+    devices = db.get_user_devices()
+    return {
+        "profile": profile,
+        "connected_devices": devices
+    }
+
+
+@app.post("/api/profile")
+def update_user_profile(profile_in: UserProfileInput):
+    """Met à jour ou crée le profil utilisateur (sexe, âge, taille, poids cible, bague et balance préférées)."""
+    updated = db.update_user_profile(profile_in.model_dump())
+    return {
+        "status": "success",
+        "message": "Profil mis à jour avec succès",
+        "profile": updated
+    }
+
+
+@app.post("/api/devices/connect")
+def connect_device_wizard(connect_in: DeviceConnectInput):
+    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura)."""
+    connector = device_registry.get(connect_in.device_id)
+    name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
+    dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
+
+    saved = db.update_user_device(
+        device_id=connect_in.device_id,
+        name=name,
+        device_type=dev_type,
+        connected=connect_in.connected,
+        auth_type=connect_in.auth_type or "connected",
+        api_key=connect_in.api_key,
+        account_email=connect_in.account_email
+    )
+
+    # Si c'est une bague ou une balance, mettre à jour la préférence dans le profil
+    if dev_type == "ring":
+        db.update_user_profile({"preferred_ring": connect_in.device_id})
+    elif dev_type == "scale":
+        db.update_user_profile({"preferred_scale": connect_in.device_id})
+
+    return {
+        "status": "success",
+        "message": f"Appareil {name} configuré et connecté avec succès via l'assistant",
+        "device": saved
+    }
+
+
+
 
 # =====================================================================
 # Endpoints Profils d'Objectifs Métaboliques 1-Clic
@@ -572,10 +668,11 @@ def get_devices_comparison():
             }
         ],
         "ring_integration": {
-            "name": "Oura Ring Gen 3 / Horizon & Bagues de Santé",
-            "api_type": "Oura Cloud API v2 (Bearer Token OAuth2 / Personal Access Token)",
-            "sync_flow": "Synchronisation matinale automatique : Récupération du score de sommeil, du BMR, du HRV nocturne, de la fréquence cardiaque au repos et de la température cutanée.",
-            "status": "Connecteur natif opérationnel (`OuraRingConnector` dans `src/connectors/oura.py`)"
+            "name": "RingConn Gen 3 & Bagues de Santé (RingConn / Oura)",
+            "primary_ring": "RingConn Gen 3",
+            "api_type": "RingConn Open API & Google Health Connect (Android)",
+            "sync_flow": "Synchronisation matinale & continue : Récupération du score de sommeil, HRV nocturne (RMSSD), Fréquence Cardiaque au repos, BMR, pas et calories actives soit via Google Health Connect, soit via API RingConn.",
+            "status": "Connecteur RingConn et passerelle Google Health Connect actifs (`RingConnConnector` dans `src/connectors/ringconn.py`)"
         }
     }
 

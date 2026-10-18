@@ -12,7 +12,7 @@ import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.models import ActivityEntry, FoodItem, MealEntry, WeightEntry
 
@@ -102,6 +102,41 @@ class Database:
                     photo_data_url TEXT,
                     items_json TEXT,
                     created_at TEXT NOT NULL
+                )
+            """)
+
+            # Table du profil utilisateur (Création profil & personnalisation)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_profile (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL DEFAULT 'Sébastien',
+                    gender TEXT NOT NULL DEFAULT 'male',
+                    age INTEGER NOT NULL DEFAULT 35,
+                    height_cm REAL NOT NULL DEFAULT 178.0,
+                    target_weight_kg REAL NOT NULL DEFAULT 77.0,
+                    goal_profile_id TEXT NOT NULL DEFAULT 'weight_loss',
+                    target_steps INTEGER NOT NULL DEFAULT 10000,
+                    target_calories_intake REAL NOT NULL DEFAULT 2000.0,
+                    protein_target_per_kg REAL NOT NULL DEFAULT 1.8,
+                    preferred_ring TEXT DEFAULT 'ringconn',
+                    preferred_scale TEXT DEFAULT 'withings',
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            # Table des connexions d'objets connectés par l'assistant
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_devices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    device_type TEXT NOT NULL,
+                    connected INTEGER NOT NULL DEFAULT 0,
+                    auth_type TEXT NOT NULL DEFAULT 'demo',
+                    api_key TEXT,
+                    account_email TEXT,
+                    last_sync TEXT,
+                    updated_at TEXT NOT NULL
                 )
             """)
             conn.commit()
@@ -369,6 +404,86 @@ class Database:
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
+
+    def get_user_profile(self) -> Dict[str, Any]:
+        """Récupère le profil utilisateur actuel ou en initialise un par défaut."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_profile ORDER BY id ASC LIMIT 1")
+            row = cursor.fetchone()
+
+            if not row:
+                now_str = datetime.now(timezone.utc).isoformat()
+                cursor.execute("""
+                    INSERT INTO user_profile (name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, updated_at)
+                    VALUES ('Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 'ringconn', 'withings', ?)
+                """, (now_str,))
+                conn.commit()
+                cursor.execute("SELECT * FROM user_profile ORDER BY id ASC LIMIT 1")
+                row = cursor.fetchone()
+
+        return dict(row)
+
+    def update_user_profile(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Met à jour ou crée le profil utilisateur avec les métriques personnalisées."""
+        current = self.get_user_profile()
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        name = data.get("name", current.get("name", "Sébastien"))
+        gender = data.get("gender", current.get("gender", "male"))
+        age = int(data.get("age", current.get("age", 35)))
+        height_cm = float(data.get("height_cm", current.get("height_cm", 178.0)))
+        target_weight = float(data.get("target_weight_kg", current.get("target_weight_kg", 77.0)))
+        goal_id = data.get("goal_profile_id", current.get("goal_profile_id", "weight_loss"))
+        steps = int(data.get("target_steps", current.get("target_steps", 10000)))
+        cal_intake = float(data.get("target_calories_intake", current.get("target_calories_intake", 2000.0)))
+        prot = float(data.get("protein_target_per_kg", current.get("protein_target_per_kg", 1.8)))
+        ring = data.get("preferred_ring", current.get("preferred_ring", "ringconn"))
+        scale = data.get("preferred_scale", current.get("preferred_scale", "withings"))
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE user_profile
+                SET name = ?, gender = ?, age = ?, height_cm = ?, target_weight_kg = ?,
+                    goal_profile_id = ?, target_steps = ?, target_calories_intake = ?,
+                    protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?, updated_at = ?
+                WHERE id = ?
+            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, now_str, current["id"]))
+            conn.commit()
+
+        return self.get_user_profile()
+
+    def get_user_devices(self) -> List[Dict[str, Any]]:
+        """Récupère l'état des appareils configurés dans user_devices."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_devices ORDER BY id ASC")
+            rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    def update_user_device(self, device_id: str, name: str, device_type: str, connected: bool, auth_type: str = "connected", api_key: Optional[str] = None, account_email: Optional[str] = None) -> Dict[str, Any]:
+        """Enregistre ou met à jour un appareil connecté par l'assistant."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO user_devices (device_id, name, device_type, connected, auth_type, api_key, account_email, last_sync, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                    name = excluded.name,
+                    device_type = excluded.device_type,
+                    connected = excluded.connected,
+                    auth_type = excluded.auth_type,
+                    api_key = COALESCE(excluded.api_key, user_devices.api_key),
+                    account_email = COALESCE(excluded.account_email, user_devices.account_email),
+                    last_sync = excluded.last_sync,
+                    updated_at = excluded.updated_at
+            """, (device_id, name, device_type, 1 if connected else 0, auth_type, api_key, account_email, now_str, now_str))
+            conn.commit()
+            cursor.execute("SELECT * FROM user_devices WHERE device_id = ?", (device_id,))
+            row = cursor.fetchone()
+        return dict(row)
 
     def _seed_demo_data_if_empty(self):
         """Pré-charge 30 jours d'historique réaliste si la table weights est vide."""

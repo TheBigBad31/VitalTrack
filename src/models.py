@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 WeightSource = Literal["withings", "garmin", "manual", "apple_health", "demo"]
-ActivitySource = Literal["oura", "health_connect", "apple_health", "strava", "demo"]
+ActivitySource = Literal["oura", "ringconn", "health_connect", "apple_health", "strava", "demo"]
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 
 

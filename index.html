@@ -89,6 +89,14 @@
 
       <!-- Actions Rapides Header -->
       <div class="flex items-center space-x-2">
+        <button onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95" title="Mon Profil Métabolique">
+          <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
+          <span class="hidden sm:inline">Mon Profil</span>
+        </button>
+        <button onclick="openConnectWizardModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition-all active:scale-95" title="Assistant de Connexion">
+          <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>
+          <span class="hidden sm:inline">Connexion Appareils</span>
+        </button>
         <button onclick="openMealModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 transition-all active:scale-95">
           <i data-lucide="camera" class="w-4 h-4"></i>
           <span class="hidden sm:inline">Photo Repas</span>
@@ -504,7 +512,7 @@
     <!-- =================================================================== -->
     <section id="view-activity" class="view-content hidden space-y-6">
       
-      <!-- Cartes Biométriques Oura / Tracker -->
+      <!-- Cartes Biométriques RingConn Gen 3 / Google Health Connect -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <!-- Score Sommeil -->
         <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 flex items-center space-x-4">
@@ -512,7 +520,7 @@
             <i data-lucide="moon" class="w-7 h-7"></i>
           </div>
           <div>
-            <span class="text-xs text-slate-400">Score de Sommeil (Oura)</span>
+            <span class="text-xs text-slate-400">Score Sommeil (RingConn Gen 3)</span>
             <div class="text-2xl font-black text-white" id="val-sleep-score">-- <span class="text-xs font-normal text-slate-400">/ 100</span></div>
             <span class="text-[10px] text-indigo-400 font-medium">Récupération optimale</span>
           </div>
@@ -567,9 +575,37 @@
     <!-- =================================================================== -->
     <section id="view-devices" class="view-content hidden space-y-6">
       
+      <div class="bg-gradient-to-r from-indigo-950/70 via-[#151D2A] to-[#151D2A] border border-indigo-500/30 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-start space-x-3.5">
+          <div class="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+            <i data-lucide="wand-2" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">Assistant de Connexion 1-Clic</span>
+              <span class="text-xs text-slate-400">RingConn Gen 3 & Google Health Connect</span>
+            </div>
+            <h3 class="font-bold text-white text-base mt-0.5">Connectez vos capteurs de santé en quelques secondes</h3>
+            <p class="text-xs text-slate-300">Synchronisez votre bague RingConn Gen 3, Google Health Connect, balance Withings ou Garmin pour remonter automatiquement pas, sommeil, HRV et composition corporelle.</p>
+          </div>
+        </div>
+        <button onclick="openConnectWizardModal()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 shrink-0 transition-transform active:scale-95">
+          <i data-lucide="link-2" class="w-4 h-4"></i>
+          <span>Lancer l'Assistant de Connexion</span>
+        </button>
+      </div>
+
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
-        <h3 class="font-bold text-white text-base mb-1">Objets Connectés & Synchronisations Santé</h3>
-        <p class="text-xs text-slate-400 mb-6">Connecteurs modulaires Withings, Garmin, Oura Ring, Apple Santé et Google Health Connect avec bascule automatique en mode simulation/démo réaliste</p>
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-white text-base">Objets Connectés & Synchronisations Actives</h3>
+            <p class="text-xs text-slate-400">Statut en direct de vos connecteurs RingConn, Google Health Connect, Withings et Oura</p>
+          </div>
+          <button onclick="openProfileModal()" class="text-xs text-emerald-400 hover:underline flex items-center space-x-1">
+            <i data-lucide="user" class="w-3.5 h-3.5"></i>
+            <span>Modifier mon profil</span>
+          </button>
+        </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="devices-grid">
           <!-- Dynamique via API /api/devices -->
@@ -697,23 +733,23 @@
 
         </div>
 
-        <!-- Focus Interconnexion Bague Connectée (Oura Ring) -->
-        <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 via-[#0B0F17] to-[#0B0F17] border border-indigo-500/20">
+        <!-- Focus Interconnexion Bagues Connectées (RingConn Gen 3 & Oura Ring) -->
+        <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 via-[#0B0F17] to-[#0B0F17] border border-indigo-500/20 space-y-3">
           <div class="flex items-start space-x-3">
             <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
               <i data-lucide="circle-dot" class="w-5 h-5"></i>
             </div>
             <div class="space-y-1">
               <div class="flex items-center space-x-2">
-                <h4 class="font-bold text-white text-sm">Interconnexion de la Bague Connectée (Oura Ring Gen 3 / Horizon)</h4>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Connecteur Actif</span>
+                <h4 class="font-bold text-white text-sm">Bague RingConn Gen 3 & Passerelle Google Health Connect</h4>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Bague Utilisateur Active</span>
               </div>
               <p class="text-xs text-slate-300">
-                L'Oura Ring synchronise automatiquement en tâche de fond vos biométries dès votre réveil via l'API v2 Oura Cloud (Bearer Token dans <code>config/devices.yaml</code>) : 
-                <strong>Score de sommeil</strong>, <strong>BMR quotidien</strong>, <strong>HRV (Variabilité cardiaque en ms)</strong>, <strong>Fréquence cardiaque au repos</strong> et <strong>calories actives</strong>.
+                Votre bague <strong>RingConn Gen 3</strong> synchronise en continu vos biométries (<strong>Sommeil profond/paradoxal</strong>, <strong>HRV nocturne en ms</strong>, <strong>Fréquence cardiaque au repos</strong>, <strong>Pas</strong> et <strong>Calories actives</strong>) soit directement via son API OpenAPI, soit automatiquement via la passerelle <strong>Google Health Connect (Android)</strong>.
               </p>
-              <div class="text-[11px] text-indigo-400 pt-1">
-                ➔ Permet au moteur métabolique de VitalTrack de calculer la dépense énergétique TDEE réelle chaque matin sans aucune saisie manuelle.
+              <div class="text-[11px] text-emerald-400 pt-1 flex items-center space-x-1.5">
+                <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                <span>Connecteur RingConn opérationnel dans VitalTrack avec synchronisation matinale automatique pour le calcul TDEE.</span>
               </div>
             </div>
           </div>
@@ -951,10 +987,193 @@
           <span>Synchroniser l'Activité</span>
         </button>
       </div>
+  <!-- =================================================================== -->
+  <!-- MODAL 4 : PROFIL UTILISATEUR & OBJECTIFS PERSONNALISÉS -->
+  <!-- =================================================================== -->
+  <div id="modal-profile" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <i data-lucide="user" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Mon Profil Utilisateur</h3>
+            <p class="text-[10px] text-slate-400">Paramètres morphologiques et calcul du métabolisme basal</p>
+          </div>
+        </div>
+        <button onclick="closeProfileModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Prénom ou Pseudo</label>
+          <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Sexe</label>
+            <select id="prof-gender" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <option value="male" selected>Homme</option>
+              <option value="female">Femme</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Âge (ans)</label>
+            <input type="number" id="prof-age" value="35" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Taille (cm)</label>
+            <input type="number" id="prof-height" value="178" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Poids Cible (kg)</label>
+            <input type="number" step="0.1" id="prof-target-weight" value="77.0" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Objectif Pas / jour</label>
+            <input type="number" id="prof-target-steps" value="10000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Cible Calories (kcal/j)</label>
+            <input type="number" id="prof-target-cals" value="2000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">Protéines (g / kg)</label>
+            <input type="number" step="0.1" id="prof-target-prot" value="1.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-[#1F2A3C]">
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Objets et Capteurs Associés</label>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2A3C]">
+              <span class="text-[10px] text-slate-400 block">Bague connectée principale :</span>
+              <span class="font-bold text-indigo-400 flex items-center space-x-1 mt-0.5">
+                <i data-lucide="circle-dot" class="w-3.5 h-3.5"></i>
+                <span id="prof-ring-label">RingConn Gen 3</span>
+              </span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2A3C]">
+              <span class="text-[10px] text-slate-400 block">Agrégateur santé :</span>
+              <span class="font-bold text-emerald-400 flex items-center space-x-1 mt-0.5">
+                <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                <span>Google Health Connect</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="saveUserProfile()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-lg shadow-emerald-600/25">
+          <i data-lucide="save" class="w-4 h-4"></i>
+          <span>Enregistrer mon Profil</span>
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- JEU DE DONNÉES DE SECOURS EMBARQUÉ (FALLBACK 30 JOURS SÉCURITÉ SERVERLESS VERCEL) -->
+  <!-- =================================================================== -->
+  <!-- MODAL 5 : ASSISTANT DE CONNEXION DES OBJETS (WIZARD RINGCONN & GOOGLE HEALTH) -->
+  <!-- =================================================================== -->
+  <div id="modal-connect-wizard" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <i data-lucide="link-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Assistant de Connexion d'Appareils</h3>
+            <p class="text-[10px] text-slate-400">Connectez vos capteurs en 1-clic pour synchroniser vos données biométriques</p>
+          </div>
+        </div>
+        <button onclick="closeConnectWizardModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Sélecteur d'appareil à connecter -->
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-2">Choisissez l'élément à connecter à votre profil :</label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="wizard-device-selector">
+            
+            <!-- Option 1 : RingConn Gen 3 (Recommandée) -->
+            <button type="button" onclick="selectWizardDevice('ringconn')" id="wiz-opt-ringconn" class="wizard-device-card p-3 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 text-left transition-all">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-bold text-white text-xs flex items-center space-x-1.5">
+                  <i data-lucide="circle-dot" class="w-4 h-4 text-emerald-400"></i>
+                  <span>RingConn Gen 3</span>
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold uppercase">Ma Bague</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Sommeil, HRV en ms, rythme cardiaque et calories actives</p>
+            </button>
+
+            <!-- Option 2 : Google Health Connect -->
+            <button type="button" onclick="selectWizardDevice('health_connect')" id="wiz-opt-health_connect" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-bold text-white text-xs flex items-center space-x-1.5">
+                  <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
+                  <span>Google Health Connect</span>
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold uppercase">Passerelle</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Hub Android unifiant RingConn, balances et applis de sport</p>
+            </button>
+
+            <!-- Option 3 : Withings Body Scales -->
+            <button type="button" onclick="selectWizardDevice('withings')" id="wiz-opt-withings" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-bold text-white text-xs flex items-center space-x-1.5">
+                  <i data-lucide="scale" class="w-4 h-4 text-emerald-400"></i>
+                  <span>Withings Body Smart</span>
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold uppercase">Balance</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Pesée Wi-Fi directe, masse grasse et masse musculaire</p>
+            </button>
+
+            <!-- Option 4 : Oura Ring -->
+            <button type="button" onclick="selectWizardDevice('oura')" id="wiz-opt-oura" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-bold text-white text-xs flex items-center space-x-1.5">
+                  <i data-lucide="circle-dot" class="w-4 h-4 text-indigo-400"></i>
+                  <span>Oura Ring Gen3</span>
+                </span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold uppercase">Cloud</span>
+              </div>
+              <p class="text-[11px] text-slate-300">Authentification Bearer Token API Cloud v2</p>
+            </button>
+
+          </div>
+        </div>
+
+        <!-- Détails dynamiques selon l'appareil sélectionné -->
+        <div id="wizard-config-container" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-4 space-y-3">
+          <!-- Dynamique via JS -->
+        </div>
+
+        <!-- Bouton d'action de l'assistant -->
+        <div class="flex items-center gap-2 pt-2">
+          <button type="button" onclick="submitDeviceConnection()" id="btn-wizard-confirm" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-lg shadow-indigo-600/30">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span id="wizard-action-text">Connecter la bague RingConn Gen 3</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const FALLBACK_DASHBOARD_DATA = {
       summary: {
@@ -1970,6 +2189,219 @@
       closeActivityModal();
       loadDashboardData();
       switchTab('activity');
+    }
+
+    // =====================================================================
+    // LOGIQUE PROFIL UTILISATEUR & ASSISTANT DE CONNEXION D'APPAREILS
+    // =====================================================================
+    let currentSelectedWizardDevice = 'ringconn';
+
+    function openProfileModal() {
+      // Pré-remplir les champs avec les données actuelles
+      const p = currentData.profile || {};
+      if (p.name) document.getElementById('prof-name').value = p.name;
+      if (p.gender) document.getElementById('prof-gender').value = p.gender;
+      if (p.age) document.getElementById('prof-age').value = p.age;
+      if (p.height_cm) document.getElementById('prof-height').value = p.height_cm;
+      if (p.target_weight_kg) document.getElementById('prof-target-weight').value = p.target_weight_kg;
+      if (p.target_steps) document.getElementById('prof-target-steps').value = p.target_steps;
+      if (p.target_calories_intake) document.getElementById('prof-target-cals').value = p.target_calories_intake;
+      if (p.protein_target_per_kg) document.getElementById('prof-target-prot').value = p.protein_target_per_kg;
+
+      document.getElementById('modal-profile').classList.remove('hidden');
+    }
+
+    function closeProfileModal() {
+      document.getElementById('modal-profile').classList.add('hidden');
+    }
+
+    async function saveUserProfile() {
+      const payload = {
+        name: document.getElementById('prof-name').value || 'Sébastien',
+        gender: document.getElementById('prof-gender').value || 'male',
+        age: parseInt(document.getElementById('prof-age').value) || 35,
+        height_cm: parseFloat(document.getElementById('prof-height').value) || 178.0,
+        target_weight_kg: parseFloat(document.getElementById('prof-target-weight').value) || 77.0,
+        target_steps: parseInt(document.getElementById('prof-target-steps').value) || 10000,
+        target_calories_intake: parseFloat(document.getElementById('prof-target-cals').value) || 2000.0,
+        protein_target_per_kg: parseFloat(document.getElementById('prof-target-prot').value) || 1.8
+      };
+
+      try {
+        const res = await fetch('/api/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeProfileModal();
+          await loadDashboardData();
+          alert("Profil mis à jour avec succès ! Les métriques métaboliques ont été recalculées.");
+        }
+      } catch (e) {
+        closeProfileModal();
+      }
+    }
+
+    function openConnectWizardModal() {
+      selectWizardDevice(currentSelectedWizardDevice);
+      document.getElementById('modal-connect-wizard').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeConnectWizardModal() {
+      document.getElementById('modal-connect-wizard').classList.add('hidden');
+    }
+
+    function selectWizardDevice(deviceId) {
+      currentSelectedWizardDevice = deviceId;
+      document.querySelectorAll('.wizard-device-card').forEach(c => {
+        c.classList.remove('border-2', 'border-emerald-500', 'bg-emerald-500/10');
+        c.classList.add('border', 'border-[#1F2A3C]', 'bg-[#0B0F17]');
+      });
+
+      const selCard = document.getElementById(`wiz-opt-${deviceId}`);
+      if (selCard) {
+        selCard.classList.remove('border-[#1F2A3C]', 'bg-[#0B0F17]');
+        selCard.classList.add('border-2', 'border-emerald-500', 'bg-emerald-500/10');
+      }
+
+      const container = document.getElementById('wizard-config-container');
+      const actionText = document.getElementById('wizard-action-text');
+
+      if (deviceId === 'ringconn') {
+        actionText.innerText = "Connecter ma bague RingConn Gen 3";
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Connexion Optimale : Bague RingConn Gen 3</span>
+            </div>
+            <p class="text-xs text-slate-300">
+              Votre bague <strong>RingConn Gen 3</strong> mesure en temps réel le sommeil (durée, score réparateur), l'HRV nocturne en ms, la fréquence cardiaque et les calories actives.
+            </p>
+            <div class="bg-[#151D2A] p-2.5 rounded-lg border border-[#1F2A3C] text-[11px] space-y-1">
+              <span class="text-slate-400 block font-semibold">Mode d'interconnexion au choix :</span>
+              <div class="flex items-center space-x-2 text-slate-200">
+                <span class="text-emerald-400 font-bold">1.</span>
+                <span><strong>Via Google Health Connect (Recommandé)</strong> : Vos données RingConn remontent automatiquement via l'application RingConn liée à Google Health.</span>
+              </div>
+              <div class="flex items-center space-x-2 text-slate-200">
+                <span class="text-emerald-400 font-bold">2.</span>
+                <span><strong>Via RingConn Cloud OpenAPI</strong> : Clé API développeur RingConn pour appel cloud-to-cloud direct.</span>
+              </div>
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">Clé API / Token RingConn (Facultatif si synchronisé via Google Health) :</label>
+              <input type="text" id="wiz-input-ringconn-key" placeholder="rc_live_... ou laisser vide pour passerelle Google Health" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+        `;
+      } else if (deviceId === 'health_connect') {
+        actionText.innerText = "Activer la passerelle Google Health Connect";
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
+              <i data-lucide="smartphone" class="w-4 h-4"></i>
+              <span>Passerelle Universelle Android Google Health Connect</span>
+            </div>
+            <p class="text-xs text-slate-300">
+              Centralise toutes vos applications de santé sur smartphone (RingConn, balances connectées, trackers) et les pousse vers le webhook VitalTrack.
+            </p>
+            <div class="p-2.5 rounded-lg bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-1">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Endpoint Webhook :</span>
+                <span class="font-mono text-emerald-400 text-[10px]">/api/activities & /api/weights</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Statut :</span>
+                <span class="text-emerald-400 font-bold">Prêt pour réception continue</span>
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (deviceId === 'withings') {
+        actionText.innerText = "Connecter ma Balance Withings";
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+              <i data-lucide="scale" class="w-4 h-4"></i>
+              <span>Balance Withings Body Smart / Comp (Wi-Fi Direct)</span>
+            </div>
+            <p class="text-xs text-slate-300">
+              Synchronisation directe Cloud-to-Cloud via OAuth 2.0 officiel de Withings.
+            </p>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">Identifiant Compte Withings (Email) :</label>
+              <input type="email" id="wiz-input-withings-email" placeholder="sebastienlamoliate@gmail.com" value="sebastienlamoliate@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+        `;
+      } else {
+        actionText.innerText = "Connecter Oura Ring Gen 3";
+        container.innerHTML = `
+          <div class="space-y-2.5">
+            <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs">
+              <i data-lucide="circle-dot" class="w-4 h-4"></i>
+              <span>Oura Ring Gen 3 Cloud API v2</span>
+            </div>
+            <p class="text-xs text-slate-300">
+              Interconnexion par Bearer Token personnel via l'API v2 d'Oura.
+            </p>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">Personal Access Token Oura :</label>
+              <input type="password" id="wiz-input-oura-token" placeholder="Bearer token Oura..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+            </div>
+          </div>
+        `;
+      }
+      lucide.createIcons();
+    }
+
+    async function submitDeviceConnection() {
+      const devId = currentSelectedWizardDevice;
+      let apiKey = null;
+      let email = null;
+      let authType = 'connected';
+
+      if (devId === 'ringconn') {
+        const inp = document.getElementById('wiz-input-ringconn-key');
+        apiKey = inp ? inp.value : null;
+        authType = apiKey ? 'ringconn_openapi' : 'google_health_connect';
+      } else if (devId === 'withings') {
+        const inp = document.getElementById('wiz-input-withings-email');
+        email = inp ? inp.value : 'sebastienlamoliate@gmail.com';
+        authType = 'withings_oauth';
+      } else if (devId === 'health_connect') {
+        authType = 'google_health_connect';
+      } else if (devId === 'oura') {
+        const inp = document.getElementById('wiz-input-oura-token');
+        apiKey = inp ? inp.value : null;
+        authType = 'oura_bearer_token';
+      }
+
+      try {
+        const res = await fetch('/api/devices/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: devId,
+            connected: true,
+            auth_type: authType,
+            api_key: apiKey,
+            account_email: email
+          })
+        });
+
+        if (res.ok) {
+          closeConnectWizardModal();
+          await loadDashboardData();
+          switchTab('devices');
+          alert(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été connecté avec succès à votre profil VitalTrack !`);
+        }
+      } catch (e) {
+        closeConnectWizardModal();
+      }
     }
   </script>
 </body>

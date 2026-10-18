@@ -254,9 +254,66 @@ def test_api_devices_comparison(client):
     assert "OAuth" in withings_scale["api_type"]
     assert "Wi-Fi" in withings_scale["connectivity"]
 
-    # Bague Oura
+    # Bague RingConn & Oura
     assert "ring_integration" in data
-    assert "Oura" in data["ring_integration"]["name"]
+    assert "RingConn" in data["ring_integration"]["name"] or "Oura" in data["ring_integration"]["name"]
+
+
+def test_user_profile_crud(client):
+    """Vérifie la récupération et la mise à jour du profil utilisateur personnalisé."""
+    # 1. Lecture profil existant
+    res = client.get("/api/profile")
+    assert res.status_code == 200
+    data = res.json()
+    assert "profile" in data
+    assert data["profile"]["name"] == "Sébastien"
+
+    # 2. Mise à jour profil
+    payload = {
+        "name": "Sébastien L.",
+        "gender": "male",
+        "age": 36,
+        "height_cm": 178.0,
+        "target_weight_kg": 76.5,
+        "preferred_ring": "ringconn",
+        "preferred_scale": "withings"
+    }
+    update_res = client.post("/api/profile", json=payload)
+    assert update_res.status_code == 200
+    up_data = update_res.json()
+    assert up_data["status"] == "success"
+    assert up_data["profile"]["name"] == "Sébastien L."
+    assert up_data["profile"]["target_weight_kg"] == 76.5
+
+
+def test_connection_wizard_ringconn_and_health_connect(client):
+    """Vérifie la connexion de la bague RingConn Gen 3 et de Google Health Connect via l'assistant."""
+    # 1. Connexion RingConn Gen 3
+    ring_payload = {
+        "device_id": "ringconn",
+        "name": "RingConn Gen 3 Smart Ring",
+        "device_type": "ring",
+        "auth_type": "google_health_connect",
+        "connected": True
+    }
+    res_ring = client.post("/api/devices/connect", json=ring_payload)
+    assert res_ring.status_code == 200
+    data_ring = res_ring.json()
+    assert data_ring["status"] == "success"
+    assert data_ring["device"]["connected"] == 1
+
+    # 2. Connexion Google Health Connect
+    health_payload = {
+        "device_id": "health_connect",
+        "name": "Google Health Connect",
+        "device_type": "mobile_aggregator",
+        "auth_type": "google_health_connect",
+        "connected": True
+    }
+    res_health = client.post("/api/devices/connect", json=health_payload)
+    assert res_health.status_code == 200
+    data_health = res_health.json()
+    assert data_health["status"] == "success"
 
 
 def test_vercel_endpoints_status_200(client):
@@ -270,7 +327,8 @@ def test_vercel_endpoints_status_200(client):
         "/api/weights",
         "/api/activity",
         "/api/activities",
-        "/api/devices"
+        "/api/devices",
+        "/api/profile"
     ]
     for ep in endpoints:
         res = client.get(ep)
@@ -281,4 +339,5 @@ def test_daily_sync_execution():
     """Vérifie que le script de synchronisation journalière s'exécute correctement."""
     from src.daily_sync import run_daily_sync
     run_daily_sync()
+
 
