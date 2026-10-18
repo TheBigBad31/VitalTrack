@@ -28,8 +28,27 @@ Plateforme PWA Mobile-First de suivi quotidien du poids, d'estimation calorique 
 - Tendance glissante lissée sur 7 jours (EMA/SMA).
 - Pré-chargement automatique d'un jeu de données réaliste sur 30 jours (pesées et activités) et 7 jours de repas détaillés lors de l'initialisation.
 
+### 5. Application PWA Mobile-First & Dashboards (`static/index.html`, `src/app.py`, `api/index.py`)
+- **FastAPI Backend Serverless** : endpoints unifiés `/api/dashboard`, `/api/weights`, `/api/activities`, `/api/meals`, `/api/meals/estimate`, `/api/devices`.
+- **5 Vues de Dashboards Interactifs (Chart.js & Tailwind CSS)** :
+  1. *Synthèse Quotidienne & Balance Énergétique* : Jauges poids/7j, calories in vs out, TDEE, déficit/surplus net, pas, donut de macronutriments P/G/L.
+  2. *Suivi du Poids & Composition Corporelle* : Pesées quotidiennes réelles + tendance lissée 7 jours + cible de poids + cartes impédancemétrie (% masse grasse, masse musculaire, % hydratation, IMC).
+  3. *Journal Alimentaire & Calories par Repas* : Barres empilées par repas (Petit-déjeuner, Déjeuner, Dîner, Collation) sur 7 jours avec ligne cible 2000 kcal, liste détaillée des repas avec miniatures.
+  4. *Pas, Exercice & Bague Connectée* : Graphique combiné pas quotidiens et calories actives, cartes biométriques (score de sommeil, fréquence cardiaque repos, HRV ms).
+  5. *Hub Objets Connectés* : Statut des balances (Withings/Garmin), bague (Oura Ring) et webhooks (Apple Santé / Health Connect) avec simulation et déclencheur de synchronisation.
+- **Action Rapide Mobile 1-Clic** : Upload photo appareil photo smartphone (`capture="environment"`), détection IA d'aliments, curseur de portion interactif `0.5x` - `2.0x` et enregistrement direct.
+- **Résilience Serverless Vercel** : `vercel.json` avec réécritures `/api/(.*)` vers `api/index.py` et fallback données 30 jours immédiat.
+
+## Démarrage Local
+
+```bash
+uv run uvicorn src.app:app --reload --port 8000
+```
+Ouvrir ensuite `http://localhost:8000` sur navigateur ou smartphone (PWA).
+
 ## Tests Unitaires
 
 ```bash
-uv run --extra dev pytest
+uv run pytest
 ```
+

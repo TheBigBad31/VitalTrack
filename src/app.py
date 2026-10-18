@@ -1,0 +1,431 @@
+"""FastAPI Backend pour VitalTrack (Local \u0026 Vercel Serverless).
+
+Endpoints :
+- GET  /api/health            : statut de l'API
+- GET  /api/dashboard         : données globales agrégées (30 jours, 5 vues)
+- GET  /api/weights           : liste des pesées (historique + tendance 7j)
+- POST /api/weights           : saisie rapide de pesée (kg, composition corporelle)
+- GET  /api/activities        : liste des résumés d'activité
+- POST /api/activities        : ajout / synchronisation d'exercice ou pas
+- GET  /api/meals             : historique des repas
+- POST /api/meals             : enregistrement d'un repas dans le journal
+- POST /api/meals/estimate    : estimation calorique par photo ou description avec curseur portion
+- GET  /api/devices           : statut et synchronisation des objets connectés (Withings, Garmin, Oura, etc.)
+- POST /api/devices/sync      : déclenchement d'une synchronisation d'un appareil
+- GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
+"""
+
+import os
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Literal, Optional
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from src.db import Database, get_db_path
+from src.models import ActivityEntry, FoodItem, MealEntry, MealType, WeightEntry
+from src.nutrition_engine import NutritionEngine
+from src.vision_nutrition import PhotoCalorieEstimator
+from src.connectors.registry import DeviceConnectorRegistry
+from src.connectors.withings import WithingsScaleConnector
+from src.connectors.oura import OuraRingConnector
+from src.connectors.webhook import MobileHealthWebhookConnector
+
+# Initialisation de FastAPI
+app = FastAPI(
+    title="VitalTrack API",
+    description="API REST pour VitalTrack : PWA Mobile-First, Nutrition Photo IA et Objets Connectés",
+    version="1.0.0"
+)
+
+# CORS permissif pour le support PWA et requêtes locales / Vercel
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Instances partagées
+db = Database()
+nutrition_engine = NutritionEngine(db=db)
+calorie_estimator = PhotoCalorieEstimator()
+
+# Initialisation du registre IoT
+device_registry = DeviceConnectorRegistry()
+device_registry.register(WithingsScaleConnector(), device_id="withings", name="Withings Body Scan & Scales", device_type="scale")
+device_registry.register(OuraRingConnector(), device_id="oura", name="Oura Ring Gen3", device_type="ring")
+device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health", name="Apple Santé (HealthKit)", device_type="mobile_aggregator")
+device_registry.register(MobileHealthWebhookConnector(), device_id="health_connect", name="Google Health Connect", device_type="mobile_aggregator")
+
+
+
+# =====================================================================
+# Modèles de requêtes Pydantic
+# =====================================================================
+
+import datetime as dt_module
+
+class WeightInput(BaseModel):
+    date: Optional[dt_module.date] = None
+    weight_kg: float = Field(..., gt=20.0, lt=350.0, description="Poids en kg")
+    body_fat_pct: Optional[float] = Field(None, ge=3.0, le=60.0, description="% masse grasse")
+    muscle_mass_kg: Optional[float] = Field(None, ge=10.0, le=150.0, description="Masse musculaire en kg")
+    water_pct: Optional[float] = Field(None, ge=30.0, le=80.0, description="% eau")
+    bmi: Optional[float] = Field(None, ge=10.0, le=70.0, description="IMC")
+    notes: Optional[str] = None
+    source: Literal["manual", "withings", "garmin", "apple_health", "demo"] = "manual"
+
+
+class ActivityInput(BaseModel):
+    date: Optional[dt_module.date] = None
+    steps: int = Field(0, ge=0, description="Nombre de pas")
+    active_calories_kcal: float = Field(0.0, ge=0.0, description="Calories actives en exercice")
+    workout_minutes: int = Field(0, ge=0, description="Minutes d'activité physique")
+    workout_type: Optional[str] = Field(None, description="Type d'entraînement")
+    resting_hr_bpm: Optional[int] = Field(None, ge=30, le=220, description="Fréquence cardiaque au repos")
+    hrv_ms: Optional[float] = Field(None, ge=0.0, description="Variabilité cardiaque (HRV en ms)")
+    sleep_score: Optional[int] = Field(None, ge=0, le=100, description="Score de sommeil")
+    source: Literal["oura", "health_connect", "apple_health", "strava", "demo"] = "health_connect"
+
+
+class MealEstimateRequest(BaseModel):
+    photo_data_url: Optional[str] = None
+    description: Optional[str] = None
+    meal_type: MealType = "lunch"
+    portion_scale: float = Field(1.0, ge=0.5, le=2.0, description="Curseur de portion (0.5x à 2.0x)")
+
+
+class MealSaveRequest(BaseModel):
+    date: Optional[dt_module.date] = None
+    meal_type: MealType
+    photo_data_url: Optional[str] = None
+    portion_scale: float = Field(1.0, ge=0.5, le=2.0)
+    items: List[FoodItem] = Field(default_factory=list)
+
+
+
+class DeviceSyncRequest(BaseModel):
+    device_id: str
+
+
+# =====================================================================
+# Endpoints de Santé et Métadonnées
+# =====================================================================
+
+@app.get("/api/health")
+def health_check():
+    """Vérification de l'état du backend et de la base SQLite."""
+    return {
+        "status": "ok",
+        "service": "VitalTrack API",
+        "db_path": db.db_path,
+        "is_vercel": os.getenv("VERCEL") == "1",
+        "has_gemini_vision": calorie_estimator.has_gemini_api,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+# =====================================================================
+# Endpoints Dashboard & Données Agrégées
+# =====================================================================
+
+@app.get("/api/dashboard")
+def get_dashboard_data():
+    """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards."""
+    weights = db.get_weights(limit=30)
+    activities = db.get_activities(limit=30)
+    meals = db.get_meals(limit=60)
+
+    # Date du jour (ou dernière pesée)
+    today = date.today()
+    latest_weight = weights[-1] if weights else None
+    
+    # Évolution 7j
+    weight_7d_change = 0.0
+    if len(weights) >= 7:
+        weight_7d_change = round(weights[-1].weight_kg - weights[-7].weight_kg, 2)
+    elif len(weights) >= 2:
+        weight_7d_change = round(weights[-1].weight_kg - weights[0].weight_kg, 2)
+
+    # Synthèse du jour
+    today_activity = next((a for a in reversed(activities) if a.date == today), None)
+    if not today_activity and activities:
+        today_activity = activities[-1]
+
+    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today)
+    energy_balance = nutrition_engine.calculate_daily_energy_balance(
+        target_date=today_activity.date if today_activity else today,
+        user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5
+    )
+
+    # Répartition des repas par jour pour les graphiques empilés (7 derniers jours)
+    seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+    meals_by_day = {}
+    for d_str in seven_days:
+        d_date = date.fromisoformat(d_str)
+        day_meals = [m for m in meals if m.date == d_date]
+        day_dict = {"breakfast": 0.0, "lunch": 0.0, "dinner": 0.0, "snack": 0.0, "total": 0.0}
+        for m in day_meals:
+            day_dict[m.meal_type] = round(day_dict[m.meal_type] + m.total_calories_kcal, 1)
+            day_dict["total"] = round(day_dict["total"] + m.total_calories_kcal, 1)
+        meals_by_day[d_str] = day_dict
+
+    # État des objets connectés
+    device_statuses = []
+    for d in device_registry.list_all():
+        device_statuses.append({
+            "id": d.id,
+            "name": d.name,
+            "device_type": d.device_type,
+            "is_configured": d.is_configured(),
+            "status": "connected" if d.is_configured() else "demo",
+            "last_sync": datetime.now(timezone.utc).isoformat()
+        })
+
+    return {
+        "summary": {
+            "current_weight_kg": latest_weight.weight_kg if latest_weight else 79.8,
+            "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else 80.0,
+            "weight_7d_variation_kg": weight_7d_change,
+            "body_fat_pct": latest_weight.body_fat_pct if latest_weight else 20.3,
+            "muscle_mass_kg": latest_weight.muscle_mass_kg if latest_weight else 38.0,
+            "water_pct": latest_weight.water_pct if latest_weight else 56.5,
+            "bmi": latest_weight.bmi if latest_weight else 25.2,
+            "target_weight_kg": 77.0,
+            "steps": today_activity.steps if today_activity else 10500,
+            "steps_target": 10000,
+            "calories_intake_kcal": energy_balance["calories_intake_kcal"],
+            "calories_burned_kcal": energy_balance["calories_burned_kcal"],
+            "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],
+            "target_calories_intake": 2000.0,
+            "energy_status": energy_balance["status"],
+            "recommendation": energy_balance["recommendation"],
+            "macros": daily_nutrition["macros"],
+            "resting_hr_bpm": today_activity.resting_hr_bpm if today_activity else 58,
+            "hrv_ms": today_activity.hrv_ms if today_activity else 54.0,
+            "sleep_score": today_activity.sleep_score if today_activity else 84,
+        },
+        "weights_history": [w.model_dump() for w in weights],
+        "activities_history": [a.model_dump() for a in activities],
+        "recent_meals": [m.model_dump() for m in meals],
+        "meals_by_day_7d": meals_by_day,
+        "devices": device_statuses,
+        "generated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+# =====================================================================
+# Endpoints Pesées (Poids)
+# =====================================================================
+
+@app.get("/api/weights")
+def get_weights(limit: int = Query(30, ge=1, le=180)):
+    """Retourne la série chronologique des pesées."""
+    weights = db.get_weights(limit=limit)
+    return [w.model_dump() for w in weights]
+
+
+@app.post("/api/weights")
+def create_weight(entry_in: WeightInput):
+    """Enregistre une nouvelle pesée manuelle ou connectée."""
+    target_date = entry_in.date or date.today()
+    
+    # Estimation BMI si non fourni (sur base d'1m78)
+    bmi_val = entry_in.bmi
+    if bmi_val is None and entry_in.weight_kg > 0:
+        bmi_val = round(entry_in.weight_kg / (1.78 ** 2), 1)
+
+    entry = WeightEntry(
+        date=target_date,
+        weight_kg=entry_in.weight_kg,
+        body_fat_pct=entry_in.body_fat_pct,
+        muscle_mass_kg=entry_in.muscle_mass_kg,
+        water_pct=entry_in.water_pct,
+        bmi=bmi_val,
+        source=entry_in.source,
+        notes=entry_in.notes,
+    )
+    saved = db.insert_weight(entry)
+    return saved.model_dump()
+
+
+# =====================================================================
+# Endpoints Activités & Exercices
+# =====================================================================
+
+@app.get("/api/activities")
+def get_activities(limit: int = Query(30, ge=1, le=180)):
+    """Retourne la série chronologique de l'activité quotidienne."""
+    acts = db.get_activities(limit=limit)
+    return [a.model_dump() for a in acts]
+
+
+@app.post("/api/activities")
+def create_activity(act_in: ActivityInput):
+    """Ajoute ou synchronise une entrée d'activité physique quotidienne."""
+    target_date = act_in.date or date.today()
+    bmr = 1780.0
+    active_cal = act_in.active_calories_kcal
+    if active_cal <= 0 and act_in.steps > 0:
+        active_cal = round(act_in.steps * 0.045, 1)
+
+    total_burned = round(bmr + active_cal, 1)
+
+    entry = ActivityEntry(
+        date=target_date,
+        steps=act_in.steps,
+        active_calories_kcal=active_cal,
+        bmr_kcal=bmr,
+        total_burned_kcal=total_burned,
+        workout_minutes=act_in.workout_minutes,
+        workout_type=act_in.workout_type,
+        resting_hr_bpm=act_in.resting_hr_bpm,
+        hrv_ms=act_in.hrv_ms,
+        sleep_score=act_in.sleep_score,
+        source=act_in.source
+    )
+    saved = db.insert_activity(entry)
+    return saved.model_dump()
+
+
+# =====================================================================
+# Endpoints Nutrition, Photo IA et Journal
+# =====================================================================
+
+@app.get("/api/meals")
+def get_meals(limit: int = Query(50, ge=1, le=200)):
+    """Retourne les repas récemment enregistrés."""
+    meals = db.get_meals(limit=limit)
+    return [m.model_dump() for m in meals]
+
+
+@app.post("/api/meals/estimate")
+def estimate_meal_calories(req: MealEstimateRequest):
+    """Estime les calories et macronutriments à partir d'une photo ou d'une description.
+    
+    Prend en compte le curseur d'ajustement de portion interactive (0.5x - 2.0x).
+    """
+    scale = max(0.5, min(2.0, req.portion_scale))
+    
+    # Décoder image éventuelle si fournie sous forme data-url
+    image_bytes = None
+    mime_type = "image/jpeg"
+    if req.photo_data_url and "base64," in req.photo_data_url:
+        import base64
+        try:
+            header, encoded = req.photo_data_url.split("base64,", 1)
+            if "image/png" in header:
+                mime_type = "image/png"
+            elif "image/webp" in header:
+                mime_type = "image/webp"
+            image_bytes = base64.b64decode(encoded)
+        except Exception:
+            image_bytes = None
+
+    result = calorie_estimator.analyze_meal(
+        image_bytes=image_bytes,
+        mime_type=mime_type,
+        description=req.description,
+        portion_scale=scale,
+        meal_type=req.meal_type
+    )
+    return result
+
+
+@app.post("/api/meals")
+def log_meal(req: MealSaveRequest):
+    """Enregistre définitivement un repas décomposé dans le journal alimentaire."""
+    target_date = req.date or date.today()
+    
+    if not req.items:
+        # Si aucun item fourni, estimer par défaut selon le type de repas
+        est = calorie_estimator.analyze_meal(
+            description=None,
+            portion_scale=req.portion_scale,
+            meal_type=req.meal_type
+        )
+        items = [FoodItem(**item) for item in est.get("items", [])]
+    else:
+        items = req.items
+
+    saved = nutrition_engine.log_meal(
+        date_val=target_date,
+        meal_type=req.meal_type,
+        items=items,
+        photo_data_url=req.photo_data_url
+    )
+    return saved.model_dump()
+
+
+# =====================================================================
+# Endpoints Hub Objets Connectés
+# =====================================================================
+
+@app.get("/api/devices")
+def list_devices():
+    """Liste tous les objets connectés supportés et leur statut."""
+    statuses = []
+    for d in device_registry.list_all():
+        statuses.append({
+            "id": d.id,
+            "name": d.name,
+            "device_type": d.device_type,
+            "is_configured": d.is_configured(),
+            "status": "connected" if d.is_configured() else "demo",
+            "supported_features": getattr(d, "supported_features", ["sync", "demo_mode"])
+        })
+    return statuses
+
+
+@app.post("/api/devices/sync")
+def sync_device(req: DeviceSyncRequest):
+    """Déclenche la synchronisation manuelle d'un appareil."""
+    connector = device_registry.get(req.device_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Appareil '{req.device_id}' non trouvé")
+    
+    # Sync via connecteur
+    today_val = dt_module.date.today()
+    start_val = today_val - dt_module.timedelta(days=1)
+    
+    weights = []
+    activities = []
+    if hasattr(connector, "sync_weights"):
+        weights = [w.model_dump() for w in connector.sync_weights(start_val, today_val)]
+    if hasattr(connector, "sync_activities"):
+        activities = [a.model_dump() for a in connector.sync_activities(start_val, today_val)]
+
+    return {
+        "device_id": req.device_id,
+        "name": getattr(connector, "name", req.device_id.capitalize()),
+        "status": "success",
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "details": {
+            "weights_synced": len(weights),
+            "activities_synced": len(activities)
+        }
+    }
+
+
+# =====================================================================
+# Fichiers Statiques et Fallback pour PWA
+# =====================================================================
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+@app.get("/")
+def serve_index():
+    """Sert l'application PWA index.html."""
+    index_file = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isfile(index_file):
+        return FileResponse(index_file, media_type="text/html")
+    root_index = os.path.join(os.path.dirname(__file__), "..", "index.html")
+    if os.path.isfile(root_index):
+        return FileResponse(root_index, media_type="text/html")
+    return {"message": "VitalTrack PWA - interface en cours d'initialisation"}
