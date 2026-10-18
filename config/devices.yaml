@@ -1,0 +1,59 @@
+# Registre déclaratif des appareils connectés et sources de santé pour VitalTrack
+
+devices:
+  withings:
+    name: "Withings Body Scan & Smart Scales"
+    type: "scale"
+    connector_class: "src.connectors.withings.WithingsScaleConnector"
+    enabled: true
+    auth_type: "oauth2"
+    auth_url: "https://account.withings.com/oauth2_user/authorize2"
+    token_url: "https://wbsapi.withings.net/v2/oauth2"
+    scopes:
+      - "user.metrics"
+      - "user.info"
+    demo_mode_fallback: true
+    config:
+      client_id: ""
+      client_secret: ""
+      access_token: ""
+      refresh_token: ""
+      user_height_m: 1.78
+
+  oura:
+    name: "Oura Ring (Gen 3 / Horizon)"
+    type: "ring"
+    connector_class: "src.connectors.oura.OuraRingConnector"
+    enabled: true
+    auth_type: "bearer_token"
+    api_url: "https://api.ouraring.com/v2/usercollection"
+    demo_mode_fallback: true
+    config:
+      personal_access_token: ""
+
+  mobile_webhook:
+    name: "Mobile Health Webhook (Apple Santé & Android Health Connect)"
+    type: "universal_webhook"
+    connector_class: "src.connectors.webhook.MobileHealthWebhookConnector"
+    enabled: true
+    auth_type: "token"
+    webhook_endpoint: "/api/webhook/health"
+    supported_apps:
+      - "iOS Shortcuts (Apple Health)"
+      - "Android Health Connect (Tasker / Automate)"
+      - "Ultrahuman Ring (via Health Connect)"
+      - "RingConn Smart Ring (via Apple Health)"
+      - "Garmin Connect (via Health sync)"
+      - "Strava"
+    config:
+      webhook_secret: "vitaltrack_secure_webhook_key_sample"
+      user_height_m: 1.78
+
+  garmin_template:
+    name: "Garmin Index S2 Smart Scale"
+    type: "scale"
+    connector_class: "src.connectors.template.TemplateHealthConnector"
+    enabled: false
+    auth_type: "oauth1"
+    config:
+      api_key: ""

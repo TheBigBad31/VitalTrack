@@ -1,0 +1,20 @@
+[project]
+name = "vitaltrack"
+version = "0.1.0"
+description = "Plateforme de suivi du poids, nutrition photo IA et objets connectés de santé"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+

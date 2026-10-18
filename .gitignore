@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+data/vitaltrack.db
+data/*.db
+/tmp/vitaltrack.db
