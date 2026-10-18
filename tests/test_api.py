@@ -257,3 +257,28 @@ def test_api_devices_comparison(client):
     # Bague Oura
     assert "ring_integration" in data
     assert "Oura" in data["ring_integration"]["name"]
+
+
+def test_vercel_endpoints_status_200(client):
+    """Vérifie que les endpoints requis pour le déploiement Vercel répondent tous avec un statut 200."""
+    endpoints = [
+        "/",
+        "/api/health",
+        "/api/dashboard",
+        "/api/meals/analyze-photo",
+        "/api/weight",
+        "/api/weights",
+        "/api/activity",
+        "/api/activities",
+        "/api/devices"
+    ]
+    for ep in endpoints:
+        res = client.get(ep)
+        assert res.status_code == 200, f"Endpoint {ep} a renvoyé {res.status_code} au lieu de 200"
+
+
+def test_daily_sync_execution():
+    """Vérifie que le script de synchronisation journalière s'exécute correctement."""
+    from src.daily_sync import run_daily_sync
+    run_daily_sync()
+

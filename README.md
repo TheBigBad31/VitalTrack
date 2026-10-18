@@ -37,7 +37,17 @@ Plateforme PWA Mobile-First de suivi quotidien du poids, d'estimation calorique 
   4. *Pas, Exercice & Bague Connectée* : Graphique combiné pas quotidiens et calories actives, cartes biométriques (score de sommeil, fréquence cardiaque repos, HRV ms).
   5. *Hub Objets Connectés* : Statut des balances (Withings/Garmin), bague (Oura Ring) et webhooks (Apple Santé / Health Connect) avec simulation et déclencheur de synchronisation.
 - **Action Rapide Mobile 1-Clic** : Upload photo appareil photo smartphone (`capture="environment"`), détection IA d'aliments, curseur de portion interactif `0.5x` - `2.0x` et enregistrement direct.
-- **Résilience Serverless Vercel** : `vercel.json` avec réécritures `/api/(.*)` vers `api/index.py` et fallback données 30 jours immédiat.
+## Déploiement Vercel Serverless
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTheBigBad31%2FVitalTrack&project-name=vitaltrack&repository-name=vitaltrack)
+
+VitalTrack est optimisé pour un déploiement Vercel Serverless sans configuration complexe :
+- **Fichier de configuration** : `vercel.json` (réécriture des routes `/api/(.*)` vers `api/index.py` et `/` vers `static/index.html`).
+- **Persistance Serverless** : Base SQLite auto-initialisée dans `/tmp/vitaltrack.db` sur les lambdas AWS/Vercel avec seed de 30 jours de pesées et d'activités démo.
+- **Variables d'environnement facultatives (production)** :
+  - `GEMINI_API_KEY` : Clé API Google Gemini Vision pour l'analyse photo multimodale temps réel.
+  - `WITHINGS_CLIENT_ID` & `WITHINGS_ACCESS_TOKEN` : Identifiants API OAuth Withings.
+  - `OURA_PERSONAL_ACCESS_TOKEN` : Token personnel Oura Ring Cloud API v2.
 
 ## Démarrage Local
 
@@ -46,9 +56,13 @@ uv run uvicorn src.app:app --reload --port 8000
 ```
 Ouvrir ensuite `http://localhost:8000` sur navigateur ou smartphone (PWA).
 
-## Tests Unitaires
+## Tests Unitaires & CI/CD
 
 ```bash
 uv run pytest
 ```
+
+Les workflows GitHub Actions (`.github/workflows/ci.yml` et `.github/workflows/daily-sync.yml`) assurent :
+1. **CI Test Suite** : Exécution automatique de la suite de tests `pytest` (29 tests) à chaque push ou Pull Request sur `main`.
+2. **Daily Health Sensors Sync** : Synchronisation planifiée quotidienne (cron `0 6 * * *`) des capteurs Withings et Oura Ring.
 

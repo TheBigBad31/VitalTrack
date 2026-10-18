@@ -1,0 +1,36 @@
+name: Daily Health Sensors Sync
+
+on:
+  schedule:
+    # Exécution quotidienne automatique à 06:00 UTC (matinale, après la nuit de sommeil et pesée)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Permet également un déclenchement manuel à la demande depuis GitHub Actions
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --no-dev
+
+      - name: Run Daily Sync Script (Withings & Oura Ring)
+        env:
+          WITHINGS_CLIENT_ID: ${{ secrets.WITHINGS_CLIENT_ID }}
+          WITHINGS_ACCESS_TOKEN: ${{ secrets.WITHINGS_ACCESS_TOKEN }}
+          OURA_PERSONAL_ACCESS_TOKEN: ${{ secrets.OURA_PERSONAL_ACCESS_TOKEN }}
+        run: |
+          uv run python src/daily_sync.py

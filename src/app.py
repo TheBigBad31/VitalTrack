@@ -224,6 +224,7 @@ def get_dashboard_data():
 # =====================================================================
 
 @app.get("/api/weights")
+@app.get("/api/weight")
 def get_weights(limit: int = Query(30, ge=1, le=180)):
     """Retourne la série chronologique des pesées."""
     weights = db.get_weights(limit=limit)
@@ -259,6 +260,7 @@ def create_weight(entry_in: WeightInput):
 # =====================================================================
 
 @app.get("/api/activities")
+@app.get("/api/activity")
 def get_activities(limit: int = Query(30, ge=1, le=180)):
     """Retourne la série chronologique de l'activité quotidienne."""
     acts = db.get_activities(limit=limit)
@@ -304,6 +306,19 @@ def get_meals(limit: int = Query(50, ge=1, le=200)):
     return [m.model_dump() for m in meals]
 
 
+@app.get("/api/meals/analyze-photo")
+def get_analyze_photo_info():
+    """Information et métadonnées sur le moteur d'analyse photo de repas."""
+    return {
+        "status": "available",
+        "description": "Moteur multimodal IA Gemini Vision et fallback hybride OpenFoodFacts",
+        "supported_formats": ["image/jpeg", "image/png", "image/webp"],
+        "max_size_mb": 10,
+        "portion_scale_range": [0.5, 2.0]
+    }
+
+
+@app.post("/api/meals/analyze-photo")
 @app.post("/api/meals/estimate")
 def estimate_meal_calories(req: MealEstimateRequest):
     """Estime les calories et macronutriments à partir d'une photo ou d'une description.
