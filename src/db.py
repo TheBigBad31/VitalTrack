@@ -309,6 +309,67 @@ class Database:
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
         return MealEntry(**entry_dict)
 
+    def get_meals_for_date(self, target_date: date) -> List[MealEntry]:
+        """Récupère tous les repas d'une date spécifique."""
+        date_str = target_date.isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM meals
+                WHERE date = ?
+                ORDER BY id ASC
+            """, (date_str,))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            raw_items = json.loads(r["items_json"]) if r["items_json"] else []
+            items = [FoodItem(**item) for item in raw_items]
+            results.append(MealEntry(
+                id=r["id"],
+                date=date.fromisoformat(r["date"]),
+                meal_type=r["meal_type"],
+                total_calories_kcal=r["total_calories_kcal"],
+                protein_g=r["protein_g"],
+                carbs_g=r["carbs_g"],
+                fat_g=r["fat_g"],
+                fiber_g=r["fiber_g"],
+                photo_data_url=r["photo_data_url"],
+                items=items,
+                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+            ))
+        return results
+
+    def get_meals(self, limit: int = 50) -> List[MealEntry]:
+        """Récupère l'historique récent des repas."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM (
+                    SELECT * FROM meals ORDER BY date DESC, id DESC LIMIT ?
+                ) ORDER BY date ASC, id ASC
+            """, (limit,))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            raw_items = json.loads(r["items_json"]) if r["items_json"] else []
+            items = [FoodItem(**item) for item in raw_items]
+            results.append(MealEntry(
+                id=r["id"],
+                date=date.fromisoformat(r["date"]),
+                meal_type=r["meal_type"],
+                total_calories_kcal=r["total_calories_kcal"],
+                protein_g=r["protein_g"],
+                carbs_g=r["carbs_g"],
+                fat_g=r["fat_g"],
+                fiber_g=r["fiber_g"],
+                photo_data_url=r["photo_data_url"],
+                items=items,
+                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+            ))
+        return results
+
     def _seed_demo_data_if_empty(self):
         """Pré-charge 30 jours d'historique réaliste si la table weights est vide."""
         with self.get_connection() as conn:
@@ -376,3 +437,70 @@ class Database:
                 source="demo"
             )
             self.insert_activity(activity_entry)
+
+            # Repas de démonstration pour les 7 derniers jours (i <= 6)
+            if i <= 6:
+                # 1. Petit-déjeuner
+                self.insert_meal(MealEntry(
+                    date=day,
+                    meal_type="breakfast",
+                    total_calories_kcal=430.0,
+                    protein_g=24.0,
+                    carbs_g=52.0,
+                    fat_g=14.0,
+                    fiber_g=7.5,
+                    items=[
+                        FoodItem(name="Flocons d'avoine", portion_g=60.0, calories_kcal=219.0, protein_g=8.1, carbs_g=34.8, fat_g=4.2, fiber_g=6.0, confidence_score=0.9),
+                        FoodItem(name="Oeufs brouillés (x2)", portion_g=110.0, calories_kcal=157.0, protein_g=13.8, carbs_g=0.8, fat_g=10.4, fiber_g=0.0, confidence_score=0.95),
+                        FoodItem(name="Myrtilles fraîches", portion_g=80.0, calories_kcal=45.0, protein_g=0.6, carbs_g=11.2, fat_g=0.3, fiber_g=2.0, confidence_score=0.85),
+                    ]
+                ))
+
+                # 2. Déjeuner
+                self.insert_meal(MealEntry(
+                    date=day,
+                    meal_type="lunch",
+                    total_calories_kcal=685.0,
+                    protein_g=46.0,
+                    carbs_g=68.0,
+                    fat_g=22.0,
+                    fiber_g=8.0,
+                    items=[
+                        FoodItem(name="Blanc de poulet rôti", portion_g=160.0, calories_kcal=224.0, protein_g=41.6, carbs_g=0.0, fat_g=4.5, fiber_g=0.0, confidence_score=0.92),
+                        FoodItem(name="Riz basmati", portion_g=200.0, calories_kcal=260.0, protein_g=5.4, carbs_g=56.0, fat_g=0.6, fiber_g=0.8, confidence_score=0.90),
+                        FoodItem(name="Brocolis vapeur", portion_g=180.0, calories_kcal=63.0, protein_g=5.0, carbs_g=12.6, fat_g=0.7, fiber_g=4.7, confidence_score=0.88),
+                        FoodItem(name="Filet d'huile d'olive", portion_g=15.0, calories_kcal=132.0, protein_g=0.0, carbs_g=0.0, fat_g=15.0, fiber_g=0.0, confidence_score=0.85),
+                    ]
+                ))
+
+                # 3. Collation
+                self.insert_meal(MealEntry(
+                    date=day,
+                    meal_type="snack",
+                    total_calories_kcal=195.0,
+                    protein_g=4.0,
+                    carbs_g=34.0,
+                    fat_g=4.5,
+                    fiber_g=4.2,
+                    items=[
+                        FoodItem(name="Pomme", portion_g=160.0, calories_kcal=83.0, protein_g=0.5, carbs_g=22.4, fat_g=0.3, fiber_g=3.8, confidence_score=0.95),
+                        FoodItem(name="Amandes", portion_g=20.0, calories_kcal=116.0, protein_g=4.2, carbs_g=4.3, fat_g=10.0, fiber_g=2.5, confidence_score=0.90),
+                    ]
+                ))
+
+                # 4. Dîner
+                self.insert_meal(MealEntry(
+                    date=day,
+                    meal_type="dinner",
+                    total_calories_kcal=560.0,
+                    protein_g=38.0,
+                    carbs_g=38.0,
+                    fat_g=26.0,
+                    fiber_g=9.5,
+                    items=[
+                        FoodItem(name="Pavé de saumon", portion_g=150.0, calories_kcal=312.0, protein_g=30.0, carbs_g=0.0, fat_g=19.5, fiber_g=0.0, confidence_score=0.94),
+                        FoodItem(name="Haricots verts", portion_g=200.0, calories_kcal=62.0, protein_g=3.6, carbs_g=14.0, fat_g=0.4, fiber_g=5.4, confidence_score=0.89),
+                        FoodItem(name="Demi-avocat", portion_g=70.0, calories_kcal=112.0, protein_g=1.4, carbs_g=6.0, fat_g=10.3, fiber_g=4.7, confidence_score=0.91),
+                        FoodItem(name="Pain complet", portion_g=30.0, calories_kcal=75.0, protein_g=2.7, carbs_g=15.0, fat_g=0.5, fiber_g=1.8, confidence_score=0.88),
+                    ]
+                ))
