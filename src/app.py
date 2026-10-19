@@ -34,6 +34,7 @@ from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
+from src.auth import GoogleAuthPayload, GoogleConfigUpdate, parse_google_identity
 
 # Initialisation de FastAPI
 app = FastAPI(
@@ -127,6 +128,10 @@ class UserProfileInput(BaseModel):
     protein_target_per_kg: Optional[float] = Field(1.8, ge=0.8, le=3.5)
     preferred_ring: Optional[str] = "ringconn"
     preferred_scale: Optional[str] = "withings"
+    google_email: Optional[str] = None
+    google_name: Optional[str] = None
+    google_picture: Optional[str] = None
+    google_sub: Optional[str] = None
 
 
 class DeviceConnectInput(BaseModel):
@@ -464,6 +469,80 @@ def sync_device(req: DeviceSyncRequest):
             "activities_synced": len(activities)
         }
     }
+
+
+# =====================================================================
+# Endpoints Authentification Google Sign-In (OAuth2 / GIS)
+# =====================================================================
+
+@app.get("/api/auth/config")
+def get_auth_config():
+    """Retourne la configuration Google OAuth/GIS (Client ID, scopes et statut)."""
+    return db.get_google_config()
+
+
+@app.put("/api/auth/config")
+def update_auth_config(payload: GoogleConfigUpdate):
+    """Enregistre ou met à jour le Google Client ID depuis l'interface."""
+    res = db.set_google_client_id(payload.google_client_id)
+    return {
+        "status": "success",
+        "message": "Configuration Google Client ID enregistrée avec succès",
+        "config": res
+    }
+
+
+@app.post("/api/auth/google")
+def authenticate_google_user(payload: GoogleAuthPayload):
+    """Authentifie l'utilisateur via Google GIS (ID Token JWT) ou connexion directe 1-clic.
+    
+    Associe automatiquement le compte Google au profil utilisateur et
+    restaure/synchronise l'historique personnel.
+    """
+    user_info = parse_google_identity(payload)
+    session = db.login_google_user(
+        email=user_info["email"],
+        name=user_info["name"],
+        picture=user_info.get("picture", ""),
+        google_sub=user_info.get("google_sub", ""),
+        auth_method=user_info.get("auth_method", "google")
+    )
+    user_profile = db.get_user_profile()
+
+    # Assurer que l'appareil Google Health Connect est configuré pour cet utilisateur
+    db.update_user_device(
+        device_id="health_connect",
+        name="Google Health Connect (Android)",
+        device_type="mobile_aggregator",
+        connected=True,
+        auth_type="google_health_connect",
+        account_email=user_info["email"]
+    )
+
+    return {
+        "status": "success",
+        "message": f"Connecté avec succès en tant que {user_info['name']} ({user_info['email']})",
+        "session": session,
+        "profile": user_profile
+    }
+
+
+@app.get("/api/auth/me")
+def get_current_google_session():
+    """Retourne la session Google active et le profil associé."""
+    session = db.get_google_session()
+    profile = db.get_user_profile()
+    return {
+        "session": session,
+        "profile": profile
+    }
+
+
+@app.post("/api/auth/logout")
+def logout_google_session():
+    """Déconnecte la session active Google."""
+    res = db.logout_google_user()
+    return res
 
 
 # =====================================================================

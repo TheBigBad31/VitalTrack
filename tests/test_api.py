@@ -428,3 +428,74 @@ def test_daily_sync_execution():
     run_daily_sync()
 
 
+# =====================================================================
+# Tests Stage 7 : Authentification Google Sign-In & Liaison Profil
+# =====================================================================
+
+def test_google_auth_config(client):
+    """Vérifie la récupération et la mise à jour de la configuration Google OAuth."""
+    # 1. Lecture de la config initiale
+    res = client.get("/api/auth/config")
+    assert res.status_code == 200
+    cfg = res.json()
+    assert "google_client_id" in cfg
+    assert "scopes" in cfg
+    assert len(cfg["scopes"]) >= 3
+    assert cfg["demo_fallback_account"] == "sebastienlamoliate@gmail.com"
+
+    # 2. Mise à jour du client_id
+    test_id = "test-client-id-12345.apps.googleusercontent.com"
+    put_res = client.put("/api/auth/config", json={"google_client_id": test_id})
+    assert put_res.status_code == 200
+    updated_cfg = put_res.json()["config"]
+    assert updated_cfg["google_client_id"] == test_id
+    assert updated_cfg["is_configured"] is True
+
+
+def test_google_auth_and_profile_binding(client):
+    """Vérifie l'authentification Google, la session active /api/auth/me et la liaison avec /api/profile."""
+    # 1. État non-authentifié au départ
+    me_init = client.get("/api/auth/me").json()
+    assert me_init["session"]["is_authenticated"] is False
+
+    # 2. Authentification Google (avec compte Sébastien LAMOLIATE)
+    auth_payload = {
+        "email": "sebastienlamoliate@gmail.com",
+        "name": "Sébastien LAMOLIATE",
+        "picture": "https://lh3.googleusercontent.com/a/test-avatar=s96-c",
+        "sub": "google_sub_1092837465"
+    }
+    auth_res = client.post("/api/auth/google", json=auth_payload)
+    assert auth_res.status_code == 200
+    auth_data = auth_res.json()
+    assert auth_data["status"] == "success"
+    assert auth_data["session"]["is_authenticated"] is True
+    assert auth_data["session"]["email"] == "sebastienlamoliate@gmail.com"
+
+    # 3. Vérification de la session active via /api/auth/me
+    me_res = client.get("/api/auth/me")
+    assert me_res.status_code == 200
+    me_data = me_res.json()
+    assert me_data["session"]["is_authenticated"] is True
+    assert me_data["session"]["email"] == "sebastienlamoliate@gmail.com"
+    assert me_data["profile"]["google_email"] == "sebastienlamoliate@gmail.com"
+
+    # 4. Vérification de la liaison automatique dans /api/profile
+    prof_res = client.get("/api/profile")
+    assert prof_res.status_code == 200
+    prof_data = prof_res.json()
+    assert prof_data["profile"]["google_email"] == "sebastienlamoliate@gmail.com"
+    assert prof_data["profile"]["google_name"] == "Sébastien LAMOLIATE"
+
+    # 5. Déconnexion
+    logout_res = client.post("/api/auth/logout")
+    assert logout_res.status_code == 200
+    logout_data = logout_res.json()
+    assert logout_data["status"] == "success"
+
+    # Vérifier que la session active est désactivée
+    me_after = client.get("/api/auth/me").json()
+    assert me_after["session"]["is_authenticated"] is False
+
+
+

@@ -120,7 +120,41 @@ class Database:
                     protein_target_per_kg REAL NOT NULL DEFAULT 1.8,
                     preferred_ring TEXT DEFAULT 'ringconn',
                     preferred_scale TEXT DEFAULT 'withings',
+                    google_email TEXT,
+                    google_name TEXT,
+                    google_picture TEXT,
+                    google_sub TEXT,
                     updated_at TEXT NOT NULL
+                )
+            """)
+
+            # Migration douce si la table user_profile existait déjà sans les colonnes google
+            for col in ["google_email", "google_name", "google_picture", "google_sub"]:
+                try:
+                    cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} TEXT")
+                except sqlite3.OperationalError:
+                    pass
+
+            # Table de configuration de l'authentification Google
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS google_auth_config (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    google_client_id TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            # Table des sessions actives Google
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS google_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    picture TEXT,
+                    google_sub TEXT,
+                    auth_method TEXT NOT NULL DEFAULT 'google',
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    last_login TEXT NOT NULL
                 )
             """)
 
@@ -440,6 +474,10 @@ class Database:
         prot = float(data.get("protein_target_per_kg", current.get("protein_target_per_kg", 1.8)))
         ring = data.get("preferred_ring", current.get("preferred_ring", "ringconn"))
         scale = data.get("preferred_scale", current.get("preferred_scale", "withings"))
+        google_email = data.get("google_email", current.get("google_email"))
+        google_name = data.get("google_name", current.get("google_name"))
+        google_picture = data.get("google_picture", current.get("google_picture"))
+        google_sub = data.get("google_sub", current.get("google_sub"))
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -447,12 +485,115 @@ class Database:
                 UPDATE user_profile
                 SET name = ?, gender = ?, age = ?, height_cm = ?, target_weight_kg = ?,
                     goal_profile_id = ?, target_steps = ?, target_calories_intake = ?,
-                    protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?, updated_at = ?
+                    protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?,
+                    google_email = ?, google_name = ?, google_picture = ?, google_sub = ?,
+                    updated_at = ?
                 WHERE id = ?
-            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, now_str, current["id"]))
+            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, google_email, google_name, google_picture, google_sub, now_str, current["id"]))
             conn.commit()
 
         return self.get_user_profile()
+
+    def get_google_config(self) -> Dict[str, Any]:
+        """Récupère la configuration Google Client ID depuis la base ou les variables d'environnement."""
+        client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT google_client_id FROM google_auth_config ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row and row["google_client_id"]:
+                client_id = row["google_client_id"]
+
+        return {
+            "google_client_id": client_id,
+            "is_configured": bool(client_id),
+            "scopes": [
+                "openid",
+                "email",
+                "profile",
+                "https://www.googleapis.com/auth/fitness.activity.read",
+                "https://www.googleapis.com/auth/fitness.body.read"
+            ],
+            "demo_fallback_account": "sebastienlamoliate@gmail.com"
+        }
+
+    def set_google_client_id(self, client_id: str) -> Dict[str, Any]:
+        """Enregistre ou met à jour le Google Client ID dans la base de données."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM google_auth_config")
+            cursor.execute("""
+                INSERT INTO google_auth_config (google_client_id, updated_at)
+                VALUES (?, ?)
+            """, (client_id.strip(), now_str))
+            conn.commit()
+        return self.get_google_config()
+
+    def login_google_user(self, email: str, name: str, picture: str = "", google_sub: str = "", auth_method: str = "google") -> Dict[str, Any]:
+        """Enregistre ou active la session Google et lie automatiquement le profil utilisateur."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Mettre à jour toutes les autres sessions comme inactives
+            cursor.execute("UPDATE google_sessions SET is_active = 0")
+            cursor.execute("""
+                INSERT INTO google_sessions (email, name, picture, google_sub, auth_method, is_active, last_login)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                ON CONFLICT(email) DO UPDATE SET
+                    name = excluded.name,
+                    picture = excluded.picture,
+                    google_sub = excluded.google_sub,
+                    auth_method = excluded.auth_method,
+                    is_active = 1,
+                    last_login = excluded.last_login
+            """, (email, name, picture, google_sub, auth_method, now_str))
+            conn.commit()
+
+        # Lier au profil utilisateur principal
+        self.update_user_profile({
+            "google_email": email,
+            "google_name": name,
+            "google_picture": picture,
+            "google_sub": google_sub
+        })
+
+        return self.get_google_session()
+
+    def get_google_session(self) -> Dict[str, Any]:
+        """Récupère la session Google active s'il y en a une."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM google_sessions WHERE is_active = 1 ORDER BY last_login DESC LIMIT 1")
+            row = cursor.fetchone()
+
+        if row:
+            session_data = dict(row)
+            return {
+                "is_authenticated": True,
+                "email": session_data["email"],
+                "name": session_data["name"],
+                "picture": session_data["picture"],
+                "google_sub": session_data["google_sub"],
+                "auth_method": session_data["auth_method"],
+                "last_login": session_data["last_login"]
+            }
+
+        return {
+            "is_authenticated": False,
+            "email": None,
+            "name": None,
+            "picture": None,
+            "google_sub": None
+        }
+
+    def logout_google_user(self) -> Dict[str, Any]:
+        """Déconnecte la session active Google."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE google_sessions SET is_active = 0")
+            conn.commit()
+        return {"status": "success", "message": "Session Google fermée avec succès"}
 
     def get_user_devices(self) -> List[Dict[str, Any]]:
         """Récupère l'état des appareils configurés dans user_devices."""
@@ -688,8 +829,8 @@ class Database:
                 p = data["profile"]
                 now_str = datetime.now(timezone.utc).isoformat()
                 cursor.execute("""
-                    INSERT INTO user_profile (id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, updated_at)
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO user_profile (id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, google_email, google_name, google_picture, google_sub, updated_at)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         name = excluded.name,
                         gender = excluded.gender,
@@ -702,6 +843,10 @@ class Database:
                         protein_target_per_kg = excluded.protein_target_per_kg,
                         preferred_ring = excluded.preferred_ring,
                         preferred_scale = excluded.preferred_scale,
+                        google_email = COALESCE(excluded.google_email, user_profile.google_email),
+                        google_name = COALESCE(excluded.google_name, user_profile.google_name),
+                        google_picture = COALESCE(excluded.google_picture, user_profile.google_picture),
+                        google_sub = COALESCE(excluded.google_sub, user_profile.google_sub),
                         updated_at = excluded.updated_at
                 """, (
                     p.get("name", "Sébastien"),
@@ -715,6 +860,10 @@ class Database:
                     float(p.get("protein_target_per_kg", 1.8)),
                     p.get("preferred_ring", "ringconn"),
                     p.get("preferred_scale", "withings"),
+                    p.get("google_email"),
+                    p.get("google_name"),
+                    p.get("google_picture"),
+                    p.get("google_sub"),
                     now_str
                 ))
 

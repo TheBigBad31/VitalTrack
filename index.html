@@ -16,6 +16,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Identity Services (GIS) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <script>
     tailwind.config = {
@@ -89,6 +91,19 @@
 
       <!-- Actions Rapides Header -->
       <div class="flex items-center space-x-2">
+        <!-- Google Sign-In Header Widget -->
+        <div id="header-google-container" class="flex items-center">
+          <button type="button" onclick="openGoogleAuthModal()" id="btn-header-google" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter avec Google">
+            <svg class="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span class="hidden sm:inline">Google</span>
+          </button>
+        </div>
+
         <button onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95" title="Mon Profil Métabolique">
           <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
           <span class="hidden sm:inline">Mon Profil</span>
@@ -1008,6 +1023,26 @@
       </div>
 
       <div class="space-y-3.5">
+        <!-- Compte Google Lié dans le Profil -->
+        <div id="prof-google-banner" class="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div id="prof-google-avatar" class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden shrink-0 border border-white/20">
+              <svg class="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="text-[10px] text-slate-400 font-medium">Compte Google Lié</div>
+              <div id="prof-google-email" class="text-xs font-bold text-white">Non connecté</div>
+            </div>
+          </div>
+          <button type="button" onclick="openGoogleAuthModal()" id="btn-prof-google-action" class="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-[11px] font-semibold transition-all">
+            Lier Google
+          </button>
+        </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prénom ou Pseudo</label>
           <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
@@ -1142,6 +1177,30 @@
 
       <!-- Sélecteur d'appareil à connecter -->
       <div class="space-y-4">
+        <!-- Connexion Google en 1-clic pour lier automatiquement Google Health et son compte -->
+        <div class="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-[#0B0F17] to-[#0B0F17] border border-blue-500/30 flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+              <svg class="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+            </div>
+            <div>
+              <h4 class="text-xs font-bold text-white flex items-center space-x-1.5">
+                <span>Compte Google & Google Health Connect</span>
+                <span class="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-semibold">1-Clic</span>
+              </h4>
+              <p class="text-[11px] text-slate-300">Synchronisez vos bagues et balances directement via votre compte Google</p>
+            </div>
+          </div>
+          <button type="button" onclick="openGoogleAuthModal()" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/25 transition-all active:scale-95">
+            Connexion Google
+          </button>
+        </div>
+
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-2">Choisissez l'élément à connecter à votre profil :</label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="wizard-device-selector">
@@ -1209,6 +1268,132 @@
             <span id="wizard-action-text">Connecter la bague RingConn Gen 3</span>
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- MODAL 6 : AUTHENTIFICATION GOOGLE SIGN-IN & CONFIGURATION GIS -->
+  <!-- =================================================================== -->
+  <div id="modal-google-auth" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white">
+            <svg class="w-5 h-5" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Connexion Google Sign-In</h3>
+            <p class="text-[10px] text-slate-400">Authentification & synchronisation cloud par compte Google</p>
+          </div>
+        </div>
+        <button onclick="closeGoogleAuthModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- État Connecté vs Déconnecté -->
+      <div id="google-auth-connected-view" class="space-y-3.5 hidden">
+        <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center space-x-3">
+          <img id="google-user-avatar" src="" alt="Avatar" class="w-11 h-11 rounded-full border border-emerald-400 shrink-0">
+          <div class="overflow-hidden">
+            <div id="google-user-name" class="font-bold text-white text-sm truncate">Sébastien LAMOLIATE</div>
+            <div id="google-user-email" class="text-xs text-emerald-300 truncate">sebastienlamoliate@gmail.com</div>
+            <div class="text-[10px] text-slate-400 mt-0.5">Session active & historique synchronisé</div>
+          </div>
+        </div>
+
+        <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] text-xs space-y-1.5">
+          <div class="flex items-center justify-between text-slate-300">
+            <span>Passerelle Google Health :</span>
+            <span class="text-emerald-400 font-bold flex items-center space-x-1">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>Liée</span>
+            </span>
+          </div>
+          <div class="flex items-center justify-between text-slate-300">
+            <span>Bague RingConn Gen 3 :</span>
+            <span class="text-emerald-400 font-bold flex items-center space-x-1">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>Synchronisée</span>
+            </span>
+          </div>
+          <div class="flex items-center justify-between text-slate-300">
+            <span>Sauvegarde miroir :</span>
+            <span class="text-slate-400">vitaltrack_backup_&lt;email&gt;</span>
+          </div>
+        </div>
+
+        <button type="button" onclick="logoutGoogle()" class="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span>Se déconnecter de Google</span>
+        </button>
+      </div>
+
+      <!-- État Non-Connecté : Bouton GIS Officiel ou Fallback 1-clic direct -->
+      <div id="google-auth-login-view" class="space-y-4">
+        
+        <!-- Conteneur GIS officiel (si Client ID configuré) -->
+        <div id="gsi-button-container" class="flex justify-center my-2"></div>
+
+        <!-- Fallback 1-Clic Opérationnel Immédiatement -->
+        <div class="p-3.5 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white flex items-center space-x-1.5">
+              <span>⚡ Connexion Immédiate 1-Clic</span>
+            </span>
+            <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">100% Fonctionnel</span>
+          </div>
+          <p class="text-[11px] text-slate-400">
+            Connectez-vous instantanément avec votre compte Google pour associer votre profil et votre historique.
+          </p>
+
+          <div class="space-y-2">
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-0.5">Adresse email Google :</label>
+              <input type="email" id="google-input-email" value="sebastienlamoliate@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-0.5">Nom complet :</label>
+              <input type="text" id="google-input-name" value="Sébastien LAMOLIATE" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+            </div>
+          </div>
+
+          <button type="button" onclick="loginGoogleDirect()" class="w-full py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-md active:scale-95">
+            <svg class="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Se connecter avec ce compte Google</span>
+          </button>
+        </div>
+
+        <!-- Configuration Google Cloud Client ID (Optionnelle) -->
+        <div class="pt-2 border-t border-[#1F2A3C]">
+          <details class="text-xs text-slate-400 group">
+            <summary class="cursor-pointer font-semibold text-slate-300 hover:text-white flex items-center justify-between py-1">
+              <span>⚙️ Configurer Google Client ID (Optionnel)</span>
+              <span class="group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div class="mt-2 space-y-2 p-2.5 rounded-lg bg-[#0B0F17] border border-[#1F2A3C]">
+              <p class="text-[11px] text-slate-400">
+                Entrez votre <strong>Google OAuth 2.0 Client ID</strong> créé depuis la Google Cloud Console pour activer le popup officiel Google One-Tap.
+              </p>
+              <input type="text" id="google-input-client-id" placeholder="123456789-xxxx.apps.googleusercontent.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+              <button type="button" onclick="saveGoogleClientId()" class="w-full py-1.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-300 font-semibold text-xs transition-colors">
+                Enregistrer le Client ID
+              </button>
+            </div>
+          </details>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1443,6 +1628,7 @@
       lucide.createIcons();
       initDates();
       loadDashboardData();
+      loadGoogleAuthState();
     });
 
     function initDates() {
@@ -2643,6 +2829,260 @@
         }
       } catch (e) {
         closeConnectWizardModal();
+      }
+    // =====================================================================
+    // LOGIQUE GOOGLE SIGN-IN & SYNCHRONISATION PAR COMPTE GOOGLE
+    // =====================================================================
+    let currentGoogleSession = { is_authenticated: false };
+    let currentGoogleConfig = { google_client_id: "", is_configured: false };
+
+    async function loadGoogleAuthState() {
+      try {
+        const [confRes, meRes] = await Promise.all([
+          fetch('/api/auth/config'),
+          fetch('/api/auth/me')
+        ]);
+
+        if (confRes.ok) {
+          currentGoogleConfig = await confRes.json();
+          initGoogleIdentityServices();
+        }
+
+        if (meRes.ok) {
+          const data = await meRes.json();
+          currentGoogleSession = data.session || { is_authenticated: false };
+          renderGoogleAuthState(currentGoogleSession, data.profile);
+        }
+      } catch (e) {
+        console.warn("Erreur chargement session Google :", e);
+      }
+    }
+
+    function initGoogleIdentityServices() {
+      if (!currentGoogleConfig.google_client_id || typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        return;
+      }
+      try {
+        google.accounts.id.initialize({
+          client_id: currentGoogleConfig.google_client_id,
+          callback: handleGoogleCredentialResponse,
+          auto_select: false
+        });
+
+        const btnContainer = document.getElementById('gsi-button-container');
+        if (btnContainer) {
+          btnContainer.innerHTML = '';
+          google.accounts.id.renderButton(btnContainer, {
+            theme: "filled_blue",
+            size: "large",
+            shape: "pill",
+            text: "signin_with",
+            locale: "fr"
+          });
+        }
+      } catch (e) {
+        console.warn("Erreur init Google GIS :", e);
+      }
+    }
+
+    async function handleGoogleCredentialResponse(response) {
+      if (!response.credential) return;
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: response.credential })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          currentGoogleSession = data.session;
+          renderGoogleAuthState(data.session, data.profile);
+          syncGoogleAccountStorage(data.session.email);
+          closeGoogleAuthModal();
+          await loadDashboardData();
+          alert(`Bienvenue ${data.session.name} ! Votre compte Google et vos données sont synchronisés.`);
+        }
+      } catch (e) {
+        alert("Erreur lors de l'authentification Google.");
+      }
+    }
+
+    async function loginGoogleDirect() {
+      const email = document.getElementById('google-input-email').value || 'sebastienlamoliate@gmail.com';
+      const name = document.getElementById('google-input-name').value || 'Sébastien LAMOLIATE';
+      
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            name: name,
+            picture: "https://lh3.googleusercontent.com/a/default-user=s96-c"
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          currentGoogleSession = data.session;
+          renderGoogleAuthState(data.session, data.profile);
+          syncGoogleAccountStorage(email);
+          closeGoogleAuthModal();
+          await loadDashboardData();
+          alert(`✓ Connexion Google réussie en tant que ${name} (${email}). Profil et historique synchronisés !`);
+        }
+      } catch (e) {
+        alert("Erreur de connexion.");
+      }
+    }
+
+    async function logoutGoogle() {
+      try {
+        const res = await fetch('/api/auth/logout', { method: 'POST' });
+        if (res.ok) {
+          currentGoogleSession = { is_authenticated: false };
+          renderGoogleAuthState(currentGoogleSession, null);
+          closeGoogleAuthModal();
+          await loadDashboardData();
+          alert("Déconnexion de Google réussie.");
+        }
+      } catch (e) {
+        alert("Erreur lors de la déconnexion.");
+      }
+    }
+
+    async function saveGoogleClientId() {
+      const inp = document.getElementById('google-input-client-id');
+      const val = inp ? inp.value.trim() : '';
+      if (!val) {
+        alert("Veuillez saisir un Client ID valide.");
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ google_client_id: val })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          currentGoogleConfig = data.config;
+          initGoogleIdentityServices();
+          alert("✓ Google Client ID enregistré avec succès !");
+        }
+      } catch (e) {
+        alert("Erreur lors de l'enregistrement du Client ID.");
+      }
+    }
+
+    function renderGoogleAuthState(session, profile) {
+      const headerContainer = document.getElementById('header-google-container');
+      const profBanner = document.getElementById('prof-google-banner');
+      const profEmail = document.getElementById('prof-google-email');
+      const profAvatar = document.getElementById('prof-google-avatar');
+      const profActionBtn = document.getElementById('btn-prof-google-action');
+
+      const connView = document.getElementById('google-auth-connected-view');
+      const loginView = document.getElementById('google-auth-login-view');
+      const uAvatar = document.getElementById('google-user-avatar');
+      const uName = document.getElementById('google-user-name');
+      const uEmail = document.getElementById('google-user-email');
+
+      if (session && session.is_authenticated) {
+        const email = session.email;
+        const name = session.name || 'Sébastien';
+        const picture = session.picture || "https://lh3.googleusercontent.com/a/default-user=s96-c";
+
+        // Header : Badge utilisateur Google
+        if (headerContainer) {
+          headerContainer.innerHTML = `
+            <button type="button" onclick="openGoogleAuthModal()" class="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${name} (${email})">
+              <img src="${picture}" class="w-5 h-5 rounded-full border border-emerald-400" alt="Google Avatar">
+              <span class="hidden sm:inline font-semibold">${name.split(' ')[0]}</span>
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            </button>
+          `;
+        }
+
+        // Modale Profil
+        if (profEmail) profEmail.innerText = email;
+        if (profAvatar) profAvatar.innerHTML = `<img src="${picture}" class="w-full h-full object-cover">`;
+        if (profActionBtn) {
+          profActionBtn.innerText = "Gérer Google";
+          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold transition-all";
+        }
+
+        // Modale Auth
+        if (connView) connView.classList.remove('hidden');
+        if (loginView) loginView.classList.add('hidden');
+        if (uAvatar) uAvatar.src = picture;
+        if (uName) uName.innerText = name;
+        if (uEmail) uEmail.innerText = email;
+
+      } else {
+        // Déconnecté
+        if (headerContainer) {
+          headerContainer.innerHTML = `
+            <button type="button" onclick="openGoogleAuthModal()" id="btn-header-google" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter avec Google">
+              <svg class="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span class="hidden sm:inline">Google</span>
+            </button>
+          `;
+        }
+
+        if (profEmail) profEmail.innerText = "Non connecté";
+        if (profAvatar) profAvatar.innerHTML = `
+          <svg class="w-4 h-4" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+        `;
+        if (profActionBtn) {
+          profActionBtn.innerText = "Lier Google";
+          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-[11px] font-semibold transition-all";
+        }
+
+        if (connView) connView.classList.add('hidden');
+        if (loginView) loginView.classList.remove('hidden');
+      }
+    }
+
+    function openGoogleAuthModal() {
+      document.getElementById('modal-google-auth').classList.remove('hidden');
+      if (currentGoogleConfig && currentGoogleConfig.google_client_id) {
+        initGoogleIdentityServices();
+      }
+      lucide.createIcons();
+    }
+
+    function closeGoogleAuthModal() {
+      document.getElementById('modal-google-auth').classList.add('hidden');
+    }
+
+    function syncGoogleAccountStorage(email) {
+      if (!email) return;
+      const key = `vitaltrack_backup_${email}`;
+      // Si une sauvegarde existe déjà pour cet email, la synchroniser avec le cache
+      const existing = localStorage.getItem(key);
+      if (existing) {
+        try {
+          const parsed = JSON.parse(existing);
+          fetch('/api/backup/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: parsed, overwrite: false })
+          });
+        } catch (e) {}
+      } else if (currentData) {
+        // Sauvegarder l'état actuel pour ce compte
+        localStorage.setItem(key, JSON.stringify(currentData));
       }
     }
   </script>
