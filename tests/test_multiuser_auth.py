@@ -149,3 +149,78 @@ def test_auth_login_endpoint(isolated_app):
     assert data["status"] == "success"
     assert "access_token" in data
     assert data["user"]["email"] == "charlie@vitaltrack.io"
+
+
+def test_guest_session_and_conversion(isolated_app):
+    """Teste la création de session sandbox invité et sa conversion 1-clic en compte permanent."""
+    client, db = isolated_app
+
+    # 1. Créer une session invité
+    guest_res = client.post("/api/auth/guest-session")
+    assert guest_res.status_code == 200
+    guest_data = guest_res.json()
+    assert guest_data["status"] == "success"
+    session_info = guest_data["guest_session"]
+    guest_token = session_info["guest_token"]
+    assert guest_token.startswith("guest_")
+    assert session_info["is_converted"] is False
+
+    # 2. Données saisies en mode sandbox (ex: pesée et repas)
+    sample_guest_data = {
+        "weights": [
+            {
+                "date": "2026-10-18",
+                "weight_kg": 80.5,
+                "body_fat_pct": 19.5,
+                "source": "guest",
+                "notes": "Pesée invité en sandbox"
+            }
+        ],
+        "meals": [
+            {
+                "date": "2026-10-18",
+                "meal_type": "lunch",
+                "total_calories_kcal": 650.0,
+                "protein_g": 42.0,
+                "carbs_g": 55.0,
+                "fat_g": 20.0,
+                "items": [
+                    {"name": "Blanc de poulet", "weight_g": 180, "calories_kcal": 297, "protein_g": 38, "carbs_g": 0, "fat_g": 4}
+                ]
+            }
+        ]
+    }
+
+    # 3. Conversion 1-clic vers un compte permanent Google
+    convert_payload = {
+        "guest_token": guest_token,
+        "email": "guest.converted@vitaltrack.io",
+        "name": "Utilisateur Invité Converti",
+        "auth_method": "google_one_click",
+        "guest_data": sample_guest_data
+    }
+
+    convert_res = client.post("/api/auth/convert-guest", json=convert_payload)
+    assert convert_res.status_code == 200
+    conv_data = convert_res.json()
+    assert conv_data["status"] == "success"
+    assert "access_token" in conv_data
+    token = conv_data["access_token"]
+    assert conv_data["migrated_data"]["weights"] == 1
+    assert conv_data["migrated_data"]["meals"] == 1
+
+    # 4. Vérifier que l'utilisateur permanent a bien ses données dans son compte isolé
+    headers = {"Authorization": f"Bearer {token}"}
+    w_res = client.get("/api/weights", headers=headers)
+    assert w_res.status_code == 200
+    weights = w_res.json()
+    user_guest_weights = [w for w in weights if w["date"] == "2026-10-18"]
+    assert len(user_guest_weights) == 1
+    assert user_guest_weights[0]["weight_kg"] == 80.5
+    assert user_guest_weights[0]["source"] == "guest"
+
+    # Vérifier que les repas sont également présents
+    m_res = client.get("/api/meals", headers=headers)
+    assert m_res.status_code == 200
+    meals = m_res.json()
+    assert any(m["date"] == "2026-10-18" and m["total_calories_kcal"] == 650.0 for m in meals)

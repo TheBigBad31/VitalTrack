@@ -313,10 +313,23 @@ class Database:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS guest_sessions (
+                        id SERIAL PRIMARY KEY,
+                        guest_token TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        last_activity TEXT NOT NULL,
+                        is_converted INTEGER NOT NULL DEFAULT 0,
+                        converted_to_email TEXT,
+                        converted_at TEXT
+                    );
+                """)
+
                 # Index optimisés PostgreSQL
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_guest_sessions_token ON guest_sessions(guest_token);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -448,6 +461,18 @@ class Database:
                         auth_method TEXT NOT NULL DEFAULT 'google',
                         is_active INTEGER NOT NULL DEFAULT 1,
                         last_login TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS guest_sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        guest_token TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        last_activity TEXT NOT NULL,
+                        is_converted INTEGER NOT NULL DEFAULT 0,
+                        converted_to_email TEXT,
+                        converted_at TEXT
                     );
                 """)
 
@@ -1145,6 +1170,142 @@ class Database:
             cursor.execute("UPDATE google_sessions SET is_active = 0")
             conn.commit()
         return {"status": "success", "message": "Session Google fermée avec succès"}
+
+    # ---------------------------------------------------------
+    # Mode Invité / Sandbox Isolé & Migration 1-Clic
+    # ---------------------------------------------------------
+
+    def create_guest_session(self, guest_token: Optional[str] = None) -> Dict[str, Any]:
+        """Crée une session temporaire d'invité (sandbox) avec un token unique."""
+        token = guest_token or f"guest_{uuid.uuid4().hex[:16]}"
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO guest_sessions (guest_token, created_at, last_activity, is_converted)
+                    VALUES (?, ?, ?, 0)
+                    ON CONFLICT(guest_token) DO UPDATE SET
+                        last_activity = EXCLUDED.last_activity
+                """, (token, now_str, now_str))
+            else:
+                cursor.execute("""
+                    INSERT INTO guest_sessions (guest_token, created_at, last_activity, is_converted)
+                    VALUES (?, ?, ?, 0)
+                    ON CONFLICT(guest_token) DO UPDATE SET
+                        last_activity = excluded.last_activity
+                """, (token, now_str, now_str))
+            conn.commit()
+
+        return {
+            "guest_token": token,
+            "is_guest": True,
+            "created_at": now_str,
+            "last_activity": now_str,
+            "is_converted": False
+        }
+
+    def get_guest_session(self, guest_token: str) -> Optional[Dict[str, Any]]:
+        """Récupère l'état d'une session invité via son token."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM guest_sessions WHERE guest_token = ?", (guest_token,))
+            row = cursor.fetchone()
+
+        if row:
+            return {
+                "guest_token": row["guest_token"],
+                "is_guest": True,
+                "created_at": row["created_at"],
+                "last_activity": row["last_activity"],
+                "is_converted": bool(row["is_converted"]),
+                "converted_to_email": row["converted_to_email"],
+                "converted_at": row["converted_at"]
+            }
+        return None
+
+    def get_or_create_guest_session(self, guest_token: Optional[str] = None) -> Dict[str, Any]:
+        """Récupère une session invité existante ou en instancie une nouvelle."""
+        if guest_token:
+            sess = self.get_guest_session(guest_token)
+            if sess:
+                now_str = datetime.now(timezone.utc).isoformat()
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE guest_sessions SET last_activity = ? WHERE guest_token = ?", (now_str, guest_token))
+                    conn.commit()
+                sess["last_activity"] = now_str
+                return sess
+        return self.create_guest_session(guest_token)
+
+    def convert_guest_to_permanent_user(
+        self,
+        guest_token: str,
+        user_email: str,
+        user_name: Optional[str] = None,
+        picture: Optional[str] = None,
+        google_sub: Optional[str] = None,
+        auth_method: str = "google_conversion",
+        guest_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Convertit 1-clic la session d'essai en compte permanent sans perte de données.
+        
+        Réassocie les pesées, repas et activités créés durant la session d'essai
+        vers le nouveau compte permanent dans Neon PostgreSQL / SQLite.
+        """
+        now_str = datetime.now(timezone.utc).isoformat()
+        migrated_counts = {"weights": 0, "meals": 0, "activities": 0}
+
+        # 1. Enregistrement ou création du compte permanent
+        user = self.get_or_create_user(
+            email=user_email,
+            name=user_name,
+            picture=picture,
+            auth_provider="google" if "google" in auth_method else "email",
+            google_sub=google_sub
+        )
+
+        session = self.login_google_user(
+            email=user_email,
+            name=user_name or user_email.split("@")[0].capitalize(),
+            picture=picture or "",
+            google_sub=google_sub or "",
+            auth_method=auth_method
+        )
+
+        # 2. Importer les données passées explicitement depuis la session d'essai
+        if guest_data and isinstance(guest_data, dict):
+            import_res = self.import_full_backup(guest_data, overwrite=False, user_id=user["id"])
+            migrated_counts["weights"] += import_res["imported"]["weights"]
+            migrated_counts["meals"] += import_res["imported"]["meals"]
+            migrated_counts["activities"] += import_res["imported"]["activities"]
+
+        # 3. Marquer la session d'essai comme convertie
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE guest_sessions
+                SET is_converted = 1,
+                    converted_to_email = ?,
+                    converted_at = ?
+                WHERE guest_token = ?
+            """, (user_email, now_str, guest_token))
+            conn.commit()
+
+        # 4. Récupération du profil mis à jour
+        profile = self.get_user_profile(user_id=user["id"])
+
+        return {
+            "status": "success",
+            "message": f"Session invité convertie avec succès en compte permanent pour {user_email}",
+            "guest_token": guest_token,
+            "session": session,
+            "user": user,
+            "profile": profile,
+            "migrated_data": migrated_counts,
+            "converted_at": now_str
+        }
+
 
     # ---------------------------------------------------------
     # Données Démo & Initialisation

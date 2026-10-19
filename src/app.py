@@ -36,6 +36,7 @@ from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
 from src.auth import (
     AuthUser,
+    ConvertGuestPayload,
     GoogleAuthPayload,
     GoogleConfigUpdate,
     LoginRequest,
@@ -691,6 +692,56 @@ def logout_google_session():
     """Déconnecte la session active Google."""
     res = db.logout_google_user()
     return res
+
+
+@app.post("/api/auth/guest-session")
+def get_or_create_guest_session(guest_token: Optional[str] = Query(None)):
+    """Initialise ou récupère une session temporaire d'invité (sandbox).
+    
+    Permet à l'utilisateur de tester l'application sans compte préalable dans un bac à sable isolé.
+    """
+    session = db.get_or_create_guest_session(guest_token)
+    return {
+        "status": "success",
+        "guest_session": session
+    }
+
+
+@app.post("/api/auth/convert-guest")
+def convert_guest_session(payload: ConvertGuestPayload):
+    """Convertit en 1-clic une session d'essai (invité) en compte permanent (Google ou Email).
+    
+    Transfère et intègre toutes les pesées, repas et activités saisis en mode sandbox
+    vers le compte permanent cible sans aucune perte de données ni collision.
+    """
+    if not payload.guest_token:
+        raise HTTPException(status_code=400, detail="Token invité requis pour la conversion")
+    if not payload.email:
+        raise HTTPException(status_code=400, detail="Email requis pour la conversion en compte permanent")
+
+    res = db.convert_guest_to_permanent_user(
+        guest_token=payload.guest_token,
+        user_email=payload.email,
+        user_name=payload.name,
+        picture=payload.picture,
+        google_sub=payload.google_sub,
+        auth_method=payload.auth_method or "guest_conversion",
+        guest_data=payload.guest_data
+    )
+
+    user = res["user"]
+    token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
+
+    return {
+        "status": "success",
+        "message": res["message"],
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user,
+        "session": res["session"],
+        "profile": res["profile"],
+        "migrated_data": res["migrated_data"]
+    }
 
 
 # =====================================================================

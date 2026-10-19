@@ -158,3 +158,15 @@ def parse_google_identity(payload: GoogleAuthPayload) -> Dict[str, Any]:
         "is_authenticated": True,
         "auth_method": "google_quick_signin"
     }
+
+
+class ConvertGuestPayload(BaseModel):
+    """Payload de conversion d'une session invité / sandbox vers un compte permanent."""
+    guest_token: Optional[str] = Field(None, description="Token temporaire de session invité")
+    email: str = Field(..., description="Email du nouveau compte permanent")
+    name: Optional[str] = Field(None, description="Nom complet de l'utilisateur permanent")
+    picture: Optional[str] = Field(None, description="Photo de profil")
+    google_sub: Optional[str] = Field(None, description="Identifiant Google sub si conversion via Google")
+    auth_method: str = Field("google_conversion", description="Méthode d'authentification permanente")
+    guest_data: Optional[Dict[str, Any]] = Field(None, description="Données d'essai créées pendant la session invité")
+
