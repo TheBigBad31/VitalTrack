@@ -92,9 +92,13 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
             hrv = payload.get("hrv_ms", payload.get("hrv"))
             sleep_sc = payload.get("sleep_score")
 
-            act_source = "health_connect" if "connect" in source_name or "android" in source_name else (
-                "apple_health" if "apple" in source_name else (
-                    "strava" if "strava" in source_name else "demo"
+            act_source = "ringconn" if "ringconn" in source_name.lower() or "ring" in source_name.lower() else (
+                "oura" if "oura" in source_name.lower() else (
+                    "health_connect" if "connect" in source_name or "android" in source_name else (
+                        "apple_health" if "apple" in source_name else (
+                            "strava" if "strava" in source_name else "demo"
+                        )
+                    )
                 )
             )
 

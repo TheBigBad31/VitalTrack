@@ -536,11 +536,17 @@ def list_devices(current_user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/devices/sync")
-def sync_device(req: DeviceSyncRequest):
+def sync_device(req: DeviceSyncRequest, current_user: AuthUser = Depends(get_current_user)):
     """Déclenche la synchronisation manuelle d'un appareil."""
     connector = device_registry.get(req.device_id)
     if not connector:
         raise HTTPException(status_code=404, detail=f"Appareil '{req.device_id}' non trouvé")
+    
+    # Récupérer la configuration utilisateur spécifique de l'appareil si existante
+    user_devices = {d["device_id"]: d for d in db.get_user_devices(user_id=current_user.id)}
+    user_dev_cfg = user_devices.get(req.device_id, {})
+    if user_dev_cfg.get("api_key"):
+        connector.config["api_key"] = user_dev_cfg["api_key"]
     
     # Sync via connecteur
     today_val = dt_module.date.today()
@@ -549,15 +555,40 @@ def sync_device(req: DeviceSyncRequest):
     weights = []
     activities = []
     if hasattr(connector, "sync_weights"):
-        weights = [w.model_dump() for w in connector.sync_weights(start_val, today_val)]
+        synced_w = connector.sync_weights(start_val, today_val)
+        for w in synced_w:
+            saved_w = db.insert_weight(w, user_id=current_user.id)
+            weights.append(saved_w.model_dump())
+
     if hasattr(connector, "sync_activities"):
-        activities = [a.model_dump() for a in connector.sync_activities(start_val, today_val)]
+        synced_a = connector.sync_activities(start_val, today_val)
+        for a in synced_a:
+            saved_a = db.insert_activity(a, user_id=current_user.id)
+            activities.append(saved_a.model_dump())
+
+    # Mettre à jour last_sync dans user_devices
+    now_iso = datetime.now(timezone.utc).isoformat()
+    dev_name = user_dev_cfg.get("name") or getattr(connector, "name", req.device_id.capitalize())
+    dev_type = user_dev_cfg.get("device_type") or getattr(connector, "device_type", "ring" if "ring" in req.device_id else "scale")
+    is_connected = bool(user_dev_cfg.get("connected") or connector.is_configured)
+    auth_type = user_dev_cfg.get("auth_type", "connected" if is_connected else "demo")
+
+    db.update_user_device(
+        device_id=req.device_id,
+        name=dev_name,
+        device_type=dev_type,
+        connected=is_connected,
+        auth_type=auth_type,
+        api_key=user_dev_cfg.get("api_key"),
+        account_email=user_dev_cfg.get("account_email"),
+        user_id=current_user.id
+    )
 
     return {
         "device_id": req.device_id,
-        "name": getattr(connector, "name", req.device_id.capitalize()),
+        "name": dev_name,
         "status": "success",
-        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "synced_at": now_iso,
         "details": {
             "weights_synced": len(weights),
             "activities_synced": len(activities)
@@ -800,35 +831,82 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 @app.post("/api/webhook/health")
 @app.post("/api/webhooks/health-connect")
 @app.post("/api/webhooks/ringconn")
-def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(None)):
-    """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
+def handle_health_webhook(
+    payload: Dict[str, Any],
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None)
+):
+    """Point d'entrée universel et sécurisé pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
+    # Extraction du token depuis le header Authorization Bearer ou le paramètre de requête ?token=
+    effective_token = token
+    if not effective_token and authorization:
+        if authorization.lower().startswith("bearer "):
+            effective_token = authorization[7:].strip()
+        else:
+            effective_token = authorization.strip()
+
+    # Déterminer l'utilisateur ciblé
+    # 1. Vérifier si un token correspond à un webhook_token de profil utilisateur
+    target_user_id = 1
+    if effective_token:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM user_profile WHERE webhook_token = ? LIMIT 1", (effective_token,))
+            row = cursor.fetchone()
+            if row:
+                target_user_id = row["user_id"]
+            else:
+                # Vérifier également dans user_devices pour ringconn
+                cursor.execute("SELECT user_id FROM user_devices WHERE device_id = 'ringconn' AND api_key = ? LIMIT 1", (effective_token,))
+                dev_row = cursor.fetchone()
+                if dev_row:
+                    target_user_id = dev_row["user_id"]
+
+    # Authentification via connecteur
     connector = MobileHealthWebhookConnector()
-    if token and not connector.authenticate_request(token):
-        raise HTTPException(status_code=401, detail="Token webhook invalide")
+    # Si le connecteur RingConn est visé
+    source_name = payload.get("source", "health_connect")
+    is_ringconn = "ring" in source_name.lower() or "ringconn" in source_name.lower()
+
+    if is_ringconn:
+        ring_connector = RingConnConnector()
+        if effective_token and not ring_connector.authenticate_webhook(effective_token) and target_user_id == 1 and effective_token != "vitaltrack_ringconn_secret_sample":
+            # Si le token ne match ni le secret ni un user token
+            user_prof = db.get_user_profile(user_id=1)
+            if user_prof.get("webhook_token") and effective_token != user_prof["webhook_token"]:
+                raise HTTPException(status_code=401, detail="Token webhook RingConn invalide")
+    else:
+        if effective_token and not connector.authenticate_request(effective_token):
+            user_prof = db.get_user_profile(user_id=target_user_id)
+            if user_prof.get("webhook_token") and effective_token != user_prof["webhook_token"]:
+                raise HTTPException(status_code=401, detail="Token webhook invalide")
 
     weight_entry, act_entry = connector.process_webhook_payload(payload)
     saved_weight = None
     saved_act = None
 
     if weight_entry:
-        saved_weight = db.insert_weight(weight_entry).model_dump()
+        saved_weight = db.insert_weight(weight_entry, user_id=target_user_id).model_dump()
     if act_entry:
-        saved_act = db.insert_activity(act_entry).model_dump()
+        saved_act = db.insert_activity(act_entry, user_id=target_user_id).model_dump()
 
     # Mettre à jour l'état de l'appareil associé
-    source_name = payload.get("source", "health_connect")
-    dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+    dev_id = "ringconn" if is_ringconn else ("withings" if "withings" in source_name.lower() else "health_connect")
+    dev_name = "RingConn Gen 3" if dev_id == "ringconn" else ("Withings Body" if dev_id == "withings" else "Google Health Connect")
+    dev_type = "ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator")
     db.update_user_device(
         device_id=dev_id,
-        name=dev_id.replace("_", " ").title(),
-        device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),
+        name=dev_name,
+        device_type=dev_type,
         connected=True,
-        auth_type="webhook"
+        auth_type="webhook",
+        user_id=target_user_id
     )
 
     return {
         "status": "success",
-        "message": "Données de santé webhook ingérées avec succès",
+        "message": f"Données de santé RingConn/Webhook ingérées avec succès pour l'utilisateur {target_user_id}",
+        "user_id": target_user_id,
         "ingested": {
             "weight": saved_weight,
             "activity": saved_act

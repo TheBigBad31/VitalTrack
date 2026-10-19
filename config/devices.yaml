@@ -31,6 +31,19 @@ devices:
     config:
       personal_access_token: ""
 
+  ringconn:
+    name: "RingConn Smart Ring (Gen 1 / Gen 2 / Gen 3)"
+    type: "ring"
+    connector_class: "src.connectors.ringconn.RingConnConnector"
+    enabled: true
+    auth_type: "api_key"
+    api_url: "https://api.ringconn.com/v1"
+    webhook_endpoint: "/api/webhooks/ringconn"
+    demo_mode_fallback: true
+    config:
+      api_key: ""
+      webhook_token: "vitaltrack_ringconn_secret_sample"
+
   mobile_webhook:
     name: "Mobile Health Webhook (Apple Santé & Android Health Connect)"
     type: "universal_webhook"

@@ -9,6 +9,7 @@ from src.models import ActivityEntry, MealEntry, FoodItem, WeightEntry
 from src.db import Database
 from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
+from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
 from src.connectors.template import TemplateHealthConnector
 from src.connectors.registry import get_connector, load_devices_config
@@ -240,11 +241,102 @@ def test_template_and_registry():
     assert "devices" in config
     assert "withings" in config["devices"]
     assert "oura" in config["devices"]
+    assert "ringconn" in config["devices"]
     assert "mobile_webhook" in config["devices"]
 
     connector = get_connector("withings")
     assert isinstance(connector, WithingsScaleConnector)
 
+    ring_conn = get_connector("ringconn")
+    assert isinstance(ring_conn, RingConnConnector)
+
     template = TemplateHealthConnector()
     assert not template.is_configured
     assert template.sync_weights(date.today(), date.today()) == []
+
+
+def test_ringconn_connector_demo_mode():
+    """Teste le connecteur RingConn en mode démo (30 jours réalistes Gen 3)."""
+    connector = RingConnConnector()
+    assert not connector.is_configured
+
+    start = date.today() - timedelta(days=6)
+    end = date.today()
+    activities = connector.sync_activities(start, end)
+    assert len(activities) == 7
+    assert all(a.source == "ringconn" for a in activities)
+    assert all(a.steps > 8000 for a in activities)
+    assert all(a.resting_hr_bpm in [56, 59] for a in activities)
+    assert all(a.hrv_ms is not None for a in activities)
+    assert all(a.sleep_score is not None for a in activities)
+    assert connector.sync_weights(start, end) == []
+
+
+def test_ringconn_connector_parsing_and_mock():
+    """Teste le parsing précis des payloads RingConn Cloud API (Gen 3)."""
+    connector = RingConnConnector(config={"api_key": "rc_live_secret_token_123"})
+    assert connector.is_configured
+
+    activity_payload = {
+        "date": "2026-10-18",
+        "steps": 12850,
+        "active_calories": 535.0,
+        "bmr": 1780.0,
+        "total_calories": 2315.0,
+        "workout_minutes": 50,
+        "resting_heart_rate": 55
+    }
+    sleep_payload = {
+        "score": 89,
+        "avg_heart_rate": 54,
+        "hrv": 64.5
+    }
+    hrv_payload = {
+        "rmssd": 65.2
+    }
+
+    entry = connector.parse_ringconn_daily_data(
+        activity_data=activity_payload,
+        sleep_data=sleep_payload,
+        hrv_data=hrv_payload
+    )
+
+    assert entry.date == date(2026, 10, 18)
+    assert entry.steps == 12850
+    assert entry.active_calories_kcal == 535.0
+    assert entry.bmr_kcal == 1780.0
+    assert entry.total_burned_kcal == 2315.0
+    assert entry.resting_hr_bpm == 55
+    assert entry.hrv_ms == 65.2
+    assert entry.sleep_score == 89
+    assert entry.source == "ringconn"
+
+
+def test_ringconn_webhook_auth_and_mobile_gateway():
+    """Teste l'authentification et l'ingestion via webhook sécurisé pour RingConn."""
+    connector = RingConnConnector(config={"webhook_token": "my_ringconn_secret"})
+    assert connector.authenticate_webhook("my_ringconn_secret") is True
+    assert connector.authenticate_webhook("invalid_secret") is False
+
+    # Webhook mobile
+    mobile_connector = MobileHealthWebhookConnector(config={"webhook_secret": "my_ringconn_secret"})
+    payload = {
+        "date": "2026-10-19",
+        "source": "ringconn_gen3",
+        "steps": 11450,
+        "active_calories_kcal": 490.0,
+        "resting_hr_bpm": 56,
+        "hrv_ms": 62.0,
+        "sleep_score": 88,
+        "workout_minutes": 40,
+        "workout_type": "Marche & Cardio (RingConn Gen 3)"
+    }
+    weight, act = mobile_connector.process_webhook_payload(payload)
+    assert weight is None
+    assert act is not None
+    assert act.steps == 11450
+    assert act.active_calories_kcal == 490.0
+    assert act.resting_hr_bpm == 56
+    assert act.hrv_ms == 62.0
+    assert act.sleep_score == 88
+    assert act.source == "ringconn"
