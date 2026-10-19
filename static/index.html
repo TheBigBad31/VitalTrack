@@ -472,9 +472,11 @@
                 <th class="py-2.5 px-3">Masse Grasse</th>
                 <th class="py-2.5 px-3">Masse Musculaire</th>
                 <th class="py-2.5 px-3">Source</th>
+                <th class="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody id="table-weights-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
+
               <!-- Dynamique -->
             </tbody>
           </table>
@@ -809,18 +811,32 @@
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <i data-lucide="camera" class="w-5 h-5 text-emerald-400"></i>
-          <h3 class="font-bold text-white text-base">📸 Analyser mon repas</h3>
+          <i data-lucide="utensils" class="w-5 h-5 text-emerald-400"></i>
+          <h3 id="modal-meal-title" class="font-bold text-white text-base">Journal Alimentaire & Repas</h3>
         </div>
         <button onclick="closeMealModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
+      <input type="hidden" id="input-meal-edit-id" value="">
+
+      <!-- Sélecteur de Mode : Photo IA vs Saisie Rapide Directe / Aliments -->
+      <div class="flex rounded-xl bg-[#0B0F17] p-1 border border-[#1F2A3C] text-xs font-semibold">
+        <button type="button" id="tab-meal-mode-photo" onclick="switchMealModalMode('photo')" class="flex-1 py-1.5 rounded-lg bg-emerald-600 text-white transition-all flex items-center justify-center space-x-1.5 shadow-sm">
+          <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+          <span>Photo IA / Scan</span>
+        </button>
+        <button type="button" id="tab-meal-mode-direct" onclick="switchMealModalMode('direct')" class="flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center space-x-1.5">
+          <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+          <span>Saisie Rapide Directe</span>
+        </button>
+      </div>
+
       <!-- Formulaire Photo / Caméra -->
       <div class="space-y-3">
         <!-- Zone Photo Smartphone / Fichier -->
-        <div>
+        <div id="meal-photo-section">
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prendre une photo de l'assiette ou choisir un fichier</label>
           <div class="relative border-2 border-dashed border-[#1F2A3C] hover:border-emerald-500/50 rounded-xl p-4 text-center cursor-pointer bg-[#0B0F17]/50 transition-colors" onclick="document.getElementById('meal-file-input').click()">
             <input type="file" id="meal-file-input" accept="image/*" capture="environment" class="hidden" onchange="handleMealPhotoSelected(event)">
@@ -833,6 +849,7 @@
             <img id="meal-photo-preview" class="hidden max-h-48 mx-auto rounded-lg shadow-md object-cover w-full">
           </div>
         </div>
+
 
         <!-- Type de Repas & Notes -->
         <div class="grid grid-cols-2 gap-3">
@@ -851,16 +868,58 @@
           </div>
         </div>
 
-        <div>
+        <div id="meal-desc-section">
           <label class="block text-xs font-semibold text-slate-300 mb-1">Description ou ingrédients (facultatif)</label>
           <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
         </div>
 
-        <!-- Bouton Déclenchement de l'analyse -->
+        <!-- Section Saisie Rapide Directe (Kcal & Macros ou aliment par aliment) -->
+        <div id="meal-direct-section" class="hidden space-y-3 bg-[#0B0F17] p-3 rounded-xl border border-[#1F2A3C]">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white flex items-center space-x-1.5">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+              <span>Saisie Rapide Globale des Macros</span>
+            </span>
+            <span class="text-[10px] text-slate-400">1-clic direct</span>
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-300 mb-1">Nom du plat ou note</label>
+            <input type="text" id="input-direct-meal-name" placeholder="Ex: Déjeuner restaurant, Shake protéiné..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+
+          <div class="grid grid-cols-4 gap-2 text-xs">
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-1">Calories (kcal) *</label>
+              <input type="number" step="1" id="input-direct-cals" placeholder="650" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block text-[10px] text-emerald-400 mb-1">Protéines (g)</label>
+              <input type="number" step="0.5" id="input-direct-prot" placeholder="35" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block text-[10px] text-sky-400 mb-1">Glucides (g)</label>
+              <input type="number" step="0.5" id="input-direct-carbs" placeholder="70" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block text-[10px] text-amber-400 mb-1">Lipides (g)</label>
+              <input type="number" step="0.5" id="input-direct-fat" placeholder="20" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+        </div>
+
+        <!-- Bouton Déclenchement de l'analyse IA (mode photo) -->
         <button onclick="triggerMealEstimation()" id="btn-estimate-meal" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-transform">
           <i data-lucide="sparkles" class="w-4 h-4"></i>
           <span>Estimer les Calories & Macros</span>
         </button>
+
+        <!-- Bouton Enregistrement direct (mode direct) -->
+        <button onclick="saveDirectMealToJournal()" id="btn-save-direct-meal" class="hidden w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-transform">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span id="btn-save-direct-meal-text">Enregistrer le Repas</span>
+        </button>
+
 
         <!-- Résultats de l'estimation IA -->
         <div id="meal-estimation-result" class="hidden border-t border-[#1F2A3C] pt-3 space-y-3">
@@ -935,30 +994,43 @@
       </div>
 
       <div class="space-y-3">
+        <input type="hidden" id="input-weight-edit-id" value="">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
           <input type="date" id="input-weight-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Poids (kg) *</label>
-          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-bold">
+          <div class="flex justify-between items-center mb-1">
+            <label class="block text-xs font-semibold text-slate-300">Poids (kg) *</label>
+            <span id="label-live-bmi" class="text-[10px] text-emerald-400 font-bold">IMC estimé : --</span>
+          </div>
+          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" oninput="calculateLiveBMI(this.value)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-bold">
         </div>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-3 gap-2">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Masse grasse (%)</label>
-            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <label class="block text-[11px] text-slate-400 mb-1">Grasse (%)</label>
+            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
           </div>
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Masse muscle (kg)</label>
-            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <label class="block text-[11px] text-slate-400 mb-1">Muscle (kg)</label>
+            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
           </div>
+          <div>
+            <label class="block text-[11px] text-slate-400 mb-1">Eau (%)</label>
+            <input type="number" step="0.1" id="input-water-pct" placeholder="Ex: 56.5" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] text-slate-400 mb-1">Note textuelle (facultatif)</label>
+          <input type="text" id="input-weight-notes" placeholder="Ex: À jeun après réveil" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
         </div>
 
-        <button onclick="submitWeightEntry()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95">
+        <button onclick="submitWeightEntry()" id="btn-submit-weight" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-md shadow-emerald-600/20">
           <i data-lucide="check" class="w-4 h-4"></i>
-          <span>Enregistrer la Pesée</span>
+          <span id="btn-submit-weight-text">Enregistrer la Pesée</span>
         </button>
       </div>
+
     </div>
   </div>
 
@@ -1961,10 +2033,20 @@
                 ${w.source}
               </span>
             </td>
+            <td class="py-2.5 px-3 text-right space-x-1">
+              <button onclick="editWeightEntry(${w.id}, '${w.date}', ${w.weight_kg}, ${w.body_fat_pct || 'null'}, ${w.muscle_mass_kg || 'null'}, ${w.water_pct || 'null'}, '${(w.notes || '').replace(/'/g, "\\'")}')" class="p-1 rounded hover:bg-[#2A374D] text-slate-400 hover:text-emerald-400" title="Modifier la pesée">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5 inline"></i>
+              </button>
+              <button onclick="deleteWeightEntry(${w.id})" class="p-1 rounded hover:bg-[#2A374D] text-slate-400 hover:text-rose-400" title="Supprimer la pesée">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 inline"></i>
+              </button>
+            </td>
           </tr>
         `).join('');
+        lucide.createIcons();
       }
     }
+
 
     // 3. Rendu Vue Nutrition & Calories Repas
     function renderNutritionView() {
@@ -2081,18 +2163,30 @@
                 <span class="font-medium text-slate-400">Aliments:</span> ${itemsStr || 'Repas composé'}
               </p>
 
-              <!-- Macros -->
+              <!-- Macros & Actions -->
               <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[#1F2A3C]/70">
-                <span class="text-emerald-400 font-medium">P: ${Math.round(m.protein_g)}g</span>
-                <span class="text-sky-400 font-medium">G: ${Math.round(m.carbs_g)}g</span>
-                <span class="text-amber-400 font-medium">L: ${Math.round(m.fat_g)}g</span>
-                <span class="text-slate-400">Fibres: ${m.fiber_g ? Math.round(m.fiber_g) + 'g' : '--'}</span>
+                <div class="space-x-2">
+                  <span class="text-emerald-400 font-medium">P: ${Math.round(m.protein_g)}g</span>
+                  <span class="text-sky-400 font-medium">G: ${Math.round(m.carbs_g)}g</span>
+                  <span class="text-amber-400 font-medium">L: ${Math.round(m.fat_g)}g</span>
+                  <span class="text-slate-400">Fibres: ${m.fiber_g ? Math.round(m.fiber_g) + 'g' : '--'}</span>
+                </div>
+                <div class="flex items-center space-x-1 shrink-0">
+                  <button onclick="editMealEntry(${m.id})" class="p-1 rounded hover:bg-[#1F2A3C] text-slate-400 hover:text-emerald-400" title="Modifier le repas">
+                    <i data-lucide="edit-3" class="w-3.5 h-3.5 inline"></i>
+                  </button>
+                  <button onclick="deleteMealEntry(${m.id})" class="p-1 rounded hover:bg-[#1F2A3C] text-slate-400 hover:text-rose-400" title="Supprimer le repas">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5 inline"></i>
+                  </button>
+                </div>
               </div>
             </div>
           `;
         }).join('');
+        lucide.createIcons();
       }
     }
+
 
     // 4. Rendu Vue Activité & Bague Oura
     function renderActivityView() {
@@ -2378,44 +2472,240 @@
     }
 
     // =====================================================================
+    // LOGIQUE NUTRITION DIRECTE & ÉDITION / SUPPRESSION DES REPAS
+    // =====================================================================
+    function switchMealModalMode(mode) {
+      const tabPhoto = document.getElementById('tab-meal-mode-photo');
+      const tabDirect = document.getElementById('tab-meal-mode-direct');
+      const photoSec = document.getElementById('meal-photo-section');
+      const descSec = document.getElementById('meal-desc-section');
+      const directSec = document.getElementById('meal-direct-section');
+      const btnEst = document.getElementById('btn-estimate-meal');
+      const btnDirect = document.getElementById('btn-save-direct-meal');
+      const estRes = document.getElementById('meal-estimation-result');
+
+      if (mode === 'photo') {
+        tabPhoto.className = "flex-1 py-1.5 rounded-lg bg-emerald-600 text-white transition-all flex items-center justify-center space-x-1.5 shadow-sm";
+        tabDirect.className = "flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center space-x-1.5";
+        photoSec.classList.remove('hidden');
+        descSec.classList.remove('hidden');
+        directSec.classList.add('hidden');
+        btnEst.classList.remove('hidden');
+        btnDirect.classList.add('hidden');
+      } else {
+        tabDirect.className = "flex-1 py-1.5 rounded-lg bg-emerald-600 text-white transition-all flex items-center justify-center space-x-1.5 shadow-sm";
+        tabPhoto.className = "flex-1 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center space-x-1.5";
+        photoSec.classList.add('hidden');
+        descSec.classList.add('hidden');
+        directSec.classList.remove('hidden');
+        btnEst.classList.add('hidden');
+        btnDirect.classList.remove('hidden');
+        estRes.classList.add('hidden');
+      }
+      lucide.createIcons();
+    }
+
+    async function saveDirectMealToJournal() {
+      const btn = document.getElementById('btn-save-direct-meal');
+      const editId = document.getElementById('input-meal-edit-id').value;
+      const dateVal = document.getElementById('meal-date-input').value || new Date().toISOString().split('T')[0];
+      const mealType = document.getElementById('meal-type-select').value;
+      const mealName = document.getElementById('input-direct-meal-name').value.trim() || `Repas (${mealType})`;
+      const cals = parseFloat(document.getElementById('input-direct-cals').value);
+      const prot = parseFloat(document.getElementById('input-direct-prot').value) || 0.0;
+      const carbs = parseFloat(document.getElementById('input-direct-carbs').value) || 0.0;
+      const fat = parseFloat(document.getElementById('input-direct-fat').value) || 0.0;
+
+      if (!cals || isNaN(cals) || cals <= 0) {
+        alert("Veuillez saisir un apport calorique (kcal) valide.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> Enregistrement...`;
+
+      const payload = {
+        date: dateVal,
+        meal_type: mealType,
+        total_calories_kcal: cals,
+        protein_g: prot,
+        carbs_g: carbs,
+        fat_g: fat,
+        fiber_g: 0.0,
+        meal_name: mealName
+      };
+
+      try {
+        const url = editId ? `/api/meals/${editId}` : '/api/meals';
+        const method = editId ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          console.warn("API Error:", errData);
+        }
+      } catch (err) {
+        console.warn("Save meal fallback:", err);
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="check" class="w-4 h-4 mr-1"></i> Enregistré !`;
+      setTimeout(() => {
+        closeMealModal();
+        loadDashboardData();
+        switchTab('nutrition');
+      }, 400);
+    }
+
+    function editMealEntry(mealId) {
+      const meals = currentData.recent_meals || [];
+      const m = meals.find(item => item.id === mealId);
+      if (!m) return;
+
+      document.getElementById('input-meal-edit-id').value = m.id;
+      document.getElementById('modal-meal-title').innerText = "Modifier le Repas";
+      document.getElementById('meal-date-input').value = m.date;
+      document.getElementById('meal-type-select').value = m.meal_type;
+
+      // Basculer sur le mode direct pré-rempli
+      switchMealModalMode('direct');
+      document.getElementById('input-direct-meal-name').value = (m.items && m.items.length > 0) ? m.items.map(i => i.name).join(', ') : `Repas (${m.meal_type})`;
+      document.getElementById('input-direct-cals').value = m.total_calories_kcal;
+      document.getElementById('input-direct-prot').value = m.protein_g;
+      document.getElementById('input-direct-carbs').value = m.carbs_g;
+      document.getElementById('input-direct-fat').value = m.fat_g;
+      document.getElementById('btn-save-direct-meal-text').innerText = "Mettre à jour le Repas";
+
+      openMealModal();
+    }
+
+    async function deleteMealEntry(mealId) {
+      if (!confirm("Voulez-vous vraiment supprimer ce repas du journal ?")) {
+        return;
+      }
+      try {
+        const res = await fetch(`/api/meals/${mealId}`, { method: 'DELETE' });
+        if (res.ok) {
+          await loadDashboardData();
+        } else {
+          alert("Erreur lors de la suppression du repas.");
+        }
+      } catch (err) {
+        console.warn("Delete meal error:", err);
+      }
+    }
+
+    // =====================================================================
     // LOGIQUE SAISIE POIDS & ACTIVITÉ
     // =====================================================================
+    function calculateLiveBMI(weightVal) {
+      const w = parseFloat(weightVal);
+      const bmiLabel = document.getElementById('label-live-bmi');
+      if (!bmiLabel) return;
+      const heightCm = (currentData && currentData.profile && currentData.profile.height_cm) ? currentData.profile.height_cm : 178.0;
+      const heightM = heightCm / 100.0;
+      if (w > 20 && w < 300) {
+        const bmi = (w / (heightM * heightM)).toFixed(1);
+        let category = "Normal";
+        if (bmi < 18.5) category = "Maigreur";
+        else if (bmi >= 25 && bmi < 30) category = "Surpoids";
+        else if (bmi >= 30) category = "Obésité";
+        bmiLabel.innerText = `IMC : ${bmi} (${category})`;
+      } else {
+        bmiLabel.innerText = `IMC estimé : --`;
+      }
+    }
+
     function openWeightModal() {
+      document.getElementById('input-weight-edit-id').value = "";
+      document.getElementById('input-weight-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('input-weight-val').value = "";
+      document.getElementById('input-body-fat').value = "";
+      document.getElementById('input-muscle-mass').value = "";
+      document.getElementById('input-water-pct').value = "";
+      document.getElementById('input-weight-notes').value = "";
+      document.getElementById('btn-submit-weight-text').innerText = "Enregistrer la Pesée";
+      calculateLiveBMI("");
       document.getElementById('modal-weight').classList.remove('hidden');
     }
+
     function closeWeightModal() {
       document.getElementById('modal-weight').classList.add('hidden');
     }
 
+    function editWeightEntry(id, dateStr, weightVal, fatVal, muscleVal, waterVal, notesVal) {
+      document.getElementById('input-weight-edit-id').value = id;
+      document.getElementById('input-weight-date').value = dateStr;
+      document.getElementById('input-weight-val').value = weightVal;
+      document.getElementById('input-body-fat').value = (fatVal !== null && fatVal !== undefined) ? fatVal : '';
+      document.getElementById('input-muscle-mass').value = (muscleVal !== null && muscleVal !== undefined) ? muscleVal : '';
+      document.getElementById('input-water-pct').value = (waterVal !== null && waterVal !== undefined) ? waterVal : '';
+      document.getElementById('input-weight-notes').value = (notesVal !== null && notesVal !== undefined) ? notesVal : '';
+      document.getElementById('btn-submit-weight-text').innerText = "Mettre à jour la Pesée";
+      calculateLiveBMI(weightVal);
+      document.getElementById('modal-weight').classList.remove('hidden');
+    }
+
+    async function deleteWeightEntry(weightId) {
+      if (!confirm("Voulez-vous vraiment supprimer cette pesée ?")) {
+        return;
+      }
+      try {
+        const res = await fetch(`/api/weights/${weightId}`, { method: 'DELETE' });
+        if (res.ok) {
+          await loadDashboardData();
+        } else {
+          alert("Erreur lors de la suppression de la pesée.");
+        }
+      } catch (e) {
+        console.warn("Delete weight error:", e);
+      }
+    }
+
     async function submitWeightEntry() {
-      const d = document.getElementById('input-weight-date').value;
+      const editId = document.getElementById('input-weight-edit-id').value;
+      const d = document.getElementById('input-weight-date').value || new Date().toISOString().split('T')[0];
       const w = parseFloat(document.getElementById('input-weight-val').value);
       const fat = parseFloat(document.getElementById('input-body-fat').value) || null;
       const muscle = parseFloat(document.getElementById('input-muscle-mass').value) || null;
+      const water = parseFloat(document.getElementById('input-water-pct').value) || null;
+      const notes = document.getElementById('input-weight-notes').value.trim() || null;
 
       if (!w || isNaN(w)) {
         alert("Veuillez saisir un poids valide en kg.");
         return;
       }
 
+      const payload = {
+        date: d,
+        weight_kg: w,
+        body_fat_pct: fat,
+        muscle_mass_kg: muscle,
+        water_pct: water,
+        source: "manual",
+        notes: notes
+      };
+
       try {
-        await fetch('/api/weights', {
-          method: 'POST',
+        const url = editId ? `/api/weights/${editId}` : '/api/weights';
+        const method = editId ? 'PUT' : 'POST';
+        await fetch(url, {
+          method: method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            date: d,
-            weight_kg: w,
-            body_fat_pct: fat,
-            muscle_mass_kg: muscle,
-            source: "manual"
-          })
+          body: JSON.stringify(payload)
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Weight submit fallback:", e);
+      }
 
       closeWeightModal();
-      loadDashboardData();
+      await loadDashboardData();
       switchTab('weight');
     }
+
 
     function openActivityModal() {
       document.getElementById('modal-activity').classList.remove('hidden');

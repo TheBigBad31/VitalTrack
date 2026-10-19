@@ -689,6 +689,71 @@ class Database:
             ))
         return results
 
+    def get_weight_by_id(self, weight_id: int, user_id: int = 1) -> Optional[WeightEntry]:
+        """Récupère une pesée spécifique par son ID pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            r = cursor.fetchone()
+        if not r:
+            return None
+        return WeightEntry(
+            id=r["id"],
+            date=date.fromisoformat(r["date"][:10]),
+            weight_kg=r["weight_kg"],
+            body_fat_pct=r["body_fat_pct"],
+            muscle_mass_kg=r["muscle_mass_kg"],
+            water_pct=r["water_pct"],
+            bmi=r["bmi"],
+            trend_7d_kg=r["trend_7d_kg"],
+            source=r["source"],
+            notes=r["notes"],
+            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+        )
+
+    def update_weight(self, weight_id: int, entry: WeightEntry, user_id: int = 1) -> Optional[WeightEntry]:
+        """Met à jour une pesée existante et recalcule la tendance 7j."""
+        existing = self.get_weight_by_id(weight_id, user_id=user_id)
+        if not existing:
+            return None
+
+        target_date = entry.date
+        trend = entry.trend_7d_kg
+        if trend is None:
+            trend = self.calculate_7d_trend(target_date, entry.weight_kg, user_id=user_id)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE weights
+                SET date = ?, weight_kg = ?, body_fat_pct = ?, muscle_mass_kg = ?,
+                    water_pct = ?, bmi = ?, trend_7d_kg = ?, source = ?, notes = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                target_date.isoformat(), entry.weight_kg, entry.body_fat_pct,
+                entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
+                entry.source, entry.notes, weight_id, user_id
+            ))
+            conn.commit()
+
+        entry_dict = entry.model_dump()
+        entry_dict["id"] = weight_id
+        entry_dict["trend_7d_kg"] = trend
+        entry_dict["created_at"] = existing.created_at
+        return WeightEntry(**entry_dict)
+
+    def delete_weight(self, weight_id: int, user_id: int = 1) -> bool:
+        """Supprime une pesée pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            conn.commit()
+            return True
+
+
     # ---------------------------------------------------------
     # Activités Multi-Utilisateurs
     # ---------------------------------------------------------
@@ -889,6 +954,68 @@ class Database:
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
+
+    def get_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[MealEntry]:
+        """Récupère un repas spécifique par son ID pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            r = cursor.fetchone()
+        if not r:
+            return None
+        raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
+        items = [FoodItem(**item) for item in raw_items]
+        return MealEntry(
+            id=r["id"],
+            date=date.fromisoformat(r["date"][:10]),
+            meal_type=r["meal_type"],
+            total_calories_kcal=r["total_calories_kcal"],
+            protein_g=r["protein_g"],
+            carbs_g=r["carbs_g"],
+            fat_g=r["fat_g"],
+            fiber_g=r["fiber_g"],
+            photo_data_url=r["photo_data_url"],
+            items=items,
+            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+        )
+
+    def update_meal(self, meal_id: int, entry: MealEntry, user_id: int = 1) -> Optional[MealEntry]:
+        """Met à jour un repas existant pour user_id."""
+        existing = self.get_meal_by_id(meal_id, user_id=user_id)
+        if not existing:
+            return None
+
+        items_json = json.dumps([item.model_dump() for item in entry.items])
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE meals
+                SET date = ?, meal_type = ?, total_calories_kcal = ?, protein_g = ?,
+                    carbs_g = ?, fat_g = ?, fiber_g = ?, photo_data_url = ?, items_json = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                entry.date.isoformat(), entry.meal_type, entry.total_calories_kcal,
+                entry.protein_g, entry.carbs_g, entry.fat_g, entry.fiber_g,
+                entry.photo_data_url or existing.photo_data_url, items_json, meal_id, user_id
+            ))
+            conn.commit()
+
+        entry_dict = entry.model_dump()
+        entry_dict["id"] = meal_id
+        entry_dict["created_at"] = existing.created_at
+        return MealEntry(**entry_dict)
+
+    def delete_meal(self, meal_id: int, user_id: int = 1) -> bool:
+        """Supprime un repas pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            conn.commit()
+            return True
+
 
     # ---------------------------------------------------------
     # Profil Utilisateur & Appareils

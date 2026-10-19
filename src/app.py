@@ -196,6 +196,13 @@ class MealSaveRequest(BaseModel):
     photo_data_url: Optional[str] = None
     portion_scale: float = Field(1.0, ge=0.5, le=2.0)
     items: List[FoodItem] = Field(default_factory=list)
+    # Support pour saisie rapide globale directe (ex. 650 kcal, 35g P, 70g G, 20g L)
+    total_calories_kcal: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    meal_name: Optional[str] = None
 
 
 
@@ -389,6 +396,40 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(get_cu
     return saved.model_dump()
 
 
+@app.put("/api/weights/{weight_id}")
+def update_weight(weight_id: int, entry_in: WeightInput, current_user: AuthUser = Depends(get_current_user)):
+    """Met à jour une pesée existante pour l'utilisateur connecté."""
+    target_date = entry_in.date or date.today()
+    bmi_val = entry_in.bmi
+    if bmi_val is None and entry_in.weight_kg > 0:
+        bmi_val = round(entry_in.weight_kg / (1.78 ** 2), 1)
+
+    entry = WeightEntry(
+        date=target_date,
+        weight_kg=entry_in.weight_kg,
+        body_fat_pct=entry_in.body_fat_pct,
+        muscle_mass_kg=entry_in.muscle_mass_kg,
+        water_pct=entry_in.water_pct,
+        bmi=bmi_val,
+        source=entry_in.source,
+        notes=entry_in.notes,
+    )
+    updated = db.update_weight(weight_id, entry, user_id=current_user.id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Pesée introuvable")
+    return updated.model_dump()
+
+
+@app.delete("/api/weights/{weight_id}")
+def delete_weight(weight_id: int, current_user: AuthUser = Depends(get_current_user)):
+    """Supprime une pesée erronée pour l'utilisateur connecté."""
+    deleted = db.delete_weight(weight_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Pesée introuvable")
+    return {"status": "success", "message": f"Pesée #{weight_id} supprimée avec succès"}
+
+
+
 # =====================================================================
 # Endpoints Activités & Exercices
 # =====================================================================
@@ -488,28 +529,120 @@ def estimate_meal_calories(req: MealEstimateRequest):
 
 @app.post("/api/meals")
 def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(get_current_user)):
-    """Enregistre définitivement un repas décomposé dans le journal alimentaire pour l'utilisateur connecté."""
+    """Enregistre définitivement un repas décomposé ou direct dans le journal alimentaire pour l'utilisateur connecté."""
     target_date = req.date or date.today()
     
-    if not req.items:
-        # Si aucun item fourni, estimer par défaut selon le type de repas
+    if req.items:
+        items = req.items
+        saved = nutrition_engine.log_meal(
+            date_val=target_date,
+            meal_type=req.meal_type,
+            items=items,
+            photo_data_url=req.photo_data_url,
+            user_id=current_user.id
+        )
+    elif req.total_calories_kcal is not None:
+        # Saisie rapide directe sans décomposition préalable obligatoire
+        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        items = [
+            FoodItem(
+                name=meal_name,
+                calories_kcal=round(req.total_calories_kcal, 1),
+                protein_g=round(req.protein_g or 0.0, 1),
+                carbs_g=round(req.carbs_g or 0.0, 1),
+                fat_g=round(req.fat_g or 0.0, 1),
+                fiber_g=round(req.fiber_g or 0.0, 1),
+                confidence_score=1.0
+            )
+        ]
+        entry = MealEntry(
+            date=target_date,
+            meal_type=req.meal_type,
+            total_calories_kcal=round(req.total_calories_kcal, 1),
+            protein_g=round(req.protein_g or 0.0, 1),
+            carbs_g=round(req.carbs_g or 0.0, 1),
+            fat_g=round(req.fat_g or 0.0, 1),
+            fiber_g=round(req.fiber_g or 0.0, 1),
+            photo_data_url=req.photo_data_url,
+            items=items
+        )
+        saved = db.insert_meal(entry, user_id=current_user.id)
+    else:
+        # Si aucun item ni calorie directe fournis, estimer par défaut selon le type de repas
         est = calorie_estimator.analyze_meal(
             description=None,
             portion_scale=req.portion_scale,
             meal_type=req.meal_type
         )
         items = [FoodItem(**item) for item in est.get("items", [])]
-    else:
-        items = req.items
+        saved = nutrition_engine.log_meal(
+            date_val=target_date,
+            meal_type=req.meal_type,
+            items=items,
+            photo_data_url=req.photo_data_url,
+            user_id=current_user.id
+        )
 
-    saved = nutrition_engine.log_meal(
-        date_val=target_date,
-        meal_type=req.meal_type,
-        items=items,
-        photo_data_url=req.photo_data_url,
-        user_id=current_user.id
-    )
     return saved.model_dump()
+
+
+@app.put("/api/meals/{meal_id}")
+def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Depends(get_current_user)):
+    """Met à jour un repas existant dans le journal pour l'utilisateur connecté."""
+    target_date = req.date or date.today()
+    if req.items:
+        items = req.items
+        tot_cal = round(sum(i.calories_kcal for i in items), 1)
+        tot_prot = round(sum(i.protein_g for i in items), 1)
+        tot_carbs = round(sum(i.carbs_g for i in items), 1)
+        tot_fat = round(sum(i.fat_g for i in items), 1)
+        tot_fiber = round(sum(i.fiber_g or 0.0 for i in items), 1)
+    elif req.total_calories_kcal is not None:
+        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        items = [
+            FoodItem(
+                name=meal_name,
+                calories_kcal=round(req.total_calories_kcal, 1),
+                protein_g=round(req.protein_g or 0.0, 1),
+                carbs_g=round(req.carbs_g or 0.0, 1),
+                fat_g=round(req.fat_g or 0.0, 1),
+                fiber_g=round(req.fiber_g or 0.0, 1),
+                confidence_score=1.0
+            )
+        ]
+        tot_cal = round(req.total_calories_kcal, 1)
+        tot_prot = round(req.protein_g or 0.0, 1)
+        tot_carbs = round(req.carbs_g or 0.0, 1)
+        tot_fat = round(req.fat_g or 0.0, 1)
+        tot_fiber = round(req.fiber_g or 0.0, 1)
+    else:
+        raise HTTPException(status_code=400, detail="Données de repas invalides")
+
+    entry = MealEntry(
+        date=target_date,
+        meal_type=req.meal_type,
+        total_calories_kcal=tot_cal,
+        protein_g=tot_prot,
+        carbs_g=tot_carbs,
+        fat_g=tot_fat,
+        fiber_g=tot_fiber,
+        photo_data_url=req.photo_data_url,
+        items=items
+    )
+    updated = db.update_meal(meal_id, entry, user_id=current_user.id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Repas introuvable")
+    return updated.model_dump()
+
+
+@app.delete("/api/meals/{meal_id}")
+def delete_meal(meal_id: int, current_user: AuthUser = Depends(get_current_user)):
+    """Supprime un repas du journal pour l'utilisateur connecté."""
+    deleted = db.delete_meal(meal_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Repas introuvable")
+    return {"status": "success", "message": f"Repas #{meal_id} supprimé avec succès"}
+
 
 
 # =====================================================================
