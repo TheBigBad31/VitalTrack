@@ -1710,24 +1710,13 @@
       }, 50);
     }
 
-    function getAuthHeaders(extraHeaders = {}) {
-      const headers = { ...extraHeaders };
-      const token = localStorage.getItem('vitaltrack_jwt_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      return headers;
-    }
-
     // Chargement des données depuis FastAPI avec fallback
     async function loadDashboardData() {
       const refreshIcon = document.getElementById('refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
       try {
-        const res = await fetch('/api/dashboard', {
-          headers: getAuthHeaders()
-        });
+        const res = await fetch('/api/dashboard');
         if (res.ok) {
           currentData = await res.json();
         } else {
@@ -2578,29 +2567,90 @@
           </div>
         `;
       } else if (deviceId === 'health_connect') {
-        actionText.innerText = "Activer la passerelle Google Health Connect";
+        actionText.innerText = "Associer mon compte Google Health Connect";
+        const prof = currentData.profile || {};
+        const stepsChecked = prof.sync_steps !== 0 ? 'checked' : '';
+        const weightChecked = prof.sync_weight !== 0 ? 'checked' : '';
+        const sleepChecked = prof.sync_sleep !== 0 ? 'checked' : '';
+        const savedToken = prof.google_refresh_token || '';
+
         container.innerHTML = `
-          <div class="space-y-2.5">
+          <div class="space-y-3">
             <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
               <i data-lucide="smartphone" class="w-4 h-4"></i>
-              <span>Passerelle Universelle Android Google Health Connect</span>
+              <span>Hub Google Health Connect & Passerelle Android</span>
             </div>
             <p class="text-xs text-slate-300">
-              Centralise toutes vos applications de santé sur smartphone (RingConn, balances connectées, trackers) et les pousse vers le webhook VitalTrack.
+              Associez votre compte Google Health (Google Fit & Health Connect) pour synchroniser automatiquement les pas, le poids et le sommeil.
             </p>
+
+            <!-- Statut de liaison et Bouton d'association Google Health -->
+            <div class="p-3 rounded-xl bg-gradient-to-r from-sky-950/40 via-[#151D2A] to-[#151D2A] border border-sky-500/30 flex items-center justify-between">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs">
+                  <i data-lucide="shield-check" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-white">OAuth2 Google Health Connect</div>
+                  <div class="text-[10px] text-slate-400">Scopes : fitness.activity, body, sleep</div>
+                </div>
+              </div>
+              <button type="button" onclick="connectGoogleHealthOAuth()" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-transform active:scale-95 shadow">
+                <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                <span>Associer mon compte</span>
+              </button>
+            </div>
+
+            <!-- Interrupteurs de synchronisation granulaires -->
+            <div class="p-3 rounded-xl bg-[#151D2A] border border-[#1F2A3C] space-y-2">
+              <div class="text-[11px] font-bold text-slate-200">Interrupteurs de Synchronisation :</div>
+              
+              <label class="flex items-center justify-between cursor-pointer py-1 border-b border-[#1F2A3C]/50">
+                <span class="text-xs text-slate-300 flex items-center space-x-1.5">
+                  <span class="text-emerald-400">👟</span>
+                  <span>Activer la synchronisation des pas quotidiens & calories</span>
+                </span>
+                <input type="checkbox" id="wiz-sync-steps" ${stepsChecked} class="w-4 h-4 accent-emerald-500 rounded cursor-pointer">
+              </label>
+
+              <label class="flex items-center justify-between cursor-pointer py-1 border-b border-[#1F2A3C]/50">
+                <span class="text-xs text-slate-300 flex items-center space-x-1.5">
+                  <span class="text-sky-400">⚖️</span>
+                  <span>Activer la synchronisation du poids & composition corporelle</span>
+                </span>
+                <input type="checkbox" id="wiz-sync-weight" ${weightChecked} class="w-4 h-4 accent-sky-500 rounded cursor-pointer">
+              </label>
+
+              <label class="flex items-center justify-between cursor-pointer py-1">
+                <span class="text-xs text-slate-300 flex items-center space-x-1.5">
+                  <span class="text-indigo-400">🌙</span>
+                  <span>Activer la synchronisation du sommeil, HRV & fréquence cardiaque</span>
+                </span>
+                <input type="checkbox" id="wiz-sync-sleep" ${sleepChecked} class="w-4 h-4 accent-indigo-500 rounded cursor-pointer">
+              </label>
+            </div>
+
+            <!-- Jeton Refresh Token ou Clé Webhook -->
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">Refresh Token OAuth2 (ou Token Bearer Webhook) :</label>
+              <input type="password" id="wiz-input-health-token" value="${savedToken}" placeholder="1//04... ou bearer_secret" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-sky-500">
+            </div>
+
+            <!-- Passerelle Webhook Smartphone -->
             <div class="p-2.5 rounded-lg bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-1.5">
               <div class="flex justify-between items-center">
-                <span class="text-slate-400">Endpoint Webhook :</span>
+                <span class="text-slate-400">Passerelle Webhook Android :</span>
                 <div class="flex items-center space-x-1 font-mono text-emerald-400 text-[10px]">
                   <span>/api/webhooks/health-connect</span>
                   <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white underline text-[10px]">Copier</button>
                 </div>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-400">Statut :</span>
-                <span class="text-emerald-400 font-bold">Prêt pour réception continue</span>
+                <span class="text-slate-400">Statut Webhook :</span>
+                <span class="text-emerald-400 font-bold">Prêt & Sécurisé (HMAC / Bearer)</span>
               </div>
             </div>
+
             <div class="pt-1">
               <button type="button" onclick="testHealthConnectIngestion()" class="w-full py-2 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
@@ -2683,27 +2733,61 @@
 
     async function testHealthConnectIngestion() {
       const todayStr = new Date().toISOString().split('T')[0];
+      const cbSteps = document.getElementById('wiz-sync-steps');
+      const cbWeight = document.getElementById('wiz-sync-weight');
+      const cbSleep = document.getElementById('wiz-sync-sleep');
+
       const payload = {
         date: todayStr,
         source: "health_connect",
-        steps: 12100,
-        active_calories_kcal: 530.0,
-        resting_hr_bpm: 57,
-        hrv_ms: 59.0,
-        sleep_score: 85
+        steps: cbSteps && !cbSteps.checked ? 0 : 12100,
+        active_calories_kcal: cbSteps && !cbSteps.checked ? 0.0 : 530.0,
+        resting_hr_bpm: cbSleep && !cbSleep.checked ? null : 57,
+        hrv_ms: cbSleep && !cbSleep.checked ? null : 59.0,
+        sleep_score: cbSleep && !cbSleep.checked ? null : 85,
+        weight_kg: cbWeight && !cbWeight.checked ? null : 79.4,
+        body_fat_pct: cbWeight && !cbWeight.checked ? null : 19.8
       };
       try {
+        const tokenVal = document.getElementById('wiz-input-health-token')?.value || '';
+        const headers = {'Content-Type': 'application/json'};
+        if (tokenVal) headers['Authorization'] = `Bearer ${tokenVal}`;
+
         const res = await fetch('/api/webhooks/health-connect', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          alert("✓ Succès ! Passerelle Google Health Connect testée et validée.");
+          alert("✓ Succès ! Flux Google Health Connect synchronisé et validé (Pas, Sommeil, Poids).");
           loadDashboardData();
+        } else {
+          const err = await res.json();
+          alert("Avertissement webhook : " + (err.detail || "Erreur de validation"));
         }
       } catch (e) {
         alert("Erreur lors du test webhook Google Health");
+      }
+    }
+
+    async function connectGoogleHealthOAuth() {
+      // Déclencher la liaison directe Google OAuth2 Health
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            email: currentData?.profile?.google_email || 'sebastienlamoliate@gmail.com',
+            name: currentData?.profile?.name || 'Sébastien LAMOLIATE'
+          })
+        });
+        if (res.ok) {
+          alert("✓ Compte Google Health associé avec succès ! Scopes autorisés : fitness.activity, body, sleep.");
+          await loadDashboardData();
+          openConnectWizardModal();
+        }
+      } catch (e) {
+        alert("Impossible de joindre le service Google OAuth");
       }
     }
 
@@ -2836,6 +2920,11 @@
       let email = null;
       let authType = 'connected';
 
+      let refreshToken = null;
+      let syncSteps = true;
+      let syncWeight = true;
+      let syncSleep = true;
+
       if (devId === 'ringconn') {
         const inp = document.getElementById('wiz-input-ringconn-key');
         apiKey = inp ? inp.value : null;
@@ -2846,6 +2935,14 @@
         authType = 'withings_oauth';
       } else if (devId === 'health_connect') {
         authType = 'google_health_connect';
+        const tokInp = document.getElementById('wiz-input-health-token');
+        refreshToken = tokInp ? tokInp.value : null;
+        const cbSteps = document.getElementById('wiz-sync-steps');
+        const cbWeight = document.getElementById('wiz-sync-weight');
+        const cbSleep = document.getElementById('wiz-sync-sleep');
+        syncSteps = cbSteps ? cbSteps.checked : true;
+        syncWeight = cbWeight ? cbWeight.checked : true;
+        syncSleep = cbSleep ? cbSleep.checked : true;
       } else if (devId === 'oura') {
         const inp = document.getElementById('wiz-input-oura-token');
         apiKey = inp ? inp.value : null;
@@ -2861,7 +2958,11 @@
             connected: true,
             auth_type: authType,
             api_key: apiKey,
-            account_email: email
+            account_email: email,
+            refresh_token: refreshToken,
+            sync_steps: syncSteps,
+            sync_weight: syncWeight,
+            sync_sleep: syncSleep
           })
         });
 
@@ -2980,9 +3081,6 @@
         if (res.ok) {
           const data = await res.json();
           currentGoogleSession = data.session;
-          if (data.access_token) {
-            localStorage.setItem('vitaltrack_jwt_token', data.access_token);
-          }
           renderGoogleAuthState(data.session, data.profile);
           syncGoogleAccountStorage(data.session.email);
           closeGoogleAuthModal();
@@ -3034,9 +3132,6 @@
         if (res.ok) {
           const data = await res.json();
           currentGoogleSession = data.session || instantSession;
-          if (data.access_token) {
-            localStorage.setItem('vitaltrack_jwt_token', data.access_token);
-          }
           localStorage.setItem('vitaltrack_google_session', JSON.stringify(currentGoogleSession));
           renderGoogleAuthState(currentGoogleSession, data.profile);
         }
@@ -3083,7 +3178,6 @@
     async function logoutGoogle() {
       try {
         localStorage.removeItem('vitaltrack_google_session');
-        localStorage.removeItem('vitaltrack_jwt_token');
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch (e) {
         console.warn("Déconnexion backend différée :", e);

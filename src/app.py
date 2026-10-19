@@ -15,10 +15,11 @@ Endpoints :
 - GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
 """
 
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,10 +69,12 @@ db = Database()
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
 
+from src.connectors.health_connect import GoogleHealthConnectConnector
+
 # Initialisation du registre IoT
 device_registry = DeviceConnectorRegistry()
 device_registry.register(RingConnConnector(), device_id="ringconn", name="RingConn Smart Ring (Gen 1 / Gen 2 / Gen 3)", device_type="ring")
-device_registry.register(MobileHealthWebhookConnector(), device_id="health_connect", name="Google Health Connect (Google Health / Android)", device_type="mobile_aggregator")
+device_registry.register(GoogleHealthConnectConnector(), device_id="health_connect", name="Google Health Connect (Google Health / Android)", device_type="mobile_aggregator")
 device_registry.register(WithingsScaleConnector(), device_id="withings", name="Withings Body Scan & Scales", device_type="scale")
 device_registry.register(OuraRingConnector(), device_id="oura", name="Oura Ring Gen3", device_type="ring")
 device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health", name="Apple Santé (HealthKit)", device_type="mobile_aggregator")
@@ -219,6 +222,10 @@ class UserProfileInput(BaseModel):
     google_name: Optional[str] = None
     google_picture: Optional[str] = None
     google_sub: Optional[str] = None
+    google_refresh_token: Optional[str] = None
+    sync_steps: Optional[bool] = True
+    sync_weight: Optional[bool] = True
+    sync_sleep: Optional[bool] = True
 
 
 class DeviceConnectInput(BaseModel):
@@ -229,6 +236,10 @@ class DeviceConnectInput(BaseModel):
     api_key: Optional[str] = None
     account_email: Optional[str] = None
     connected: bool = True
+    refresh_token: Optional[str] = None
+    sync_steps: Optional[bool] = True
+    sync_weight: Optional[bool] = True
+    sync_sleep: Optional[bool] = True
 
 
 
@@ -737,11 +748,25 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
         user_id=current_user.id
     )
 
-    # Si c'est une bague ou une balance, mettre à jour la préférence dans le profil
+    # Si c'est Google Health Connect ou bague/balance, mettre à jour le profil
+    profile_updates = {}
+    if connect_in.device_id == "health_connect" or "google" in (connect_in.auth_type or ""):
+        if connect_in.refresh_token:
+            profile_updates["google_refresh_token"] = connect_in.refresh_token
+        if connect_in.sync_steps is not None:
+            profile_updates["sync_steps"] = 1 if connect_in.sync_steps else 0
+        if connect_in.sync_weight is not None:
+            profile_updates["sync_weight"] = 1 if connect_in.sync_weight else 0
+        if connect_in.sync_sleep is not None:
+            profile_updates["sync_sleep"] = 1 if connect_in.sync_sleep else 0
+
     if dev_type == "ring":
-        db.update_user_profile({"preferred_ring": connect_in.device_id}, user_id=current_user.id)
+        profile_updates["preferred_ring"] = connect_in.device_id
     elif dev_type == "scale":
-        db.update_user_profile({"preferred_scale": connect_in.device_id}, user_id=current_user.id)
+        profile_updates["preferred_scale"] = connect_in.device_id
+
+    if profile_updates:
+        db.update_user_profile(profile_updates, user_id=current_user.id)
 
     return {
         "status": "success",
@@ -800,35 +825,107 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 @app.post("/api/webhook/health")
 @app.post("/api/webhooks/health-connect")
 @app.post("/api/webhooks/ringconn")
-def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(None)):
-    """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
-    connector = MobileHealthWebhookConnector()
-    if token and not connector.authenticate_request(token):
-        raise HTTPException(status_code=401, detail="Token webhook invalide")
+async def handle_health_webhook(
+    request: Request,
+    token: Optional[str] = Query(None),
+    x_health_signature: Optional[str] = Header(None, alias="X-Health-Signature"),
+    x_hub_signature: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
+    authorization: Optional[str] = Header(None)
+):
+    """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Health Sync, Raccourcis, RingConn).
+    
+    Validation de sécurité :
+    - Token de requête URL (query param ?token=...)
+    - Signature HMAC-SHA256 (Header X-Health-Signature ou X-Hub-Signature-256)
+    - Jeton Bearer d'authentification (Header Authorization: Bearer ...)
+    """
+    body_bytes = await request.body()
+    try:
+        payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+    except Exception:
+        raise HTTPException(status_code=400, detail="Corps de requête JSON invalide")
+
+    # Déterminer le connecteur approprié
+    source_name = payload.get("source", "health_connect").lower()
+    is_health_connect = "connect" in source_name or "android" in source_name or "google" in source_name
+    
+    # Identification de l'utilisateur ciblé (par query, user_id dans payload ou utilisateur par défaut/session)
+    user_id = 1
+    if "user_id" in payload:
+        try:
+            user_id = int(payload["user_id"])
+        except (ValueError, TypeError):
+            pass
+
+    # Vérification d'authentification
+    hc_connector = GoogleHealthConnectConnector()
+    sig = x_health_signature or x_hub_signature
+    if sig:
+        if not hc_connector.verify_webhook_hmac(body_bytes, sig):
+            raise HTTPException(status_code=401, detail="Signature HMAC du webhook invalide")
+    elif authorization and authorization.startswith("Bearer "):
+        bearer_tok = authorization.replace("Bearer ", "").strip()
+        # Vérifier si token JWT utilisateur valide
+        jwt_payload = decode_access_token(bearer_tok)
+        if jwt_payload and "user_id" in jwt_payload:
+            user_id = int(jwt_payload["user_id"])
+        elif not hc_connector.verify_bearer_token(authorization):
+            raise HTTPException(status_code=401, detail="Jeton Bearer webhook invalide")
+    elif token:
+        if not hc_connector.verify_bearer_token(token) and not MobileHealthWebhookConnector().authenticate_request(token):
+            raise HTTPException(status_code=401, detail="Token secret webhook invalide")
+
+    # Traitement du payload selon le connecteur
+    if is_health_connect:
+        connector = hc_connector
+    else:
+        connector = MobileHealthWebhookConnector()
 
     weight_entry, act_entry = connector.process_webhook_payload(payload)
+
+    # Vérifier les préférences de synchronisation de l'utilisateur (interrupteurs)
+    user_profile = db.get_user_profile(user_id=user_id)
+    sync_steps_enabled = bool(user_profile.get("sync_steps", 1))
+    sync_weight_enabled = bool(user_profile.get("sync_weight", 1))
+    sync_sleep_enabled = bool(user_profile.get("sync_sleep", 1))
+
     saved_weight = None
     saved_act = None
 
-    if weight_entry:
-        saved_weight = db.insert_weight(weight_entry).model_dump()
+    if weight_entry and sync_weight_enabled:
+        saved_weight = db.insert_weight(weight_entry, user_id=user_id).model_dump()
+
     if act_entry:
-        saved_act = db.insert_activity(act_entry).model_dump()
+        # Appliquer les interrupteurs si désactivés
+        if not sync_steps_enabled:
+            act_entry.steps = 0
+            act_entry.active_calories_kcal = 0.0
+        if not sync_sleep_enabled:
+            act_entry.sleep_score = None
+            act_entry.hrv_ms = None
+
+        saved_act = db.insert_activity(act_entry, user_id=user_id).model_dump()
 
     # Mettre à jour l'état de l'appareil associé
-    source_name = payload.get("source", "health_connect")
-    dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+    dev_id = "ringconn" if "ring" in source_name else ("withings" if "withings" in source_name else "health_connect")
     db.update_user_device(
         device_id=dev_id,
-        name=dev_id.replace("_", " ").title(),
+        name="Google Health Connect (Android)" if dev_id == "health_connect" else dev_id.replace("_", " ").title(),
         device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),
         connected=True,
-        auth_type="webhook"
+        auth_type="webhook",
+        user_id=user_id
     )
 
     return {
         "status": "success",
         "message": "Données de santé webhook ingérées avec succès",
+        "user_id": user_id,
+        "switches": {
+            "sync_steps": sync_steps_enabled,
+            "sync_weight": sync_weight_enabled,
+            "sync_sleep": sync_sleep_enabled
+        },
         "ingested": {
             "weight": saved_weight,
             "activity": saved_act

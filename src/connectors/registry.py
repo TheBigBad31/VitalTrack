@@ -14,12 +14,14 @@ from src.connectors.template import TemplateHealthConnector
 
 
 from src.connectors.ringconn import RingConnConnector
+from src.connectors.health_connect import GoogleHealthConnectConnector
 
 CONNECTOR_REGISTRY = {
     "withings": WithingsScaleConnector,
     "oura": OuraRingConnector,
     "ringconn": RingConnConnector,
-    "health_connect": MobileHealthWebhookConnector,
+    "health_connect": GoogleHealthConnectConnector,
+    "google_health_connect": GoogleHealthConnectConnector,
     "mobile_webhook": MobileHealthWebhookConnector,
     "apple_health": MobileHealthWebhookConnector,
     "template": TemplateHealthConnector,

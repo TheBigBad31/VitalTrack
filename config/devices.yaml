@@ -31,6 +31,27 @@ devices:
     config:
       personal_access_token: ""
 
+  health_connect:
+    name: "Google Health Connect (Android & Google Fit)"
+    type: "mobile_aggregator"
+    connector_class: "src.connectors.health_connect.GoogleHealthConnectConnector"
+    enabled: true
+    auth_type: "oauth2"
+    token_url: "https://oauth2.googleapis.com/token"
+    scopes:
+      - "https://www.googleapis.com/auth/fitness.activity.read"
+      - "https://www.googleapis.com/auth/fitness.body.read"
+      - "https://www.googleapis.com/auth/fitness.sleep.read"
+    webhook_endpoint: "/api/webhooks/health-connect"
+    demo_mode_fallback: true
+    config:
+      client_id: ""
+      client_secret: ""
+      access_token: ""
+      refresh_token: ""
+      webhook_secret: "vitaltrack_health_connect_secret"
+      user_height_m: 1.78
+
   mobile_webhook:
     name: "Mobile Health Webhook (Apple Santé & Android Health Connect)"
     type: "universal_webhook"

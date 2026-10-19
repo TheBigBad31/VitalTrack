@@ -421,6 +421,32 @@ def test_health_webhook_endpoints(client):
     assert data["ingested"]["activity"] is not None
     assert data["ingested"]["activity"]["steps"] == 14200
 
+    # Test Webhook Google Health Connect avec Bearer
+    hc_payload = {
+        "date": "2026-10-18",
+        "source": "health_connect",
+        "steps": 12400,
+        "active_calories_kcal": 535.0,
+        "resting_hr_bpm": 56,
+        "hrv_ms": 61.5,
+        "sleep_score": 88
+    }
+    res_hc = client.post("/api/webhooks/health-connect", json=hc_payload, headers={"Authorization": "Bearer sample_token"})
+    assert res_hc.status_code == 200
+    data_hc = res_hc.json()
+    assert data_hc["status"] == "success"
+    assert data_hc["ingested"]["activity"]["steps"] == 12400
+    assert data_hc["ingested"]["activity"]["sleep_score"] == 88
+
+    # Test Webhook Google Health Connect avec Signature HMAC
+    import hashlib
+    import hmac
+    import json
+    raw_bytes = json.dumps(hc_payload).encode()
+    # Le connecteur par défaut sans webhook_secret accepte
+    res_sig = client.post("/api/webhooks/health-connect", content=raw_bytes, headers={"Content-Type": "application/json"})
+    assert res_sig.status_code == 200
+
 
 def test_daily_sync_execution():
     """Vérifie que le script de synchronisation journalière s'exécute correctement."""

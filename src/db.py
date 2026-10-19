@@ -215,6 +215,10 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        google_refresh_token TEXT,
+                        sync_steps INTEGER NOT NULL DEFAULT 1,
+                        sync_weight INTEGER NOT NULL DEFAULT 1,
+                        sync_sleep INTEGER NOT NULL DEFAULT 1,
                         updated_at TEXT NOT NULL,
                         CONSTRAINT uq_user_profile_user UNIQUE (user_id)
                     );
@@ -354,6 +358,10 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        google_refresh_token TEXT,
+                        sync_steps INTEGER NOT NULL DEFAULT 1,
+                        sync_weight INTEGER NOT NULL DEFAULT 1,
+                        sync_sleep INTEGER NOT NULL DEFAULT 1,
                         updated_at TEXT NOT NULL
                     );
                 """)
@@ -455,6 +463,18 @@ class Database:
                 for table in ["weights", "activities", "meals", "user_devices", "user_profile"]:
                     try:
                         cursor.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER DEFAULT 1")
+                    except Exception:
+                        pass
+
+                # Migrations douces pour user_profile (Health Connect preferences & tokens)
+                for col, d_type, d_val in [
+                    ("google_refresh_token", "TEXT", "NULL"),
+                    ("sync_steps", "INTEGER", "1"),
+                    ("sync_weight", "INTEGER", "1"),
+                    ("sync_sleep", "INTEGER", "1")
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {d_type} DEFAULT {d_val}")
                     except Exception:
                         pass
 
@@ -933,6 +953,10 @@ class Database:
         google_name = data.get("google_name", current.get("google_name"))
         google_picture = data.get("google_picture", current.get("google_picture"))
         google_sub = data.get("google_sub", current.get("google_sub"))
+        google_refresh_token = data.get("google_refresh_token", current.get("google_refresh_token"))
+        sync_steps = int(data.get("sync_steps", current.get("sync_steps", 1)))
+        sync_weight = int(data.get("sync_weight", current.get("sync_weight", 1)))
+        sync_sleep = int(data.get("sync_sleep", current.get("sync_sleep", 1)))
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -942,9 +966,10 @@ class Database:
                     goal_profile_id = ?, target_steps = ?, target_calories_intake = ?,
                     protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?,
                     google_email = ?, google_name = ?, google_picture = ?, google_sub = ?,
+                    google_refresh_token = ?, sync_steps = ?, sync_weight = ?, sync_sleep = ?,
                     updated_at = ?
                 WHERE user_id = ?
-            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, google_email, google_name, google_picture, google_sub, now_str, user_id))
+            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, google_email, google_name, google_picture, google_sub, google_refresh_token, sync_steps, sync_weight, sync_sleep, now_str, user_id))
             conn.commit()
 
         return self.get_user_profile(user_id=user_id)
@@ -1030,7 +1055,8 @@ class Database:
                 "email",
                 "profile",
                 "https://www.googleapis.com/auth/fitness.activity.read",
-                "https://www.googleapis.com/auth/fitness.body.read"
+                "https://www.googleapis.com/auth/fitness.body.read",
+                "https://www.googleapis.com/auth/fitness.sleep.read"
             ],
             "demo_fallback_account": "sebastienlamoliate@gmail.com"
         }

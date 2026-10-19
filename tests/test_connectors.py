@@ -240,11 +240,151 @@ def test_template_and_registry():
     assert "devices" in config
     assert "withings" in config["devices"]
     assert "oura" in config["devices"]
+    assert "health_connect" in config["devices"]
     assert "mobile_webhook" in config["devices"]
 
     connector = get_connector("withings")
     assert isinstance(connector, WithingsScaleConnector)
 
+    gh_connector = get_connector("health_connect")
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+    assert isinstance(gh_connector, GoogleHealthConnectConnector)
+
     template = TemplateHealthConnector()
     assert not template.is_configured
     assert template.sync_weights(date.today(), date.today()) == []
+
+
+def test_google_health_connect_demo_and_config():
+    """Teste le connecteur Google Health Connect en mode démo et configuré."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+
+    # Mode Démo sans tokens
+    demo_conn = GoogleHealthConnectConnector()
+    assert not demo_conn.is_configured
+    assert demo_conn.is_token_expired()
+
+    start = date.today() - timedelta(days=6)
+    end = date.today()
+    activities = demo_conn.sync_activities(start, end)
+    assert len(activities) == 7
+    assert all(a.source == "health_connect" for a in activities)
+    assert all(a.steps > 5000 for a in activities)
+    assert all(a.sleep_score is not None for a in activities)
+
+    # Scopes obligatoires
+    assert len(demo_conn.REQUIRED_SCOPES) == 3
+    assert any("fitness.activity.read" in s for s in demo_conn.REQUIRED_SCOPES)
+    assert any("fitness.body.read" in s for s in demo_conn.REQUIRED_SCOPES)
+    assert any("fitness.sleep.read" in s for s in demo_conn.REQUIRED_SCOPES)
+
+
+def test_google_health_connect_token_refresh():
+    """Teste la logique de rafraîchissement automatique de token OAuth2."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+
+    # Connecteur configuré avec refresh_token
+    conn = GoogleHealthConnectConnector(config={
+        "client_id": "google_test_client_id.apps.googleusercontent.com",
+        "client_secret": "sec_test_123",
+        "refresh_token": "1//test_refresh_token_abc456",
+        "access_token": "ya29.expired_token",
+        "token_expiry": 1000  # Expiré
+    })
+    assert conn.is_configured
+    assert conn.is_token_expired()
+
+    # Rafraîchissement
+    new_token = conn.refresh_access_token_if_needed()
+    assert new_token is not None
+    assert new_token != "ya29.expired_token"
+    assert not conn.is_token_expired()
+    assert conn.access_token == new_token
+
+
+def test_google_health_connect_aggregate_parsing():
+    """Teste le parsing d'un bucket aggregate de l'API Google Fitness / Health Connect."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+
+    conn = GoogleHealthConnectConnector(config={"client_id": "test_id", "access_token": "valid_token"})
+
+    bucket = {
+        "startTimeMillis": "1760572800000",  # Millisecondes epoch
+        "endTimeMillis": "1760659200000",
+        "dataset": [
+            {
+                "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:aggregated",
+                "point": [
+                    {"value": [{"intVal": 11850}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.calories.expended:com.google.android.gms:aggregated",
+                "point": [
+                    {"value": [{"fpVal": 520.5}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.calories.bmr:com.google.android.gms:aggregated",
+                "point": [
+                    {"value": [{"fpVal": 1765.0}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.heart_rate.bpm:com.google.android.gms:resting_heart_rate",
+                "point": [
+                    {"value": [{"fpVal": 56.0}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.sleep.segment:com.google.android.gms:sleep_score",
+                "point": [
+                    {"value": [{"intVal": 87}]}
+                ]
+            }
+        ]
+    }
+
+    entry = conn.parse_google_fit_aggregate(bucket)
+    assert entry.steps == 11850
+    assert entry.active_calories_kcal == 520.5
+    assert entry.bmr_kcal == 1765.0
+    assert entry.total_burned_kcal == round(1765.0 + 520.5, 1)
+    assert entry.resting_hr_bpm == 56
+    assert entry.sleep_score == 87
+    assert entry.source == "health_connect"
+
+
+def test_google_health_connect_webhook_hmac_and_bearer():
+    """Teste la validation de sécurité HMAC-SHA256 et Bearer token de la passerelle Android."""
+    import hashlib
+    import hmac
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+
+    secret = "my_health_secret_key"
+    conn = GoogleHealthConnectConnector(config={"webhook_secret": secret, "bearer_token": "token_compagnon_123"})
+
+    payload_bytes = b'{"date": "2026-10-18", "steps": 12500, "active_calories_kcal": 540}'
+    sig = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+
+    # HMAC valide et invalide
+    assert conn.verify_webhook_hmac(payload_bytes, sig)
+    assert conn.verify_webhook_hmac(payload_bytes, f"sha256={sig}")
+    assert not conn.verify_webhook_hmac(payload_bytes, "mauvaise_signature")
+
+    # Bearer token
+    assert conn.verify_bearer_token("Bearer token_compagnon_123")
+    assert not conn.verify_bearer_token("Bearer mauvais_token")
+
+    # Traitement du payload
+    weight, act = conn.process_webhook_payload({
+        "date": "2026-10-18",
+        "hourly_steps": {"08:00": 3000, "12:00": 4500, "18:00": 5200},
+        "resting_hr_bpm": 58,
+        "sleep_score": 86
+    })
+    assert act is not None
+    assert act.steps == 12700  # Somme des pas horaires
+    assert act.resting_hr_bpm == 58
+    assert act.sleep_score == 86
+    assert act.source == "health_connect"

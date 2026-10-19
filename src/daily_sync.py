@@ -61,6 +61,18 @@ def run_daily_sync():
         db.insert_activity(act)
         print(f"  -> Enregistre : {act.date} - {act.steps} pas, {act.active_calories_kcal} kcal actives, HRV: {act.hrv_ms} ms, Sommeil: {act.sleep_score}/100")
 
+    # 3. Synchronisation Google Health Connect (Pas, BMR, Sommeil, Fréquence Cardiaque)
+    print("\n--- Synchronisation Google Health Connect & Fit ---")
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+    gh_connector = GoogleHealthConnectConnector()
+    print(f"Statut Google Health Connect : {'Configure (API Live)' if gh_connector.is_configured else 'Mode Demo/Simulation'}")
+
+    gh_activities = gh_connector.sync_activities(start_date=start_date, end_date=today)
+    print(f"Activites Google Health recuperees : {len(gh_activities)}")
+    for act in gh_activities:
+        db.insert_activity(act)
+        print(f"  -> Enregistre Google Health : {act.date} - {act.steps} pas, {act.total_burned_kcal} kcal brulees, HRV: {act.hrv_ms} ms")
+
     print("\n" + "=" * 60)
     print(f"[VitalTrack] Synchronisation terminee avec succes ({db.db_path})")
     print("=" * 60)
