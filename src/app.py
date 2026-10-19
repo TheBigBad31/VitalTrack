@@ -268,6 +268,11 @@ def health_check():
     return {
         "status": "ok",
         "service": "VitalTrack API",
+        "database": {
+            "type": "postgresql" if db.is_postgres else "sqlite",
+            "is_postgres": db.is_postgres,
+            "target": "Neon PostgreSQL" if db.is_postgres else db.db_path
+        },
         "db_path": db.db_path,
         "is_vercel": os.getenv("VERCEL") == "1",
         "has_gemini_vision": calorie_estimator.has_gemini_api,

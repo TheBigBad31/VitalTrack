@@ -43,7 +43,13 @@ except ImportError:
 
 def get_database_url() -> Optional[str]:
     """Récupère l'URL de connexion PostgreSQL si configurée."""
-    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRES_URL_NON_POOLING")
+        or os.getenv("POSTGRES_PRISMA_URL")
+        or os.getenv("NEON_DATABASE_URL")
+    )
     if url:
         # Assurer la compatibilité avec le driver psycopg
         if url.startswith("postgres://"):
