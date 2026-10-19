@@ -498,4 +498,32 @@ def test_google_auth_and_profile_binding(client):
     assert me_after["session"]["is_authenticated"] is False
 
 
+def test_api_health_aliases(client):
+    """Vérifie que les alias /api, /api/ et /health répondent tous avec le statut 200."""
+    for path in ["/api", "/api/", "/health", "/api/health"]:
+        res = client.get(path)
+        assert res.status_code == 200, f"Échec pour {path}: {res.status_code}"
+        assert res.json()["status"] == "ok"
 
+
+def test_vercel_path_resolver():
+    """Vérifie que VercelPathResolver redirige fidèlement les requêtes serverless Vercel."""
+    from api.index import app as vercel_app
+    from fastapi.testclient import TestClient
+
+    vercel_client = TestClient(vercel_app)
+
+    # 1. Test du paramètre de rewrite Vercel ?__path=health
+    res_health = vercel_client.get("/api/index.py?__path=health")
+    assert res_health.status_code == 200
+    assert res_health.json()["status"] == "ok"
+
+    # 2. Test du paramètre de rewrite Vercel ?__path=dashboard
+    res_dash = vercel_client.get("/api/index.py?__path=dashboard")
+    assert res_dash.status_code == 200
+    assert "summary" in res_dash.json()
+
+    # 3. Test de l'appel direct /api/index.py
+    res_direct = vercel_client.get("/api/index.py")
+    assert res_direct.status_code == 200
+    assert res_direct.json()["status"] == "ok"

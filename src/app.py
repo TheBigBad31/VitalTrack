@@ -52,7 +52,9 @@ from src.auth import (
 app = FastAPI(
     title="VitalTrack API",
     description="API REST pour VitalTrack : PWA Mobile-First, Nutrition Photo IA et Objets Connectés",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json"
 )
 
 # CORS permissif pour le support PWA et requêtes locales / Vercel
@@ -237,9 +239,12 @@ class DeviceConnectInput(BaseModel):
 # Endpoints de Santé et Métadonnées
 # =====================================================================
 
+@app.get("/api")
+@app.get("/api/")
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
-    """Vérification de l'état du backend et de la base SQLite."""
+    """Vérification de l'état du backend et de la base de données."""
     return {
         "status": "ok",
         "service": "VitalTrack API",
