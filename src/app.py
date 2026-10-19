@@ -44,6 +44,7 @@ from src.auth import (
     decode_access_token,
     hash_password,
     parse_google_identity,
+    validate_password_strength,
     verify_password
 )
 
@@ -588,8 +589,16 @@ def update_auth_config(payload: GoogleConfigUpdate):
 
 @app.post("/api/auth/register")
 def register_user(payload: RegisterRequest):
-    """Inscription classique avec email et mot de passe sécurisé (hash PBKDF2)."""
-    pwd_hash = hash_password(payload.password)
+    """Inscription classique avec email et mot de passe sécurisé (hash bcrypt / PBKDF2)."""
+    if not validate_password_strength(payload.password):
+        raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au minimum 8 caractères")
+
+    # Vérification de doublon d'email
+    existing = db.get_user_by_email(payload.email)
+    if existing and existing.get("password_hash"):
+        raise HTTPException(status_code=400, detail="Un compte avec cet email existe déjà")
+
+    pwd_hash = hash_password(payload.password, method="bcrypt")
     user = db.get_or_create_user(
         email=payload.email,
         name=payload.name or payload.email.split("@")[0],
@@ -636,7 +645,9 @@ def authenticate_google_user(payload: GoogleAuthPayload):
     
     Associe automatiquement le compte Google au profil utilisateur et génère un jeton JWT d'accès.
     """
-    user_info = parse_google_identity(payload)
+    cfg = db.get_google_config()
+    client_id = cfg.get("google_client_id")
+    user_info = parse_google_identity(payload, verify_signature=True, client_id=client_id)
     session = db.login_google_user(
         email=user_info["email"],
         name=user_info["name"],

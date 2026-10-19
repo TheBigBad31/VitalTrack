@@ -580,6 +580,15 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Récupère un compte utilisateur par son adresse email (insensible à la casse)."""
+        clean_email = email.strip().lower()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (clean_email,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     # ---------------------------------------------------------
     # Tendance et Pesées Multi-Utilisateurs
     # ---------------------------------------------------------
