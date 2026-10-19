@@ -18,7 +18,7 @@ Endpoints :
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,7 +34,18 @@ from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
-from src.auth import GoogleAuthPayload, GoogleConfigUpdate, parse_google_identity
+from src.auth import (
+    AuthUser,
+    GoogleAuthPayload,
+    GoogleConfigUpdate,
+    LoginRequest,
+    RegisterRequest,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    parse_google_identity,
+    verify_password
+)
 
 # Initialisation de FastAPI
 app = FastAPI(
@@ -64,6 +75,82 @@ device_registry.register(MobileHealthWebhookConnector(), device_id="health_conne
 device_registry.register(WithingsScaleConnector(), device_id="withings", name="Withings Body Scan & Scales", device_type="scale")
 device_registry.register(OuraRingConnector(), device_id="oura", name="Oura Ring Gen3", device_type="ring")
 device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health", name="Apple Santé (HealthKit)", device_type="mobile_aggregator")
+
+
+# =====================================================================
+# Middleware & Dépendances d'Authentification JWT
+# =====================================================================
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> AuthUser:
+    """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer.
+    
+    Supporte également le compte démo/principal par défaut si aucun header n'est fourni,
+    permettant l'accès direct et la rétrocompatibilité tout en isolant par user_id.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1].strip()
+        payload = decode_access_token(token)
+        if payload and "user_id" in payload:
+            user_data = db.get_user_by_id(int(payload["user_id"]))
+            if user_data:
+                return AuthUser(
+                    id=user_data["id"],
+                    uuid=user_data["uuid"],
+                    email=user_data["email"],
+                    name=user_data.get("name"),
+                    picture=user_data.get("picture"),
+                    auth_provider=user_data.get("auth_provider", "google"),
+                    google_sub=user_data.get("google_sub")
+                )
+
+    # Vérifier si une session Google active existe en base
+    sess = db.get_google_session()
+    if sess.get("is_authenticated") and sess.get("user_id"):
+        user_data = db.get_user_by_id(int(sess["user_id"]))
+        if user_data:
+            return AuthUser(
+                id=user_data["id"],
+                uuid=user_data["uuid"],
+                email=user_data["email"],
+                name=user_data.get("name"),
+                picture=user_data.get("picture"),
+                auth_provider=user_data.get("auth_provider", "google"),
+                google_sub=user_data.get("google_sub")
+            )
+
+    # Utilisateur par défaut (Sébastien LAMOLIATE, user_id=1)
+    default_user = db._ensure_default_user()
+    return AuthUser(
+        id=default_user["id"],
+        uuid=default_user["uuid"],
+        email=default_user["email"],
+        name=default_user.get("name"),
+        picture=default_user.get("picture"),
+        auth_provider=default_user.get("auth_provider", "google"),
+        google_sub=default_user.get("google_sub")
+    )
+
+
+def get_strict_user(authorization: Optional[str] = Header(None)) -> AuthUser:
+    """Dépendance stricte exigeant un jeton Bearer JWT valide."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Jeton d'authentification Bearer manquant ou invalide")
+    token = authorization.split("Bearer ", 1)[1].strip()
+    payload = decode_access_token(token)
+    if not payload or "user_id" not in payload:
+        raise HTTPException(status_code=401, detail="Jeton JWT expiré ou signature invalide")
+    user_data = db.get_user_by_id(int(payload["user_id"]))
+    if not user_data:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return AuthUser(
+        id=user_data["id"],
+        uuid=user_data["uuid"],
+        email=user_data["email"],
+        name=user_data.get("name"),
+        picture=user_data.get("picture"),
+        auth_provider=user_data.get("auth_provider", "google"),
+        google_sub=user_data.get("google_sub")
+    )
 
 
 
@@ -167,11 +254,12 @@ def health_check():
 # =====================================================================
 
 @app.get("/api/dashboard")
-def get_dashboard_data():
-    """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards."""
-    weights = db.get_weights(limit=30)
-    activities = db.get_activities(limit=30)
-    meals = db.get_meals(limit=60)
+def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
+    """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
+    user_id = current_user.id
+    weights = db.get_weights(limit=30, user_id=user_id)
+    activities = db.get_activities(limit=30, user_id=user_id)
+    meals = db.get_meals(limit=60, user_id=user_id)
 
     # Date du jour (ou dernière pesée)
     today = date.today()
@@ -190,16 +278,17 @@ def get_dashboard_data():
         today_activity = activities[-1]
 
     # Profil utilisateur personnalisé
-    profile = db.get_user_profile()
-    saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices()}
+    profile = db.get_user_profile(user_id=user_id)
+    saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
 
-    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today)
+    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today, user_id=user_id)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
         target_date=today_activity.date if today_activity else today,
         user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5,
         user_height_cm=profile.get("height_cm", 178.0),
         user_age=profile.get("age", 35),
-        gender=profile.get("gender", "male")
+        gender=profile.get("gender", "male"),
+        user_id=user_id
     )
 
     # Répartition des repas par jour pour les graphiques empilés (7 derniers jours)
@@ -232,6 +321,7 @@ def get_dashboard_data():
 
     return {
         "profile": profile,
+        "current_user": current_user.model_dump(),
         "summary": {
             "current_weight_kg": latest_weight.weight_kg if latest_weight else 79.8,
             "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else 80.0,
@@ -269,15 +359,15 @@ def get_dashboard_data():
 
 @app.get("/api/weights")
 @app.get("/api/weight")
-def get_weights(limit: int = Query(30, ge=1, le=180)):
-    """Retourne la série chronologique des pesées."""
-    weights = db.get_weights(limit=limit)
+def get_weights(limit: int = Query(30, ge=1, le=180), current_user: AuthUser = Depends(get_current_user)):
+    """Retourne la série chronologique des pesées pour l'utilisateur connecté."""
+    weights = db.get_weights(limit=limit, user_id=current_user.id)
     return [w.model_dump() for w in weights]
 
 
 @app.post("/api/weights")
-def create_weight(entry_in: WeightInput):
-    """Enregistre une nouvelle pesée manuelle ou connectée."""
+def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(get_current_user)):
+    """Enregistre une nouvelle pesée manuelle ou connectée pour l'utilisateur connecté."""
     target_date = entry_in.date or date.today()
     
     # Estimation BMI si non fourni (sur base d'1m78)
@@ -295,7 +385,7 @@ def create_weight(entry_in: WeightInput):
         source=entry_in.source,
         notes=entry_in.notes,
     )
-    saved = db.insert_weight(entry)
+    saved = db.insert_weight(entry, user_id=current_user.id)
     return saved.model_dump()
 
 
@@ -305,15 +395,15 @@ def create_weight(entry_in: WeightInput):
 
 @app.get("/api/activities")
 @app.get("/api/activity")
-def get_activities(limit: int = Query(30, ge=1, le=180)):
-    """Retourne la série chronologique de l'activité quotidienne."""
-    acts = db.get_activities(limit=limit)
+def get_activities(limit: int = Query(30, ge=1, le=180), current_user: AuthUser = Depends(get_current_user)):
+    """Retourne la série chronologique de l'activité quotidienne pour l'utilisateur connecté."""
+    acts = db.get_activities(limit=limit, user_id=current_user.id)
     return [a.model_dump() for a in acts]
 
 
 @app.post("/api/activities")
-def create_activity(act_in: ActivityInput):
-    """Ajoute ou synchronise une entrée d'activité physique quotidienne."""
+def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(get_current_user)):
+    """Ajoute ou synchronise une entrée d'activité physique quotidienne pour l'utilisateur connecté."""
     target_date = act_in.date or date.today()
     bmr = 1780.0
     active_cal = act_in.active_calories_kcal
@@ -335,7 +425,7 @@ def create_activity(act_in: ActivityInput):
         sleep_score=act_in.sleep_score,
         source=act_in.source
     )
-    saved = db.insert_activity(entry)
+    saved = db.insert_activity(entry, user_id=current_user.id)
     return saved.model_dump()
 
 
@@ -344,9 +434,9 @@ def create_activity(act_in: ActivityInput):
 # =====================================================================
 
 @app.get("/api/meals")
-def get_meals(limit: int = Query(50, ge=1, le=200)):
-    """Retourne les repas récemment enregistrés."""
-    meals = db.get_meals(limit=limit)
+def get_meals(limit: int = Query(50, ge=1, le=200), current_user: AuthUser = Depends(get_current_user)):
+    """Retourne les repas récemment enregistrés pour l'utilisateur connecté."""
+    meals = db.get_meals(limit=limit, user_id=current_user.id)
     return [m.model_dump() for m in meals]
 
 
@@ -397,8 +487,8 @@ def estimate_meal_calories(req: MealEstimateRequest):
 
 
 @app.post("/api/meals")
-def log_meal(req: MealSaveRequest):
-    """Enregistre définitivement un repas décomposé dans le journal alimentaire."""
+def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(get_current_user)):
+    """Enregistre définitivement un repas décomposé dans le journal alimentaire pour l'utilisateur connecté."""
     target_date = req.date or date.today()
     
     if not req.items:
@@ -416,7 +506,8 @@ def log_meal(req: MealSaveRequest):
         date_val=target_date,
         meal_type=req.meal_type,
         items=items,
-        photo_data_url=req.photo_data_url
+        photo_data_url=req.photo_data_url,
+        user_id=current_user.id
     )
     return saved.model_dump()
 
@@ -426,16 +517,19 @@ def log_meal(req: MealSaveRequest):
 # =====================================================================
 
 @app.get("/api/devices")
-def list_devices():
-    """Liste tous les objets connectés supportés et leur statut."""
+def list_devices(current_user: AuthUser = Depends(get_current_user)):
+    """Liste tous les objets connectés supportés et leur statut pour l'utilisateur connecté."""
+    saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=current_user.id)}
     statuses = []
     for d in device_registry.list_all():
+        saved_d = saved_devices.get(d.id, {})
+        is_conn = bool(saved_d.get("connected") or d.is_configured())
         statuses.append({
             "id": d.id,
             "name": d.name,
             "device_type": d.device_type,
-            "is_configured": d.is_configured(),
-            "status": "connected" if d.is_configured() else "demo",
+            "is_configured": is_conn,
+            "status": "connected" if is_conn else "demo",
             "supported_features": getattr(d, "supported_features", ["sync", "demo_mode"])
         })
     return statuses
@@ -472,7 +566,7 @@ def sync_device(req: DeviceSyncRequest):
 
 
 # =====================================================================
-# Endpoints Authentification Google Sign-In (OAuth2 / GIS)
+# Endpoints Authentification Google Sign-In (OAuth2 / GIS) & JWT
 # =====================================================================
 
 @app.get("/api/auth/config")
@@ -492,12 +586,55 @@ def update_auth_config(payload: GoogleConfigUpdate):
     }
 
 
+@app.post("/api/auth/register")
+def register_user(payload: RegisterRequest):
+    """Inscription classique avec email et mot de passe sécurisé (hash PBKDF2)."""
+    pwd_hash = hash_password(payload.password)
+    user = db.get_or_create_user(
+        email=payload.email,
+        name=payload.name or payload.email.split("@")[0],
+        password_hash=pwd_hash,
+        auth_provider="email"
+    )
+    token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
+    return {
+        "status": "success",
+        "message": "Compte créé avec succès",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user
+    }
+
+
+@app.post("/api/auth/login")
+def login_user(payload: LoginRequest):
+    """Connexion classique par email et mot de passe."""
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (payload.email.strip().lower(),))
+        user = cursor.fetchone()
+
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
+    return {
+        "status": "success",
+        "message": "Connexion réussie",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": dict(user)
+    }
+
+
 @app.post("/api/auth/google")
 def authenticate_google_user(payload: GoogleAuthPayload):
     """Authentifie l'utilisateur via Google GIS (ID Token JWT) ou connexion directe 1-clic.
     
-    Associe automatiquement le compte Google au profil utilisateur et
-    restaure/synchronise l'historique personnel.
+    Associe automatiquement le compte Google au profil utilisateur et génère un jeton JWT d'accès.
     """
     user_info = parse_google_identity(payload)
     session = db.login_google_user(
@@ -507,7 +644,12 @@ def authenticate_google_user(payload: GoogleAuthPayload):
         google_sub=user_info.get("google_sub", ""),
         auth_method=user_info.get("auth_method", "google")
     )
-    user_profile = db.get_user_profile()
+    user_id = session.get("user_id") or 1
+    user_uuid = session.get("uuid") or "00000000-0000-4000-8000-000000000001"
+    user_profile = db.get_user_profile(user_id=user_id)
+
+    # Générer le token JWT Bearer pour les requêtes futures
+    access_token = create_access_token(user_id, user_uuid, user_info["email"], user_info["name"])
 
     # Assurer que l'appareil Google Health Connect est configuré pour cet utilisateur
     db.update_user_device(
@@ -516,25 +658,31 @@ def authenticate_google_user(payload: GoogleAuthPayload):
         device_type="mobile_aggregator",
         connected=True,
         auth_type="google_health_connect",
-        account_email=user_info["email"]
+        account_email=user_info["email"],
+        user_id=user_id
     )
 
     return {
         "status": "success",
         "message": f"Connecté avec succès en tant que {user_info['name']} ({user_info['email']})",
+        "access_token": access_token,
+        "token_type": "bearer",
         "session": session,
         "profile": user_profile
     }
 
 
 @app.get("/api/auth/me")
-def get_current_google_session():
-    """Retourne la session Google active et le profil associé."""
+def get_current_google_session(current_user: AuthUser = Depends(get_current_user)):
+    """Retourne la session active, le jeton JWT et le profil associé."""
     session = db.get_google_session()
-    profile = db.get_user_profile()
+    profile = db.get_user_profile(user_id=current_user.id)
+    token = create_access_token(current_user.id, current_user.uuid, current_user.email, current_user.name)
     return {
         "session": session,
-        "profile": profile
+        "profile": profile,
+        "current_user": current_user.model_dump(),
+        "access_token": token
     }
 
 
@@ -550,10 +698,10 @@ def logout_google_session():
 # =====================================================================
 
 @app.get("/api/profile")
-def get_user_profile():
-    """Renvoie le profil utilisateur personnalisé et ses préférences d'objets."""
-    profile = db.get_user_profile()
-    devices = db.get_user_devices()
+def get_user_profile(current_user: AuthUser = Depends(get_current_user)):
+    """Renvoie le profil utilisateur personnalisé et ses préférences d'objets pour l'utilisateur connecté."""
+    profile = db.get_user_profile(user_id=current_user.id)
+    devices = db.get_user_devices(user_id=current_user.id)
     return {
         "profile": profile,
         "connected_devices": devices
@@ -561,9 +709,9 @@ def get_user_profile():
 
 
 @app.post("/api/profile")
-def update_user_profile(profile_in: UserProfileInput):
-    """Met à jour ou crée le profil utilisateur (sexe, âge, taille, poids cible, bague et balance préférées)."""
-    updated = db.update_user_profile(profile_in.model_dump())
+def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(get_current_user)):
+    """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
+    updated = db.update_user_profile(profile_in.model_dump(), user_id=current_user.id)
     return {
         "status": "success",
         "message": "Profil mis à jour avec succès",
@@ -572,8 +720,8 @@ def update_user_profile(profile_in: UserProfileInput):
 
 
 @app.post("/api/devices/connect")
-def connect_device_wizard(connect_in: DeviceConnectInput):
-    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura)."""
+def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(get_current_user)):
+    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté."""
     connector = device_registry.get(connect_in.device_id)
     name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
     dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
@@ -585,14 +733,15 @@ def connect_device_wizard(connect_in: DeviceConnectInput):
         connected=connect_in.connected,
         auth_type=connect_in.auth_type or "connected",
         api_key=connect_in.api_key,
-        account_email=connect_in.account_email
+        account_email=connect_in.account_email,
+        user_id=current_user.id
     )
 
     # Si c'est une bague ou une balance, mettre à jour la préférence dans le profil
     if dev_type == "ring":
-        db.update_user_profile({"preferred_ring": connect_in.device_id})
+        db.update_user_profile({"preferred_ring": connect_in.device_id}, user_id=current_user.id)
     elif dev_type == "scale":
-        db.update_user_profile({"preferred_scale": connect_in.device_id})
+        db.update_user_profile({"preferred_scale": connect_in.device_id}, user_id=current_user.id)
 
     return {
         "status": "success",
@@ -611,23 +760,23 @@ class BackupRestoreInput(BaseModel):
 
 
 @app.get("/api/backup/export")
-def export_backup():
+def export_backup(current_user: AuthUser = Depends(get_current_user)):
     """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique."""
-    backup_data = db.export_full_backup()
+    backup_data = db.export_full_backup(user_id=current_user.id)
     return backup_data
 
 
 @app.post("/api/backup/import")
-def import_backup(payload: BackupRestoreInput):
+def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(get_current_user)):
     """Restaure ou synchronise les données depuis un export JSON ou le localStorage/IndexedDB."""
-    result = db.import_full_backup(payload.data, overwrite=payload.overwrite)
+    result = db.import_full_backup(payload.data, overwrite=payload.overwrite, user_id=current_user.id)
     return result
 
 
 @app.post("/api/profile/reset-demo")
-def reset_demo():
+def reset_demo(current_user: AuthUser = Depends(get_current_user)):
     """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
-    db.reset_demo_data()
+    db.reset_demo_data(user_id=current_user.id)
     return {
         "status": "success",
         "message": "Données de démonstration 30 jours réinitialisées avec succès"
@@ -635,9 +784,9 @@ def reset_demo():
 
 
 @app.post("/api/profile/clear-history")
-def clear_history():
+def clear_history(current_user: AuthUser = Depends(get_current_user)):
     """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
-    db.clear_all_history(keep_profile=True)
+    db.clear_all_history(keep_profile=True, user_id=current_user.id)
     return {
         "status": "success",
         "message": "Historique effacé. Vous pouvez démarrer votre suivi réel !"

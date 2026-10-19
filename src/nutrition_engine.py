@@ -29,7 +29,8 @@ class NutritionEngine:
         date_val: date,
         meal_type: MealType,
         items: List[FoodItem],
-        photo_data_url: Optional[str] = None
+        photo_data_url: Optional[str] = None,
+        user_id: int = 1
     ) -> MealEntry:
         """Enregistre un repas complet calculé à partir d'une liste d'aliments."""
         total_cal = round(sum(i.calories_kcal for i in items), 1)
@@ -49,15 +50,15 @@ class NutritionEngine:
             photo_data_url=photo_data_url,
             items=items
         )
-        return self.db.insert_meal(entry)
+        return self.db.insert_meal(entry, user_id=user_id)
 
-    def get_meals_by_date(self, target_date: date) -> List[MealEntry]:
+    def get_meals_by_date(self, target_date: date, user_id: int = 1) -> List[MealEntry]:
         """Récupère tous les repas enregistrés pour une date donnée."""
-        return self.db.get_meals_for_date(target_date)
+        return self.db.get_meals_for_date(target_date, user_id=user_id)
 
-    def get_daily_nutrition_summary(self, target_date: date) -> Dict[str, Any]:
+    def get_daily_nutrition_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
         """Agrège tous les repas du jour en totaux et pourcentages de macros."""
-        meals = self.get_meals_by_date(target_date)
+        meals = self.get_meals_by_date(target_date, user_id=user_id)
 
         total_calories = round(sum(m.total_calories_kcal for m in meals), 1)
         total_protein = round(sum(m.protein_g for m in meals), 1)
@@ -158,15 +159,16 @@ class NutritionEngine:
         user_weight_kg: float = 80.0,
         user_height_cm: float = 178.0,
         user_age: int = 35,
-        gender: Literal["male", "female"] = "male"
+        gender: Literal["male", "female"] = "male",
+        user_id: int = 1
     ) -> Dict[str, Any]:
         """Calcule le bilan énergétique net et la trajectoire de poids."""
         # 1. Calories ingérées (journal des repas)
-        nutri_summary = self.get_daily_nutrition_summary(target_date)
+        nutri_summary = self.get_daily_nutrition_summary(target_date, user_id=user_id)
         intake_kcal = nutri_summary["total_calories_kcal"]
 
         # 2. Dépense (table activities ou calcul BMR)
-        activities = self.db.get_activities(limit=60)
+        activities = self.db.get_activities(limit=60, user_id=user_id)
         day_activity = next((a for a in activities if a.date == target_date), None)
 
         if day_activity and day_activity.total_burned_kcal > 0:

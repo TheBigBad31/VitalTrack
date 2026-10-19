@@ -1710,13 +1710,24 @@
       }, 50);
     }
 
+    function getAuthHeaders(extraHeaders = {}) {
+      const headers = { ...extraHeaders };
+      const token = localStorage.getItem('vitaltrack_jwt_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      return headers;
+    }
+
     // Chargement des données depuis FastAPI avec fallback
     async function loadDashboardData() {
       const refreshIcon = document.getElementById('refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
       try {
-        const res = await fetch('/api/dashboard');
+        const res = await fetch('/api/dashboard', {
+          headers: getAuthHeaders()
+        });
         if (res.ok) {
           currentData = await res.json();
         } else {
@@ -2969,6 +2980,9 @@
         if (res.ok) {
           const data = await res.json();
           currentGoogleSession = data.session;
+          if (data.access_token) {
+            localStorage.setItem('vitaltrack_jwt_token', data.access_token);
+          }
           renderGoogleAuthState(data.session, data.profile);
           syncGoogleAccountStorage(data.session.email);
           closeGoogleAuthModal();
@@ -3020,6 +3034,9 @@
         if (res.ok) {
           const data = await res.json();
           currentGoogleSession = data.session || instantSession;
+          if (data.access_token) {
+            localStorage.setItem('vitaltrack_jwt_token', data.access_token);
+          }
           localStorage.setItem('vitaltrack_google_session', JSON.stringify(currentGoogleSession));
           renderGoogleAuthState(currentGoogleSession, data.profile);
         }
@@ -3066,6 +3083,7 @@
     async function logoutGoogle() {
       try {
         localStorage.removeItem('vitaltrack_google_session');
+        localStorage.removeItem('vitaltrack_jwt_token');
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch (e) {
         console.warn("Déconnexion backend différée :", e);
