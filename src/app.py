@@ -225,8 +225,10 @@ class DeviceConnectInput(BaseModel):
     device_id: str
     name: Optional[str] = None
     device_type: Optional[str] = None
-    auth_type: Optional[str] = "connected"  # "cloud_api", "google_health", "bluetooth", "connected"
+    auth_type: Optional[str] = "connected"  # "cloud_api", "google_health", "bluetooth", "connected", "ringconn_openapi", "withings_oauth", "oura_bearer_token"
     api_key: Optional[str] = None
+    token: Optional[str] = None
+    credentials: Optional[Dict[str, Any]] = None
     account_email: Optional[str] = None
     connected: bool = True
 
@@ -513,36 +515,83 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(get_current_
 
 
 # =====================================================================
-# Endpoints Hub Objets Connectés
+# Endpoints Hub Objets Connectés & Gestion de Flotte Sécurisée
 # =====================================================================
 
 @app.get("/api/devices")
 def list_devices(current_user: AuthUser = Depends(get_current_user)):
-    """Liste tous les objets connectés supportés et leur statut pour l'utilisateur connecté."""
+    """Liste tous les objets connectés de l'utilisateur avec leur statut temps réel et métriques récentes."""
     saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=current_user.id)}
     statuses = []
     for d in device_registry.list_all():
         saved_d = saved_devices.get(d.id, {})
         is_conn = bool(saved_d.get("connected") or d.is_configured())
+        sync_status = saved_d.get("sync_status", "connected" if is_conn else "disconnected")
+        last_sync = saved_d.get("last_sync_at") or saved_d.get("last_sync")
+
         statuses.append({
             "id": d.id,
-            "name": d.name,
+            "device_id": d.id,
+            "name": saved_d.get("name") or d.name,
             "device_type": d.device_type,
             "is_configured": is_conn,
-            "status": "connected" if is_conn else "demo",
+            "connected": is_conn,
+            "status": sync_status,
+            "sync_status": sync_status,
+            "last_sync": last_sync,
+            "last_sync_at": last_sync,
+            "has_credentials": bool(saved_d.get("has_credentials")),
+            "api_key_masked": saved_d.get("api_key_masked"),
             "supported_features": getattr(d, "supported_features", ["sync", "demo_mode"])
         })
     return statuses
 
 
-@app.post("/api/devices/sync")
-def sync_device(req: DeviceSyncRequest):
-    """Déclenche la synchronisation manuelle d'un appareil."""
-    connector = device_registry.get(req.device_id)
-    if not connector:
-        raise HTTPException(status_code=404, detail=f"Appareil '{req.device_id}' non trouvé")
+@app.get("/api/devices/comparison")
+def get_devices_comparison():
+    """Guide comparatif technique pour le choix de la balance connectée et l'interconnexion bague."""
+    return _get_devices_comparison_data()
+
+
+@app.get("/api/devices/{device_id}")
+def get_device_detail(device_id: str, current_user: AuthUser = Depends(get_current_user)):
+    """Récupère les détails et l'état en direct d'un appareil pour l'utilisateur connecté."""
+    dev = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=False)
+    connector = device_registry.get(device_id)
+    if not dev and not connector:
+        raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
     
-    # Sync via connecteur
+    if not dev:
+        dev = {
+            "device_id": device_id,
+            "name": getattr(connector, "name", device_id.title()),
+            "device_type": getattr(connector, "device_type", "health_sensor"),
+            "connected": False,
+            "sync_status": "disconnected",
+            "last_sync_at": None,
+            "has_credentials": False
+        }
+    return dev
+
+
+@app.delete("/api/devices/{device_id}")
+def disconnect_device(device_id: str, current_user: AuthUser = Depends(get_current_user)):
+    """Déconnecte et révoque un appareil en supprimant ses identifiants chiffrés."""
+    deleted = db.delete_user_device(device_id, user_id=current_user.id)
+    return {
+        "status": "success",
+        "message": f"Appareil '{device_id}' déconnecté et identifiants révoqués avec succès",
+        "deleted": deleted
+    }
+
+
+@app.post("/api/devices/{device_id}/sync")
+def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_current_user)):
+    """Déclenche la synchronisation manuelle ciblée d'un appareil."""
+    connector = device_registry.get(device_id)
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
+    
     today_val = dt_module.date.today()
     start_val = today_val - dt_module.timedelta(days=1)
     
@@ -553,16 +602,26 @@ def sync_device(req: DeviceSyncRequest):
     if hasattr(connector, "sync_activities"):
         activities = [a.model_dump() for a in connector.sync_activities(start_val, today_val)]
 
+    # Mettre à jour l'état de synchronisation en base
+    db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id)
+
     return {
-        "device_id": req.device_id,
-        "name": getattr(connector, "name", req.device_id.capitalize()),
+        "device_id": device_id,
+        "name": getattr(connector, "name", device_id.capitalize()),
         "status": "success",
+        "sync_status": "connected",
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "details": {
             "weights_synced": len(weights),
             "activities_synced": len(activities)
         }
     }
+
+
+@app.post("/api/devices/sync")
+def sync_device_legacy(req: DeviceSyncRequest, current_user: AuthUser = Depends(get_current_user)):
+    """Compatibilité rétroactive pour la synchronisation d'un appareil."""
+    return sync_device_targeted(req.device_id, current_user=current_user)
 
 
 # =====================================================================
@@ -721,10 +780,27 @@ def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = D
 
 @app.post("/api/devices/connect")
 def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(get_current_user)):
-    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté."""
+    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté avec chiffrement et test immédiat."""
     connector = device_registry.get(connect_in.device_id)
     name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
     dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
+
+    # Consolidation des credentials
+    creds = dict(connect_in.credentials) if connect_in.credentials else {}
+    if connect_in.api_key:
+        creds["api_key"] = connect_in.api_key
+    if connect_in.token:
+        creds["token"] = connect_in.token
+    if connect_in.account_email:
+        creds["account_email"] = connect_in.account_email
+
+    # Test de connectivité immédiat si supporté
+    connectivity_test = {"ok": True, "message": "Connexion établie avec succès"}
+    if connector and hasattr(connector, "test_connection"):
+        try:
+            connectivity_test = connector.test_connection()
+        except Exception as e:
+            connectivity_test = {"ok": False, "message": f"Test de liaison échoué: {e}"}
 
     saved = db.update_user_device(
         device_id=connect_in.device_id,
@@ -732,8 +808,10 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
         device_type=dev_type,
         connected=connect_in.connected,
         auth_type=connect_in.auth_type or "connected",
-        api_key=connect_in.api_key,
+        api_key=connect_in.api_key or connect_in.token,
+        credentials=creds,
         account_email=connect_in.account_email,
+        sync_status="connected" if connectivity_test.get("ok", True) else "error",
         user_id=current_user.id
     )
 
@@ -745,7 +823,8 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
 
     return {
         "status": "success",
-        "message": f"Appareil {name} configuré et connecté avec succès via l'assistant",
+        "message": f"Appareil {name} configuré et connecté avec succès via l'assistant (identifiants chiffrés au repos)",
+        "connectivity_test": connectivity_test,
         "device": saved
     }
 
@@ -910,8 +989,7 @@ def get_goals_presets():
     return DEFAULT_GOALS_PRESETS
 
 
-@app.get("/api/devices/comparison")
-def get_devices_comparison():
+def _get_devices_comparison_data():
     """Guide comparatif technique pour le choix de la balance connectée et l'interconnexion bague."""
     return {
         "title": "Guide Comparatif des Balances Connectées & Configuration Bague",

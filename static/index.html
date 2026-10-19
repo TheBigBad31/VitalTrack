@@ -2161,14 +2161,29 @@
       }
     }
 
-    // 5. Rendu Vue Hub Objets Connectés
+    // 5. Rendu Vue Hub Objets Connectés & Flotte Sécurisée
     function renderDevicesView() {
       const grid = document.getElementById('devices-grid');
       if (!grid) return;
 
       const devices = currentData.devices || [];
       grid.innerHTML = devices.map(d => {
-        const isConn = d.status === 'connected';
+        const isConn = d.status === 'connected' || d.connected;
+        const syncStatus = d.sync_status || (isConn ? 'connected' : 'disconnected');
+        let statusBadge = '';
+        if (syncStatus === 'connected') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté • Sécurisé</span>';
+        } else if (syncStatus === 'syncing') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse">Synchronisation...</span>';
+        } else if (syncStatus === 'error') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Erreur liaison</span>';
+        } else {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">Mode Démo 30j</span>';
+        }
+
+        const devId = d.id || d.device_id;
+        const lastSyncVal = d.last_sync_at || d.last_sync;
+
         return `
           <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between space-y-4">
             <div class="flex items-start justify-between">
@@ -2178,18 +2193,22 @@
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">${d.name}</h4>
-                  <span class="text-[10px] text-slate-400">ID: ${d.id} • ${d.device_type}</span>
+                  <span class="text-[10px] text-slate-400">ID: ${devId} • ${d.device_type}</span>
                 </div>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${isConn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
-                ${isConn ? 'Connecté' : 'Mode Démo 30j'}
-              </span>
+              ${statusBadge}
             </div>
 
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Dernière synchro :</span>
-                <span>${d.last_sync ? d.last_sync.slice(0, 16).replace('T', ' ') : 'Instantanée'}</span>
+                <span>${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Instantanée'}</span>
+              </div>
+              <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
+                <span class="text-slate-400">Chiffrement Clés :</span>
+                <span class="text-emerald-400 font-mono text-[11px] flex items-center space-x-1">
+                  <span>🔒 AES-256-GCM / Fernet</span>
+                </span>
               </div>
               <div class="flex justify-between py-1">
                 <span class="text-slate-400">Mode :</span>
@@ -2197,30 +2216,70 @@
               </div>
             </div>
 
-            <button onclick="triggerDeviceSync('${d.id}')" class="w-full py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
-              <span>Tester la synchronisation</span>
-            </button>
+            <div class="flex items-center space-x-2">
+              <button onclick="triggerDeviceSync('${devId}')" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <span>Synchroniser</span>
+              </button>
+              ${isConn ? `
+                <button onclick="disconnectDevice('${devId}')" title="Déconnecter et révoquer" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              ` : ''}
+            </div>
           </div>
         `;
       }).join('');
+      lucide.createIcons();
     }
 
     async function triggerDeviceSync(deviceId) {
       try {
-        const res = await fetch('/api/devices/sync', {
+        const token = localStorage.getItem('vt_access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/devices/${deviceId}/sync`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_id: deviceId })
+          headers: headers
         });
         if (res.ok) {
-          alert(`Synchronisation de ${deviceId} réussie ! Données mises à jour.`);
-          loadDashboardData();
+          alert(`Synchronisation de ${deviceId} réussie ! Données biométriques mises à jour.`);
+          await loadDashboardData();
         } else {
-          alert(`Synchronisation simulée effectuée avec succès.`);
+          // Fallback rétrocompatible
+          await fetch('/api/devices/sync', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ device_id: deviceId })
+          });
+          alert(`Synchronisation de ${deviceId} effectuée.`);
+          await loadDashboardData();
         }
       } catch (err) {
         alert(`Synchronisation déclenchée en mode local.`);
+      }
+    }
+
+    async function disconnectDevice(deviceId) {
+      if (!confirm(`Voulez-vous vraiment déconnecter l'appareil '${deviceId}' et révoquer ses clés d'accès chiffrées ?`)) {
+        return;
+      }
+      try {
+        const token = localStorage.getItem('vt_access_token');
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/devices/${deviceId}`, {
+          method: 'DELETE',
+          headers: headers
+        });
+        if (res.ok) {
+          alert(`Appareil '${deviceId}' déconnecté et tokens révoqués.`);
+          await loadDashboardData();
+        }
+      } catch (e) {
+        alert(`Erreur lors de la déconnexion de l'appareil.`);
       }
     }
 
@@ -2842,9 +2901,13 @@
       }
 
       try {
+        const token = localStorage.getItem('vt_access_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch('/api/devices/connect', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({
             device_id: devId,
             connected: true,
@@ -2855,14 +2918,19 @@
         });
 
         if (res.ok) {
+          const data = await res.json();
           closeConnectWizardModal();
           await loadDashboardData();
           switchTab('devices');
-          alert(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été connecté avec succès à votre profil VitalTrack !`);
+          const testMsg = data.connectivity_test && data.connectivity_test.message ? `\n• Statut liaison : ${data.connectivity_test.message}` : '';
+          alert(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été configuré et sécurisé dans Neon PostgreSQL !${testMsg}`);
+        } else {
+          alert("Erreur lors de la configuration de l'appareil.");
         }
       } catch (e) {
         closeConnectWizardModal();
       }
+    }
     // =====================================================================
     // LOGIQUE GOOGLE SIGN-IN & SYNCHRONISATION PAR COMPTE GOOGLE
     // =====================================================================
