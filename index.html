@@ -2870,7 +2870,21 @@
     let currentGoogleConfig = { google_client_id: "", is_configured: false };
 
     async function loadGoogleAuthState() {
-      // Lecture immédiate du cache local pour éliminer tout temps de chargement
+      // 1. Détection du SSO direct depuis AppHub (?google_user=...)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const ssoEmail = urlParams.get('google_user');
+        if (ssoEmail) {
+          const ssoName = (ssoEmail.toLowerCase() === 'sebastienlamoliate@gmail.com') ? 'Sébastien LAMOLIATE' : ssoEmail.split('@')[0];
+          await selectGoogleAccount(ssoEmail, ssoName, 'https://lh3.googleusercontent.com/a/default-user=s96-c');
+          try {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } catch (e) {}
+          return;
+        }
+      } catch (e) {}
+
+      // 2. Lecture immédiate du cache local pour éliminer tout temps de chargement
       try {
         const cached = localStorage.getItem('vitaltrack_google_session');
         if (cached) {
@@ -2882,6 +2896,7 @@
         }
       } catch (e) {}
 
+      // 3. Appel backend pour synchronisation
       try {
         const [confRes, meRes] = await Promise.all([
           fetch('/api/auth/config'),
@@ -2907,6 +2922,13 @@
       } catch (e) {
         console.warn("Erreur chargement session Google API (mode local actif) :", e);
       }
+
+      // 4. Si l'utilisateur n'est pas encore connecté à Google, ouvrir automatiquement l'écran officiel Google Chooser
+      setTimeout(() => {
+        if (!currentGoogleSession || !currentGoogleSession.is_authenticated) {
+          openGoogleAuthModal();
+        }
+      }, 350);
     }
 
     function initGoogleIdentityServices() {
