@@ -18,7 +18,7 @@ Endpoints :
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -65,6 +65,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def vercel_path_resolver_middleware(request: Request, call_next):
+    """Résout et normalise les chemins Serverless sous Vercel (rewrites ?__path=...)."""
+    path_param = request.query_params.get("__path")
+    if path_param is not None:
+        subpath = path_param.lstrip("/")
+        request.scope["path"] = f"/api/{subpath}" if subpath else "/api"
+    elif request.scope.get("path") in ("/api/index.py", "/api/index", "/api"):
+        matched = request.headers.get("x-matched-path", "")
+        if matched and matched not in ("/api/index.py", "/api/index", "/api"):
+            request.scope["path"] = matched
+        else:
+            request.scope["path"] = "/api/health"
+    elif not request.scope.get("path", "").startswith("/api") and request.scope.get("path") not in ("/", "/docs", "/openapi.json"):
+        request.scope["path"] = f"/api{request.scope.get('path')}"
+
+    return await call_next(request)
+
 
 # Instances partagées
 db = Database()
