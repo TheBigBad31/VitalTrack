@@ -3224,12 +3224,7 @@
         console.warn("Erreur chargement session (mode local résilient) :", e);
       }
 
-      // 4. Si non connecté, ouvrir discrètement la modale
-      setTimeout(() => {
-        if (!currentUnifiedSession || !currentUnifiedSession.is_authenticated) {
-          openAuthModal();
-        }
-      }, 350);
+      // 4. L'application démarre directement sur les dashboards sans bloquer l'utilisateur par une modale
     }
 
     function initGoogleIdentityServices() {
