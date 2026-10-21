@@ -52,7 +52,7 @@ from src.auth import (
 app = FastAPI(
     title="VitalTrack API",
     description="API REST pour VitalTrack : PWA Mobile-First, Nutrition Photo IA et Objets Connectés",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json"
 )
