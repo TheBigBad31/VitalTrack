@@ -80,7 +80,7 @@ async def vercel_path_resolver_middleware(request: Request, call_next):
             request.scope["path"] = matched
         else:
             request.scope["path"] = "/api/health"
-    elif not request.scope.get("path", "").startswith("/api") and request.scope.get("path") not in ("/", "/docs", "/openapi.json"):
+    elif not request.scope.get("path", "").startswith("/api") and not request.scope.get("path", "").startswith("/static") and request.scope.get("path") not in ("/", "/docs", "/openapi.json"):
         request.scope["path"] = f"/api{request.scope.get('path')}"
 
     return await call_next(request)
