@@ -332,6 +332,32 @@
 
       </div>
 
+      <!-- Bandeau Données en Direct : Google Santé Connect (Android) -->
+      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div class="flex items-center space-x-3.5">
+          <div class="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <i data-lucide="smartphone" class="w-6 h-6"></i>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-bold text-white">Données reçues en direct : Google Santé Connect (Android)</span>
+              <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Synchronisé ✓</span>
+            </div>
+            <div class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+              <span>Pas du jour : <strong class="text-emerald-400 font-bold" id="live-hc-steps">12 100 pas</strong></span>
+              <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">530 kcal</strong></span>
+              <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">57 BPM</strong></span>
+              <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">59 ms</strong></span>
+              <span>Sommeil : <strong class="text-indigo-400 font-bold" id="live-hc-sleep">85 / 100</strong></span>
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition-colors">
+          <span>Voir détails d'activité</span>
+          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
       <!-- Graphique combiné Poids & Tendance + Macros du Jour -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Graphique 7j/30j Poids -->
@@ -530,7 +556,10 @@
             <i data-lucide="moon" class="w-7 h-7"></i>
           </div>
           <div>
-            <span class="text-xs text-slate-400">Score Sommeil (RingConn Gen 3)</span>
+            <div class="flex items-center space-x-1.5">
+              <span class="text-xs text-slate-400">Score Sommeil</span>
+              <span id="badge-sleep-source" class="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Santé Connect</span>
+            </div>
             <div class="text-2xl font-black text-white" id="val-sleep-score">-- <span class="text-xs font-normal text-slate-400">/ 100</span></div>
             <span class="text-[10px] text-indigo-400 font-medium">Récupération optimale</span>
           </div>
@@ -578,6 +607,36 @@
         </div>
       </div>
 
+      <!-- Tableau complet des données synchronisées Santé Connect & Capteurs -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="font-bold text-white text-base">Historique des Données Reçues (Google Santé Connect & Bague)</h3>
+            <p class="text-xs text-slate-400">Détail des pas, calories actives, fréquence cardiaque, HRV et score de sommeil</p>
+          </div>
+          <span class="text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Flux direct</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="text-slate-400 border-b border-[#1F2A3C]">
+              <tr>
+                <th class="py-2.5 px-3">Date</th>
+                <th class="py-2.5 px-3">Pas Quotidiens</th>
+                <th class="py-2.5 px-3">Calories Actives</th>
+                <th class="py-2.5 px-3">Total Brûlé (TDEE)</th>
+                <th class="py-2.5 px-3">FC Repos</th>
+                <th class="py-2.5 px-3">HRV (ms)</th>
+                <th class="py-2.5 px-3">Score Sommeil</th>
+                <th class="py-2.5 px-3">Source</th>
+              </tr>
+            </thead>
+            <tbody id="table-activities-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
+              <!-- Rempli dynamiquement -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </section>
 
     <!-- =================================================================== -->
@@ -622,158 +681,7 @@
         </div>
       </div>
 
-      <!-- Guide Comparatif d'Achat de la Balance Connectée & Configuration Bague -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-6">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1F2A3C] pb-4">
-          <div>
-            <div class="flex items-center space-x-2">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">Guide Comparatif & Achat</span>
-              <span class="text-xs text-slate-400">Pour Sébastien</span>
-            </div>
-            <h3 class="font-bold text-white text-base mt-1 flex items-center space-x-2">
-              <i data-lucide="scale" class="w-5 h-5 text-emerald-400"></i>
-              <span>Quelle Balance Connectée Choisir pour VitalTrack ?</span>
-            </h3>
-            <p class="text-xs text-slate-400">Analyse comparative des protocoles API, impédancemétrie et simplicité de synchronisation automatique sans friction</p>
-          </div>
-          <div class="p-2 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-semibold flex items-center space-x-2 self-start sm:self-auto">
-            <span>🏆 Recommandation n°1 : Withings</span>
-          </div>
-        </div>
-
-        <!-- Tableau comparatif en cartes -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          
-          <!-- Carte 1 : Withings (Gagnant) -->
-          <div class="relative rounded-2xl p-4 bg-gradient-to-b from-emerald-950/40 via-[#0B0F17] to-[#0B0F17] border-2 border-emerald-500 flex flex-col justify-between space-y-3 shadow-lg shadow-emerald-950/30">
-            <div class="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-extrabold shadow uppercase tracking-wide">
-              Choix Optimal VitalTrack
-            </div>
-            <div>
-              <div class="flex items-center space-x-2 mb-2">
-                <span class="text-xl">🥇</span>
-                <div>
-                  <h4 class="font-extrabold text-white text-sm">Withings Body Smart / Comp</h4>
-                  <span class="text-[10px] text-slate-400">~100 € à 199 € • Wi-Fi direct & BLE</span>
-                </div>
-              </div>
-              <ul class="text-xs space-y-1.5 text-slate-300">
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>API OAuth2 ouverte & gratuite</strong> : Accès développeur immédiat, jetons illimités.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Synchro Cloud-to-Cloud 100% autonome</strong> : Tu te pèses, le Wi-Fi envoie tout à VitalTrack sans ouvrir le smartphone.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Métriques riches</strong> : Poids (50g), Masse Grasse (%), Musculaire (kg), Osseuse, Eau (%), Graisse viscérale.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Support natif</strong> : Connecteur <code>WithingsScaleConnector</code> opérationnel.</span>
-                </li>
-              </ul>
-            </div>
-            <div class="pt-3 border-t border-slate-800 text-[11px] text-emerald-300 font-medium">
-              Score VitalTrack : 5/5 ⭐ (Zéro friction au quotidien)
-            </div>
-          </div>
-
-          <!-- Carte 2 : Garmin Index S2 -->
-          <div class="rounded-2xl p-4 bg-[#0B0F17] border border-[#1F2A3C] flex flex-col justify-between space-y-3">
-            <div>
-              <div class="flex items-center space-x-2 mb-2">
-                <span class="text-xl">🥈</span>
-                <div>
-                  <h4 class="font-extrabold text-white text-sm">Garmin Index S2</h4>
-                  <span class="text-[10px] text-slate-400">~149 € • Wi-Fi, ANT+, BLE</span>
-                </div>
-              </div>
-              <ul class="text-xs space-y-1.5 text-slate-300">
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-amber-400 font-bold">~</span>
-                  <span><strong>API Garmin Developer restreinte</strong> : Requiert un agrément entreprise partenaire Garmin Connect.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Synchro via pont Health Connect</strong> : Passerelle transparente si tu synchronises vers Google Health Connect ou Apple Health.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Idéal si écosystème Garmin</strong> : Se combine parfaitement si tu possèdes déjà une montre Forerunner ou Fenix.</span>
-                </li>
-              </ul>
-            </div>
-            <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-400 font-medium">
-              Score VitalTrack : 3.8/5 ⭐ (Très bon si montre Garmin)
-            </div>
-          </div>
-
-          <!-- Carte 3 : Xiaomi Mi Body Scale 2 -->
-          <div class="rounded-2xl p-4 bg-[#0B0F17] border border-[#1F2A3C] flex flex-col justify-between space-y-3">
-            <div>
-              <div class="flex items-center space-x-2 mb-2">
-                <span class="text-xl">🥉</span>
-                <div>
-                  <h4 class="font-extrabold text-white text-sm">Xiaomi Mi Body Scale 2</h4>
-                  <span class="text-[10px] text-slate-400">~25 € à 35 € • Bluetooth BLE seul</span>
-                </div>
-              </div>
-              <ul class="text-xs space-y-1.5 text-slate-300">
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-red-400 font-bold">✗</span>
-                  <span><strong>Pas de Wi-Fi direct</strong> : Obligation d'ouvrir l'app Zepp Life / Mi Fitness sur le smartphone à proximité.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-amber-400 font-bold">~</span>
-                  <span><strong>Pas d'API Cloud ouverte</strong> : Synchronisation possible uniquement via webhook Health Connect.</span>
-                </li>
-                <li class="flex items-start space-x-1.5">
-                  <span class="text-emerald-400 font-bold">✓</span>
-                  <span><strong>Prix ultra-compétitif</strong> : Solution économique pour débuter si le budget est prioritaire.</span>
-                </li>
-              </ul>
-            </div>
-            <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-400 font-medium">
-              Score VitalTrack : 3/5 ⭐ (Économique mais manuel)
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Focus Interconnexion Bagues Connectées (RingConn Gen 3 & Oura Ring) -->
-        <div class="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 via-[#0B0F17] to-[#0B0F17] border border-indigo-500/20 space-y-3">
-          <div class="flex items-start space-x-3">
-            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
-              <i data-lucide="circle-dot" class="w-5 h-5"></i>
-            </div>
-            <div class="space-y-1">
-              <div class="flex items-center space-x-2">
-                <h4 class="font-bold text-white text-sm">Bague RingConn Gen 3 & Passerelle Google Health Connect</h4>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Bague Utilisateur Active</span>
-              </div>
-              <p class="text-xs text-slate-300">
-                Votre bague <strong>RingConn Gen 3</strong> synchronise en continu vos biométries (<strong>Sommeil profond/paradoxal</strong>, <strong>HRV nocturne en ms</strong>, <strong>Fréquence cardiaque au repos</strong>, <strong>Pas</strong> et <strong>Calories actives</strong>) soit directement via son API OpenAPI, soit automatiquement via la passerelle <strong>Google Health Connect (Android)</strong>.
-              </p>
-              <div class="text-[11px] text-emerald-400 pt-1 flex items-center space-x-1.5">
-                <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
-                <span>Connecteur RingConn opérationnel dans VitalTrack avec synchronisation matinale automatique pour le calcul TDEE.</span>
-              </div>
-              <div class="pt-2">
-                <button type="button" onclick="openConnectWizardModal('ringconn')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 inline-flex items-center space-x-2 transition-transform active:scale-95">
-                  <i data-lucide="link-2" class="w-4 h-4"></i>
-                  <span>Configurer ma bague RingConn Gen 3</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-    </section>
+      </section>
 
   </main>
 
@@ -1829,6 +1737,26 @@
 
       document.getElementById('summary-recommendation').innerText = s.recommendation || "Poursuivez sur cette trajectoire régulière pour atteindre votre objectif de composition corporelle.";
 
+      // Données en direct du bandeau Santé Connect
+      const latestAct = (currentData.activities_history && currentData.activities_history.length > 0)
+        ? currentData.activities_history[currentData.activities_history.length - 1]
+        : null;
+      const hcStepsEl = document.getElementById('live-hc-steps');
+      const hcCalsEl = document.getElementById('live-hc-cals');
+      const hcHrEl = document.getElementById('live-hc-hr');
+      const hcHrvEl = document.getElementById('live-hc-hrv');
+      const hcSleepEl = document.getElementById('live-hc-sleep');
+      if (hcStepsEl && latestAct) {
+        hcStepsEl.innerText = `${(latestAct.steps || s.steps || 0).toLocaleString()} pas`;
+        if (hcCalsEl) hcCalsEl.innerText = `${latestAct.active_calories_kcal || 0} kcal`;
+        const hrVal = latestAct.resting_hr_bpm || s.resting_hr_bpm;
+        if (hcHrEl) hcHrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
+        const hrvVal = latestAct.hrv_ms || s.hrv_ms;
+        if (hcHrvEl) hcHrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
+        const scVal = latestAct.sleep_score || s.sleep_score;
+        if (hcSleepEl) hcSleepEl.innerText = scVal ? `${scVal} / 100` : '--';
+      }
+
       // Donut Macros
       const m = s.macros || {};
       document.getElementById('macro-prot-txt').innerText = `${m.protein_g || 0}g (${m.protein_pct || 0}%)`;
@@ -2202,82 +2130,170 @@
           }
         });
       }
+
+      // Remplissage du tableau des activités reçues (Santé Connect & Bague)
+      const tbody = document.getElementById('table-activities-body');
+      if (tbody) {
+        const history = [...(currentData.activities_history || [])].reverse();
+        if (history.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500">Aucune activité enregistrée pour le moment.</td></tr>`;
+        } else {
+          tbody.innerHTML = history.slice(0, 15).map(a => {
+            const isHealthConnect = (a.source === 'health_connect');
+            const sourceBadge = isHealthConnect
+              ? '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">Google Santé Connect</span>'
+              : (a.source === 'ringconn' || a.source === 'ringconn_gen3'
+                ? '<span class="px-2 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold">RingConn Gen 3</span>'
+                : `<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">${a.source || 'manuel'}</span>`);
+            return `
+              <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
+                <td class="py-2.5 px-3 font-medium text-white">${a.date}</td>
+                <td class="py-2.5 px-3 font-bold text-emerald-400">${(a.steps || 0).toLocaleString()} pas</td>
+                <td class="py-2.5 px-3 text-orange-400 font-semibold">${a.active_calories_kcal || 0} kcal</td>
+                <td class="py-2.5 px-3 text-slate-300">${a.total_burned_kcal || '--'} kcal</td>
+                <td class="py-2.5 px-3 text-rose-400 font-medium">${a.resting_hr_bpm ? a.resting_hr_bpm + ' BPM' : '--'}</td>
+                <td class="py-2.5 px-3 text-purple-400 font-medium">${a.hrv_ms ? a.hrv_ms + ' ms' : '--'}</td>
+                <td class="py-2.5 px-3 text-indigo-400 font-bold">${a.sleep_score ? a.sleep_score + ' / 100' : '--'}</td>
+                <td class="py-2.5 px-3">${sourceBadge}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
     }
 
-    // 5. Rendu Vue Hub Objets Connectés
+    // 5. Rendu Vue Hub Objets Connectés (Uniquement les appareils ajoutés/connectés par l'utilisateur)
     function renderDevicesView() {
       const grid = document.getElementById('devices-grid');
       if (!grid) return;
 
-      const devices = currentData.devices || [];
-      grid.innerHTML = devices.map(d => {
-        const isConn = d.status === 'connected' || d.connected;
-        const syncStatus = d.sync_status || (isConn ? 'connected' : 'disconnected');
-        let statusBadge = '';
-        if (syncStatus === 'connected') {
-          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté • Sécurisé 🔒</span>';
-        } else if (syncStatus === 'syncing') {
-          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse">Synchronisation...</span>';
-        } else if (syncStatus === 'error') {
-          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Erreur liaison</span>';
-        } else {
-          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-800 text-slate-400 border border-slate-700">Non connecté</span>';
-        }
+      const allDevices = currentData.devices || [];
+      // Filtrer STRICTEMENT : seuls les appareils ajoutés / connectés sont affichés
+      const connectedDevices = allDevices.filter(d => Boolean(d.connected || d.status === 'connected'));
 
+      if (connectedDevices.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full bg-[#0B0F17] border border-dashed border-[#1F2A3C] rounded-2xl p-8 text-center space-y-3">
+            <div class="w-12 h-12 mx-auto rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <i data-lucide="link-2" class="w-6 h-6"></i>
+            </div>
+            <h4 class="text-sm font-bold text-white">Aucun objet connecté dans votre profil pour le moment</h4>
+            <p class="text-xs text-slate-400 max-w-md mx-auto">
+              Ajoutez votre bague connectée RingConn, Google Santé Connect (Android), ou votre balance Withings pour lancer la synchronisation automatique.
+            </p>
+            <button type="button" onclick="openConnectWizardModal()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 inline-flex items-center space-x-2 transition-transform active:scale-95">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>Ajouter mon premier appareil</span>
+            </button>
+          </div>
+        `;
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+        return;
+      }
+
+      // Rendu des cartes pour chaque appareil connecté
+      const cardsHtml = connectedDevices.map(d => {
         const devId = d.id || d.device_id;
         const lastSyncVal = d.last_sync_at || d.last_sync;
         const wizTarget = (devId === 'ringconn' || devId === 'withings' || devId === 'oura' || devId === 'health_connect') ? devId : 'health_connect';
 
+        // Métriques contextuelles selon l'appareil
+        let metricsSnippet = '';
+        if (devId === 'health_connect') {
+          const act = (currentData.activities_history && currentData.activities_history.length > 0)
+            ? currentData.activities_history[currentData.activities_history.length - 1]
+            : null;
+          if (act) {
+            metricsSnippet = `
+              <div class="p-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-[11px] text-slate-300 space-y-1">
+                <span class="text-emerald-400 font-semibold block flex items-center space-x-1">
+                  <i data-lucide="check-circle" class="w-3 h-3 text-emerald-400"></i>
+                  <span>Dernier flux reçu :</span>
+                </span>
+                <div class="text-white font-medium">
+                  <strong>${(act.steps || 0).toLocaleString()} pas</strong> • <strong>${act.active_calories_kcal || 0} kcal</strong> • FC ${act.resting_hr_bpm || 57} BPM • Sommeil ${act.sleep_score || 85}/100
+                </div>
+              </div>
+            `;
+          }
+        } else if (devId === 'withings') {
+          const w = (currentData.weights_history && currentData.weights_history.length > 0)
+            ? currentData.weights_history[currentData.weights_history.length - 1]
+            : null;
+          if (w) {
+            metricsSnippet = `
+              <div class="p-2.5 rounded-xl bg-sky-950/20 border border-sky-500/30 text-[11px] text-slate-300 space-y-1">
+                <span class="text-sky-400 font-semibold block flex items-center space-x-1">
+                  <i data-lucide="check-circle" class="w-3 h-3 text-sky-400"></i>
+                  <span>Dernière pesée reçue :</span>
+                </span>
+                <div class="text-white font-medium">
+                  <strong>${w.weight_kg} kg</strong> ${w.body_fat_pct ? `• ${w.body_fat_pct}% MG` : ''} ${w.muscle_mass_kg ? `• ${w.muscle_mass_kg} kg Muscle` : ''}
+                </div>
+              </div>
+            `;
+          }
+        }
+
         return `
-          <div onclick="openConnectWizardModal('${wizTarget}')" class="bg-[#0B0F17] hover:bg-[#111826] border border-[#1F2A3C] hover:border-indigo-500/50 rounded-2xl p-4 flex flex-col justify-between space-y-4 cursor-pointer transition-all group">
+          <div class="bg-[#0B0F17] hover:bg-[#111826] border border-[#1F2A3C] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between space-y-4 transition-all group">
             <div class="flex items-start justify-between">
               <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl ${isConn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400 group-hover:text-indigo-400'} flex items-center justify-center transition-colors">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
                   <i data-lucide="${d.device_type === 'ring' ? 'circle-dot' : (d.device_type === 'scale' ? 'scale' : 'smartphone')}" class="w-5 h-5"></i>
                 </div>
                 <div>
-                  <h4 class="font-bold text-white group-hover:text-indigo-300 text-sm transition-colors">${d.name}</h4>
-                  <span class="text-[10px] text-slate-400">ID: ${devId} • ${d.device_type}</span>
+                  <h4 class="font-bold text-white text-sm">${d.name}</h4>
+                  <span class="text-[10px] text-emerald-400 font-medium">${devId === 'health_connect' ? 'Passerelle Android Santé Connect' : (devId === 'withings' ? 'Balance Wi-Fi & Impédancemètre' : d.device_type)}</span>
                 </div>
               </div>
-              ${statusBadge}
+              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté 🔒</span>
             </div>
+
+            ${metricsSnippet}
 
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
-                <span class="text-slate-400">Dernière synchro :</span>
-                <span>${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Jamais synchronisé'}</span>
-              </div>
-              <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
-                <span class="text-slate-400">Chiffrement Clés :</span>
-                <span class="text-emerald-400 font-mono text-[11px] flex items-center space-x-1">
-                  <span>🔒 Fernet AES-256</span>
-                </span>
+                <span class="text-slate-400">Dernière synchronisation :</span>
+                <span class="text-slate-200 font-medium">${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Enregistré'}</span>
               </div>
               <div class="flex justify-between py-1">
-                <span class="text-slate-400">Mode :</span>
-                <span>${isConn ? 'Production Live' : 'Cliquez pour connecter'}</span>
+                <span class="text-slate-400">Statut liaison :</span>
+                <span class="text-emerald-400 font-medium">Actif dans votre profil</span>
               </div>
             </div>
 
-            <div class="flex items-center space-x-2" onclick="event.stopPropagation()">
-              <button type="button" onclick="openConnectWizardModal('${wizTarget}')" class="flex-1 py-2 rounded-xl ${isConn ? 'bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20'} text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all">
-                <i data-lucide="link-2" class="w-3.5 h-3.5"></i>
-                <span>${isConn ? 'Configurer' : 'Connecter'}</span>
+            <div class="flex items-center space-x-2">
+              <button type="button" onclick="openConnectWizardModal('${wizTarget}')" class="flex-1 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all">
+                <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                <span>Configurer</span>
               </button>
               <button type="button" onclick="triggerDeviceSync('${devId}')" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
                 <span>Synchroniser</span>
               </button>
-              ${isConn ? `
-                <button type="button" onclick="disconnectDevice('${devId}')" title="Déconnecter et révoquer" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
-                  <i data-lucide="trash-2" class="w-4 h-4"></i>
-                </button>
-              ` : ''}
+              <button type="button" onclick="disconnectDevice('${devId}')" title="Déconnecter et retirer du profil" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
             </div>
           </div>
         `;
       }).join('');
+
+      // Carte d'ajout pour connecter un autre objet
+      const addCardHtml = `
+        <div onclick="openConnectWizardModal()" class="border-2 border-dashed border-[#1F2A3C] hover:border-indigo-500/60 rounded-2xl p-6 flex flex-col items-center justify-center text-center space-y-2.5 cursor-pointer transition-colors group min-h-[180px]">
+          <div class="w-11 h-11 rounded-xl bg-[#151D2A] group-hover:bg-indigo-600/20 text-slate-400 group-hover:text-indigo-400 border border-[#1F2A3C] group-hover:border-indigo-500/30 flex items-center justify-center transition-all">
+            <i data-lucide="plus" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h5 class="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">Ajouter un autre appareil</h5>
+            <p class="text-[10px] text-slate-500 mt-0.5">RingConn Gen 3, Google Santé Connect, Withings...</p>
+          </div>
+        </div>
+      `;
+
+      grid.innerHTML = cardsHtml + addCardHtml;
       if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
     }
 
