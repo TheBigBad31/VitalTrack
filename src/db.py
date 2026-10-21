@@ -544,8 +544,8 @@ class Database:
 
         # Garantir l'existence de l'utilisateur par défaut
         self._ensure_default_user()
-        # Initialiser le jeu de données démo 30 jours si vide pour cet utilisateur
-        self._seed_demo_data_if_empty(user_id=1)
+        # Purger toute donnée de démonstration résiduelle
+        self.purge_demo_data()
 
     # ---------------------------------------------------------
     # Gestion des Utilisateurs (Multi-utilisateurs & Auth)
@@ -640,8 +640,6 @@ class Database:
             """, (user_dict["id"], user_dict["name"] or "Utilisateur", user_dict["email"], user_dict["name"], user_dict["picture"], google_sub, now_str))
             conn.commit()
 
-        # Seed 30 jours de démo pour ce nouvel utilisateur
-        self._seed_demo_data_if_empty(user_id=user_dict["id"])
         return user_dict
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -1464,6 +1462,24 @@ class Database:
     # ---------------------------------------------------------
     # Données Démo & Initialisation
     # ---------------------------------------------------------
+
+    def purge_demo_data(self):
+        """Supprime toutes les données de démonstration résiduelles de la base (SQLite et Neon PostgreSQL)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("DELETE FROM weights WHERE source = 'demo' OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%'")
+                cursor.execute("DELETE FROM activities WHERE source = 'demo'")
+                cursor.execute(
+                    "DELETE FROM meals WHERE total_calories_kcal IN (430.0, 685.0, 195.0, 560.0) "
+                    "AND (items_json LIKE '%Flocons d%' OR items_json LIKE '%Blanc de poulet rôti%' "
+                    "OR items_json LIKE '%Pavé de saumon%' OR items_json LIKE '%Myrtilles fraîches%')"
+                )
+                cursor.execute("DELETE FROM users WHERE email IN ('sebastien.test@vitaltrack.io', 'test_err_diag@vitaltrack.io')")
+                cursor.execute("DELETE FROM user_devices WHERE name = 'RingConn Gen 3 Sébastien'")
+                conn.commit()
+            except Exception:
+                pass
 
     def _seed_demo_data_if_empty(self, user_id: int = 1):
         """Pré-charge 30 jours d'historique réaliste si la table weights est vide pour cet utilisateur."""

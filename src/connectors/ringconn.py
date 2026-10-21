@@ -118,10 +118,9 @@ class RingConnConnector(BaseHealthConnector):
                         records = data.get("data", []) if isinstance(data, dict) else []
                         return [self.parse_ringconn_daily_data(rec) for rec in records]
             except Exception:
-                # Fallback démo sécurisé en cas de coupure réseau ou token mock
-                pass
+                return []
 
-        return self._generate_simulated_activities(start_date, end_date)
+        return []
 
     def _generate_simulated_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Simulation biométrique réaliste RingConn Gen 3 (sommeil réparateur, HRV précis, pas)."""

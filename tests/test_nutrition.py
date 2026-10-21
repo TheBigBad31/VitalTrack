@@ -239,7 +239,9 @@ def test_nutrition_engine_energy_balance(temp_db):
 
 
 def test_db_meals_seed(temp_db):
-    """Vérifie que la base temporaire a bien été initialisée avec des repas de démonstration."""
+    """Vérifie que la base démarre vierge et que reset_demo_data charge les repas de test."""
+    assert len(temp_db.get_meals(limit=50)) == 0
+    temp_db.reset_demo_data()
     meals = temp_db.get_meals(limit=50)
     assert len(meals) > 0
     # Vérifie que les 4 types de repas sont représentés

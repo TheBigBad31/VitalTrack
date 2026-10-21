@@ -266,7 +266,7 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
         if "mock_buckets" in self.config:
             return [self.parse_google_fit_aggregate(b) for b in self.config["mock_buckets"]]
 
-        return self._generate_simulated_activities(start_date, end_date)
+        return []
 
     def _generate_simulated_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Simulation biométrique réaliste Google Health Connect (pas, BMR, HRV, sommeil)."""

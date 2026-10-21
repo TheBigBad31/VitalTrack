@@ -285,7 +285,7 @@
             <div class="text-[11px] text-slate-400">Cible: <span class="text-slate-300 font-semibold">2 000 kcal</span></div>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-            <div id="bar-cals-in" class="bg-blue-500 h-1.5 rounded-full" style="width: 60%"></div>
+            <div id="bar-cals-in" class="bg-blue-500 h-1.5 rounded-full" style="width: 0%"></div>
           </div>
         </div>
 
@@ -326,7 +326,7 @@
             <div class="text-[11px] text-slate-400" id="val-steps-pct">Progression: --%</div>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-            <div id="bar-steps" class="bg-emerald-400 h-1.5 rounded-full" style="width: 75%"></div>
+            <div id="bar-steps" class="bg-emerald-400 h-1.5 rounded-full" style="width: 0%"></div>
           </div>
         </div>
 
@@ -1513,135 +1513,40 @@
   <script>
     const FALLBACK_DASHBOARD_DATA = {
       summary: {
-        current_weight_kg: 79.8,
-        weight_trend_7d_kg: 80.1,
-        weight_7d_variation_kg: -0.6,
-        body_fat_pct: 20.3,
-        muscle_mass_kg: 38.0,
-        water_pct: 56.5,
-        bmi: 25.2,
+        current_weight_kg: null,
+        weight_trend_7d_kg: null,
+        weight_7d_variation_kg: null,
+        body_fat_pct: null,
+        muscle_mass_kg: null,
+        water_pct: null,
+        bmi: null,
         target_weight_kg: 77.0,
-        steps: 10450,
+        steps: 0,
         steps_target: 10000,
-        calories_intake_kcal: 1870.0,
-        calories_burned_kcal: 2280.0,
-        net_energy_balance_kcal: -410.0,
+        calories_intake_kcal: 0.0,
+        calories_burned_kcal: 1780.0,
+        bmr_kcal: 1780.0,
+        net_energy_balance_kcal: 0.0,
         target_calories_intake: 2000.0,
-        energy_status: "deficit",
-        recommendation: "Déficit modéré optimal (-410 kcal) favorisant la perte de masse grasse tout en préservant le tissu musculaire.",
+        energy_status: "maintenance",
+        recommendation: "Aucune donnée enregistrée aujourd'hui. Ajoutez votre première pesée, un repas ou synchronisez vos appareils connectés.",
         macros: {
-          protein_g: 112.0,
-          protein_pct: 24.5,
-          carbs_g: 192.0,
-          carbs_pct: 42.0,
-          fat_g: 69.0,
-          fat_pct: 33.5,
-          fiber_g: 29.2
+          protein_g: 0.0,
+          protein_pct: 0.0,
+          carbs_g: 0.0,
+          carbs_pct: 0.0,
+          fat_g: 0.0,
+          fat_pct: 0.0,
+          fiber_g: 0.0
         },
-        resting_hr_bpm: 58,
-        hrv_ms: 54.0,
-        sleep_score: 84
+        resting_hr_bpm: null,
+        hrv_ms: null,
+        sleep_score: null
       },
-      weights_history: Array.from({length: 30}, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (29 - i));
-        const prog = i / 29.0;
-        const w = (82.5 - (2.7 * prog) + Math.sin(i * 0.7) * 0.3).toFixed(2);
-        return {
-          date: d.toISOString().split('T')[0],
-          weight_kg: parseFloat(w),
-          trend_7d_kg: parseFloat((parseFloat(w) + 0.2).toFixed(2)),
-          body_fat_pct: parseFloat((21.5 - (1.2 * prog)).toFixed(1)),
-          muscle_mass_kg: parseFloat((38.2 - (0.3 * prog)).toFixed(1)),
-          water_pct: parseFloat((56.0 + (0.5 * prog)).toFixed(1)),
-          bmi: parseFloat((w / (1.78 * 1.78)).toFixed(1)),
-          source: "demo"
-        };
-      }),
-      activities_history: Array.from({length: 30}, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (29 - i));
-        const steps = i % 7 === 0 ? 7500 : 10800;
-        return {
-          date: d.toISOString().split('T')[0],
-          steps: steps,
-          active_calories_kcal: parseFloat((steps * 0.045 + (i % 2 === 0 ? 300 : 0)).toFixed(1)),
-          bmr_kcal: 1780.0,
-          total_burned_kcal: parseFloat((1780 + steps * 0.045 + (i % 2 === 0 ? 300 : 0)).toFixed(1)),
-          resting_hr_bpm: i % 2 === 0 ? 57 : 60,
-          hrv_ms: parseFloat((52 + Math.cos(i) * 5).toFixed(1)),
-          sleep_score: Math.min(95, Math.max(70, Math.round(82 + Math.sin(i * 0.5) * 8))),
-          source: "demo"
-        };
-      }),
-      recent_meals: [
-        {
-          id: 1,
-          date: new Date().toISOString().split('T')[0],
-          meal_type: "breakfast",
-          total_calories_kcal: 430.0,
-          protein_g: 24.0,
-          carbs_g: 52.0,
-          fat_g: 14.0,
-          fiber_g: 7.5,
-          items: [
-            {name: "Flocons d'avoine", portion_g: 60, calories_kcal: 219, protein_g: 8.1, carbs_g: 34.8, fat_g: 4.2},
-            {name: "Oeufs brouillés (x2)", portion_g: 110, calories_kcal: 157, protein_g: 13.8, carbs_g: 0.8, fat_g: 10.4},
-            {name: "Myrtilles fraîches", portion_g: 80, calories_kcal: 45, protein_g: 0.6, carbs_g: 11.2, fat_g: 0.3}
-          ]
-        },
-        {
-          id: 2,
-          date: new Date().toISOString().split('T')[0],
-          meal_type: "lunch",
-          total_calories_kcal: 685.0,
-          protein_g: 46.0,
-          carbs_g: 68.0,
-          fat_g: 22.0,
-          fiber_g: 8.0,
-          items: [
-            {name: "Blanc de poulet rôti", portion_g: 160, calories_kcal: 224, protein_g: 41.6, carbs_g: 0, fat_g: 4.5},
-            {name: "Riz basmati", portion_g: 200, calories_kcal: 260, protein_g: 5.4, carbs_g: 56.0, fat_g: 0.6},
-            {name: "Brocolis vapeur", portion_g: 180, calories_kcal: 63, protein_g: 5.0, carbs_g: 12.6, fat_g: 0.7},
-            {name: "Huile d'olive", portion_g: 15, calories_kcal: 132, protein_g: 0, carbs_g: 0, fat_g: 15.0}
-          ]
-        },
-        {
-          id: 3,
-          date: new Date().toISOString().split('T')[0],
-          meal_type: "snack",
-          total_calories_kcal: 195.0,
-          protein_g: 4.0,
-          carbs_g: 34.0,
-          fat_g: 4.5,
-          fiber_g: 4.2,
-          items: [
-            {name: "Pomme", portion_g: 160, calories_kcal: 83, protein_g: 0.5, carbs_g: 22.4, fat_g: 0.3},
-            {name: "Amandes", portion_g: 20, calories_kcal: 116, protein_g: 4.2, carbs_g: 4.3, fat_g: 10.0}
-          ]
-        },
-        {
-          id: 4,
-          date: new Date().toISOString().split('T')[0],
-          meal_type: "dinner",
-          total_calories_kcal: 560.0,
-          protein_g: 38.0,
-          carbs_g: 38.0,
-          fat_g: 26.0,
-          fiber_g: 9.5,
-          items: [
-            {name: "Pavé de saumon", portion_g: 150, calories_kcal: 312, protein_g: 30.0, carbs_g: 0, fat_g: 19.5},
-            {name: "Haricots verts", portion_g: 200, calories_kcal: 62, protein_g: 3.6, carbs_g: 14.0, fat_g: 0.4},
-            {name: "Demi-avocat", portion_g: 70, calories_kcal: 112, protein_g: 1.4, carbs_g: 6.0, fat_g: 10.3}
-          ]
-        }
-      ],
-      devices: [
-        {id: "withings", name: "Withings Body+ / ScanWatch", device_type: "scale", is_configured: false, status: "demo"},
-        {id: "oura", name: "Oura Ring v2 / Gen3", device_type: "ring", is_configured: false, status: "demo"},
-        {id: "apple_health", name: "Apple Santé (HealthKit Webhook)", device_type: "mobile_aggregator", is_configured: true, status: "connected"},
-        {id: "health_connect", name: "Google Health Connect (Android)", device_type: "mobile_aggregator", is_configured: true, status: "connected"}
-      ]
+      weights_history: [],
+      activities_history: [],
+      recent_meals: [],
+      devices: []
     };
   </script>
 
@@ -1649,6 +1554,7 @@
   <script>
     // Variables globales
     const JWT_STORAGE_KEY = 'vitaltrack_jwt_token';
+    try { localStorage.removeItem('vitaltrack_backup_cache'); } catch (e) {}
     const GOOGLE_SESSION_KEY = 'vitaltrack_google_session';
 
     // Wrapper HTTP apiFetch : injecte automatiquement Authorization: Bearer <token>
@@ -1907,9 +1813,9 @@
       if (!ctx) return;
       if (chartMacrosDonut) chartMacrosDonut.destroy();
 
-      const pCal = (m.protein_g || 30) * 4;
-      const cCal = (m.carbs_g || 40) * 4;
-      const fCal = (m.fat_g || 15) * 9;
+      const pCal = (m.protein_g || 0) * 4;
+      const cCal = (m.carbs_g || 0) * 4;
+      const fCal = (m.fat_g || 0) * 9;
 
       chartMacrosDonut = new Chart(ctx, {
         type: 'doughnut',
@@ -2108,10 +2014,7 @@
             else if (m.meal_type === 'dinner') d += m.total_calories_kcal;
             else if (m.meal_type === 'snack') s += m.total_calories_kcal;
           });
-          // Si jour démo vide, insérer des valeurs réalistes
-          if (b === 0 && l === 0 && d === 0) {
-            b = 420; l = 680; d = 560; s = 190;
-          }
+
           bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s);
         });
 
@@ -2206,9 +2109,9 @@
     // 4. Rendu Vue Activité & Bague Oura
     function renderActivityView() {
       const s = currentData.summary || {};
-      document.getElementById('val-sleep-score').innerHTML = `${s.sleep_score || 84} <span class="text-xs font-normal text-slate-400">/ 100</span>`;
-      document.getElementById('val-resting-hr').innerHTML = `${s.resting_hr_bpm || 58} <span class="text-xs font-normal text-slate-400">BPM</span>`;
-      document.getElementById('val-hrv').innerHTML = `${s.hrv_ms || 54.0} <span class="text-xs font-normal text-slate-400">ms</span>`;
+      document.getElementById('val-sleep-score').innerHTML = `${s.sleep_score !== null && s.sleep_score !== undefined ? s.sleep_score : '--'} <span class="text-xs font-normal text-slate-400">/ 100</span>`;
+      document.getElementById('val-resting-hr').innerHTML = `${s.resting_hr_bpm !== null && s.resting_hr_bpm !== undefined ? s.resting_hr_bpm : '--'} <span class="text-xs font-normal text-slate-400">BPM</span>`;
+      document.getElementById('val-hrv').innerHTML = `${s.hrv_ms !== null && s.hrv_ms !== undefined ? s.hrv_ms : '--'} <span class="text-xs font-normal text-slate-400">ms</span>`;
 
       const ctx = document.getElementById('chart-activity');
       if (ctx) {
@@ -2287,7 +2190,7 @@
         } else if (syncStatus === 'error') {
           statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Erreur liaison</span>';
         } else {
-          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">Mode Démo 30j</span>';
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-800 text-slate-400 border border-slate-700">Non connecté</span>';
         }
 
         const devId = d.id || d.device_id;
@@ -2311,7 +2214,7 @@
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Dernière synchro :</span>
-                <span>${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Instantanée'}</span>
+                <span>${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Jamais synchronisé'}</span>
               </div>
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Chiffrement Clés :</span>
@@ -2321,7 +2224,7 @@
               </div>
               <div class="flex justify-between py-1">
                 <span class="text-slate-400">Mode :</span>
-                <span>${isConn ? 'Production Live' : 'Simulation réaliste'}</span>
+                <span>${isConn ? 'Production Live' : 'En attente de connexion'}</span>
               </div>
             </div>
 

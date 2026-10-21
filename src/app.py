@@ -346,42 +346,51 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
     device_statuses = []
     for d in device_registry.list_all():
         saved_d = saved_devices.get(d.id, {})
-        is_conn = bool(saved_d.get("connected") or d.is_configured())
+        is_conn = bool(saved_d.get("connected"))
+        sync_status = saved_d.get("sync_status", "connected" if is_conn else "disconnected")
+        last_sync = saved_d.get("last_sync_at") or saved_d.get("last_sync")
         device_statuses.append({
             "id": d.id,
-            "name": d.name,
+            "device_id": d.id,
+            "name": saved_d.get("name") or d.name,
             "device_type": d.device_type,
             "is_configured": is_conn,
-            "status": "connected" if is_conn else "demo",
-            "auth_type": saved_d.get("auth_type", "demo"),
+            "connected": is_conn,
+            "status": sync_status,
+            "sync_status": sync_status,
+            "auth_type": saved_d.get("auth_type", "none"),
             "account_email": saved_d.get("account_email"),
-            "last_sync": saved_d.get("last_sync") or datetime.now(timezone.utc).isoformat()
+            "last_sync": last_sync,
+            "last_sync_at": last_sync,
+            "has_credentials": bool(saved_d.get("has_credentials")),
+            "api_key_masked": saved_d.get("api_key_masked")
         })
 
     return {
         "profile": profile,
         "current_user": current_user.model_dump(),
         "summary": {
-            "current_weight_kg": latest_weight.weight_kg if latest_weight else 79.8,
-            "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else 80.0,
-            "weight_7d_variation_kg": weight_7d_change,
-            "body_fat_pct": latest_weight.body_fat_pct if latest_weight else 20.3,
-            "muscle_mass_kg": latest_weight.muscle_mass_kg if latest_weight else 38.0,
-            "water_pct": latest_weight.water_pct if latest_weight else 56.5,
-            "bmi": latest_weight.bmi if latest_weight else 25.2,
+            "current_weight_kg": latest_weight.weight_kg if latest_weight else None,
+            "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else None,
+            "weight_7d_variation_kg": weight_7d_change if latest_weight else None,
+            "body_fat_pct": latest_weight.body_fat_pct if latest_weight else None,
+            "muscle_mass_kg": latest_weight.muscle_mass_kg if latest_weight else None,
+            "water_pct": latest_weight.water_pct if latest_weight else None,
+            "bmi": latest_weight.bmi if latest_weight else None,
             "target_weight_kg": profile.get("target_weight_kg", 77.0),
-            "steps": today_activity.steps if today_activity else 10500,
+            "steps": today_activity.steps if today_activity else 0,
             "steps_target": profile.get("target_steps", 10000),
             "calories_intake_kcal": energy_balance["calories_intake_kcal"],
             "calories_burned_kcal": energy_balance["calories_burned_kcal"],
+            "bmr_kcal": energy_balance["bmr_kcal"],
             "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],
             "target_calories_intake": profile.get("target_calories_intake", 2000.0),
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
             "macros": daily_nutrition["macros"],
-            "resting_hr_bpm": today_activity.resting_hr_bpm if today_activity else 58,
-            "hrv_ms": today_activity.hrv_ms if today_activity else 54.0,
-            "sleep_score": today_activity.sleep_score if today_activity else 84,
+            "resting_hr_bpm": today_activity.resting_hr_bpm if today_activity else None,
+            "hrv_ms": today_activity.hrv_ms if today_activity else None,
+            "sleep_score": today_activity.sleep_score if today_activity else None,
         },
         "weights_history": [w.model_dump() for w in weights],
         "activities_history": [a.model_dump() for a in activities],
@@ -684,7 +693,7 @@ def list_devices(current_user: AuthUser = Depends(get_current_user)):
     statuses = []
     for d in device_registry.list_all():
         saved_d = saved_devices.get(d.id, {})
-        is_conn = bool(saved_d.get("connected") or d.is_configured())
+        is_conn = bool(saved_d.get("connected"))
         sync_status = saved_d.get("sync_status", "connected" if is_conn else "disconnected")
         last_sync = saved_d.get("last_sync_at") or saved_d.get("last_sync")
 
@@ -846,17 +855,24 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_cu
     
     weights = []
     activities = []
-    if hasattr(connector, "sync_weights"):
-        raw_weights = connector.sync_weights(start_val, today_val)
-        for w in raw_weights:
-            db.insert_weight(w, user_id=current_user.id)
-        weights = [w.model_dump() for w in raw_weights]
+    if getattr(connector, "is_configured", False):
+        if hasattr(connector, "sync_weights"):
+            raw_weights = [
+                w for w in connector.sync_weights(start_val, today_val)
+                if w.source != "demo" and "Démo" not in (w.notes or "")
+            ]
+            for w in raw_weights:
+                db.insert_weight(w, user_id=current_user.id)
+            weights = [w.model_dump() for w in raw_weights]
 
-    if hasattr(connector, "sync_activities"):
-        raw_acts = connector.sync_activities(start_val, today_val)
-        for a in raw_acts:
-            db.insert_activity(a, user_id=current_user.id)
-        activities = [a.model_dump() for a in raw_acts]
+        if hasattr(connector, "sync_activities"):
+            raw_acts = [
+                a for a in connector.sync_activities(start_val, today_val)
+                if a.source != "demo"
+            ]
+            for a in raw_acts:
+                db.insert_activity(a, user_id=current_user.id)
+            activities = [a.model_dump() for a in raw_acts]
 
     # Mettre à jour l'état de synchronisation en base
     db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id)

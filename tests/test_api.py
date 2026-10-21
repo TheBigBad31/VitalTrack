@@ -76,9 +76,9 @@ def test_api_dashboard_structure(client):
 
     # Historiques pour les graphiques
     assert "weights_history" in data
-    assert len(data["weights_history"]) > 0
+    assert isinstance(data["weights_history"], list)
     assert "activities_history" in data
-    assert len(data["activities_history"]) > 0
+    assert isinstance(data["activities_history"], list)
     assert "recent_meals" in data
     assert "meals_by_day_7d" in data
     assert "devices" in data
@@ -437,6 +437,9 @@ def test_vercel_endpoints_status_200(client):
 
 def test_backup_export_and_import(client):
     """Vérifie l'export complet JSON et la restauration/synchronisation."""
+    # Insérer une pesée réelle pour tester l'export/import sans données démo
+    client.post("/api/weights", json={"weight_kg": 78.4, "source": "manual"})
+
     # 1. Export
     exp_res = client.get("/api/backup/export")
     assert exp_res.status_code == 200
@@ -445,7 +448,7 @@ def test_backup_export_and_import(client):
     assert "weights" in backup
     assert "activities" in backup
     assert "meals" in backup
-    assert len(backup["weights"]) >= 30
+    assert isinstance(backup["weights"], list)
 
     # 2. Test Clear History
     clear_res = client.post("/api/profile/clear-history")
@@ -458,10 +461,10 @@ def test_backup_export_and_import(client):
     assert imp_res.status_code == 200
     imp_data = imp_res.json()
     assert imp_data["status"] == "success"
-    assert imp_data["imported"]["weights"] >= 30
+    assert imp_data["imported"]["weights"] >= 1
 
     w_restored = client.get("/api/weights").json()
-    assert len(w_restored) >= 30
+    assert len(w_restored) >= 1
 
 
 def test_reset_demo_data(client):

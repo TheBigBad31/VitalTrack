@@ -84,7 +84,9 @@ def test_models_validation():
 
 
 def test_db_auto_seed_and_trend(temp_db):
-    """Vérifie le seed automatique de 30 jours et le calcul de la moyenne mobile sur 7 jours."""
+    """Vérifie que la base démarre vierge et que reset_demo_data calcule la moyenne mobile sur 7 jours."""
+    assert len(temp_db.get_weights(limit=50)) == 0
+    temp_db.reset_demo_data()
     weights = temp_db.get_weights(limit=50)
     assert len(weights) == 30
     # Vérifie que la tendance est bien calculée pour chaque entrée
