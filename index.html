@@ -99,11 +99,11 @@
           </button>
         </div>
 
-        <button onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95" title="Mon Profil Métabolique">
+        <button type="button" onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95 cursor-pointer" title="Mon Profil Métabolique">
           <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
           <span class="hidden sm:inline">Mon Profil</span>
         </button>
-        <button onclick="openConnectWizardModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition-all active:scale-95" title="Assistant de Connexion">
+        <button type="button" onclick="openConnectWizardModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition-all active:scale-95 cursor-pointer" title="Assistant de Connexion">
           <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>
           <span class="hidden sm:inline">Connexion Appareils</span>
         </button>
@@ -1003,6 +1003,8 @@
           <span>Synchroniser l'Activité</span>
         </button>
       </div>
+    </div>
+  </div>
   <!-- =================================================================== -->
   <!-- MODAL 4 : PROFIL UTILISATEUR & OBJECTIFS PERSONNALISÉS -->
   <!-- =================================================================== -->
@@ -2555,12 +2557,13 @@
     function openProfileModal() {
       try {
         // Fermer les autres modales ou menus déroulants pouvant se superposer
-        const authModal = document.getElementById('modal-auth');
-        if (authModal) { authModal.classList.add('hidden'); authModal.classList.remove('flex'); }
-        const wizModal = document.getElementById('modal-connect-wizard');
-        if (wizModal) { wizModal.classList.add('hidden'); }
         const drop = document.getElementById('header-user-dropdown');
         if (drop) { drop.classList.add('hidden'); }
+
+        ['modal-meal', 'modal-weight', 'modal-activity', 'modal-connect-wizard', 'modal-auth'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        });
 
         // Pré-remplir les champs avec les données actuelles
         const p = (currentData && currentData.profile) ? currentData.profile : {};
@@ -2591,6 +2594,7 @@
       const modal = document.getElementById('modal-profile');
       if (modal) {
         modal.classList.add('hidden');
+        modal.classList.remove('flex');
       }
     }
 
@@ -2626,12 +2630,13 @@
     function openConnectWizardModal(deviceId) {
       try {
         // Fermer les autres modales ou menus déroulants pouvant se superposer
-        const authModal = document.getElementById('modal-auth');
-        if (authModal) { authModal.classList.add('hidden'); authModal.classList.remove('flex'); }
-        const profModal = document.getElementById('modal-profile');
-        if (profModal) { profModal.classList.add('hidden'); }
         const drop = document.getElementById('header-user-dropdown');
         if (drop) { drop.classList.add('hidden'); }
+
+        ['modal-meal', 'modal-weight', 'modal-activity', 'modal-profile', 'modal-auth'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        });
 
         const targetDev = (typeof deviceId === 'string' && deviceId) ? deviceId : (currentSelectedWizardDevice || 'ringconn');
         selectWizardDevice(targetDev);
@@ -2652,6 +2657,7 @@
       const modal = document.getElementById('modal-connect-wizard');
       if (modal) {
         modal.classList.add('hidden');
+        modal.classList.remove('flex');
       }
     }
 
