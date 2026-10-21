@@ -328,6 +328,35 @@ class Database:
                     );
                 """)
 
+                # Migrations douces colonnes users pour PostgreSQL
+                for col, def_val in [
+                    ("uuid", "TEXT"),
+                    ("password_hash", "TEXT"),
+                    ("auth_provider", "TEXT NOT NULL DEFAULT 'google'"),
+                    ("google_sub", "TEXT"),
+                    ("name", "TEXT"),
+                    ("picture", "TEXT"),
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {def_val};")
+                    except Exception:
+                        pass
+
+                # Migrations douces colonnes user_profile pour PostgreSQL
+                for col, def_val in [
+                    ("user_id", "INTEGER"),
+                    ("preferred_ring", "TEXT NOT NULL DEFAULT 'ringconn'"),
+                    ("preferred_scale", "TEXT NOT NULL DEFAULT 'withings'"),
+                    ("google_email", "TEXT"),
+                    ("google_name", "TEXT"),
+                    ("google_picture", "TEXT"),
+                    ("google_sub", "TEXT"),
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS {col} {def_val};")
+                    except Exception:
+                        pass
+
                 # Migrations douces colonnes user_devices pour PostgreSQL
                 for col, def_val in [
                     ("is_active", "INTEGER NOT NULL DEFAULT 1"),
