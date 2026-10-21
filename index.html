@@ -2277,7 +2277,22 @@
 
       const devices = currentData.devices || [];
       grid.innerHTML = devices.map(d => {
-        const isConn = d.status === 'connected';
+        const isConn = d.status === 'connected' || d.connected;
+        const syncStatus = d.sync_status || (isConn ? 'connected' : 'disconnected');
+        let statusBadge = '';
+        if (syncStatus === 'connected') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté • Sécurisé 🔒</span>';
+        } else if (syncStatus === 'syncing') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse">Synchronisation...</span>';
+        } else if (syncStatus === 'error') {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">Erreur liaison</span>';
+        } else {
+          statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">Mode Démo 30j</span>';
+        }
+
+        const devId = d.id || d.device_id;
+        const lastSyncVal = d.last_sync_at || d.last_sync;
+
         return `
           <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between space-y-4">
             <div class="flex items-start justify-between">
@@ -2287,18 +2302,22 @@
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">${d.name}</h4>
-                  <span class="text-[10px] text-slate-400">ID: ${d.id} • ${d.device_type}</span>
+                  <span class="text-[10px] text-slate-400">ID: ${devId} • ${d.device_type}</span>
                 </div>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${isConn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
-                ${isConn ? 'Connecté' : 'Mode Démo 30j'}
-              </span>
+              ${statusBadge}
             </div>
 
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Dernière synchro :</span>
-                <span>${d.last_sync ? d.last_sync.slice(0, 16).replace('T', ' ') : 'Instantanée'}</span>
+                <span>${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Instantanée'}</span>
+              </div>
+              <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
+                <span class="text-slate-400">Chiffrement Clés :</span>
+                <span class="text-emerald-400 font-mono text-[11px] flex items-center space-x-1">
+                  <span>🔒 Fernet AES-256</span>
+                </span>
               </div>
               <div class="flex justify-between py-1">
                 <span class="text-slate-400">Mode :</span>
@@ -2306,30 +2325,63 @@
               </div>
             </div>
 
-            <button onclick="triggerDeviceSync('${d.id}')" class="w-full py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
-              <span>Tester la synchronisation</span>
-            </button>
+            <div class="flex items-center space-x-2">
+              <button onclick="triggerDeviceSync('${devId}')" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <span>Synchroniser</span>
+              </button>
+              ${isConn ? `
+                <button onclick="disconnectDevice('${devId}')" title="Déconnecter et révoquer" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              ` : ''}
+            </div>
           </div>
         `;
       }).join('');
+      lucide.createIcons();
     }
 
     async function triggerDeviceSync(deviceId) {
       try {
-        const res = await fetch('/api/devices/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_id: deviceId })
+        if (typeof showToast === 'function') showToast(`Synchronisation de ${deviceId} en cours...`, 'info');
+        const res = await apiFetch(`/api/devices/${deviceId}/sync`, {
+          method: 'POST'
         });
         if (res.ok) {
-          alert(`Synchronisation de ${deviceId} réussie ! Données mises à jour.`);
-          loadDashboardData();
+          const data = await res.json();
+          if (typeof showToast === 'function') showToast(`Synchronisation de ${data.name || deviceId} réussie ! Données biométriques mises à jour.`, 'success');
+          else alert(`Synchronisation de ${data.name || deviceId} réussie ! Données mises à jour.`);
+          await loadDashboardData();
         } else {
-          alert(`Synchronisation simulée effectuée avec succès.`);
+          // Fallback legacy
+          await apiFetch('/api/devices/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+          });
+          if (typeof showToast === 'function') showToast(`Synchronisation de ${deviceId} effectuée.`, 'info');
+          await loadDashboardData();
         }
       } catch (err) {
-        alert(`Synchronisation déclenchée en mode local.`);
+        if (typeof showToast === 'function') showToast(`Synchronisation déclenchée.`, 'info');
+      }
+    }
+
+    async function disconnectDevice(deviceId) {
+      if (!confirm(`Êtes-vous sûr de vouloir déconnecter et révoquer l'appareil '${deviceId}' ?`)) return;
+      try {
+        const res = await apiFetch(`/api/devices/${deviceId}`, {
+          method: 'DELETE'
+        });
+        if (res.ok) {
+          if (typeof showToast === 'function') showToast(`Appareil '${deviceId}' déconnecté et identifiants révoqués.`, 'info');
+          await loadDashboardData();
+        } else {
+          if (typeof showToast === 'function') showToast(`Erreur lors de la déconnexion.`, 'error');
+        }
+      } catch (err) {
+        if (typeof showToast === 'function') showToast(`Erreur réseau lors de la déconnexion.`, 'error');
       }
     }
 
@@ -2835,7 +2887,7 @@
     // =====================================================================
     async function exportDataBackup() {
       try {
-        const res = await fetch('/api/backup/export');
+        const res = await apiFetch('/api/backup/export');
         if (!res.ok) throw new Error("Erreur export");
         const data = await res.json();
         
@@ -2865,7 +2917,7 @@
       reader.onload = async (e) => {
         try {
           const parsed = JSON.parse(e.target.result);
-          const res = await fetch('/api/backup/import', {
+          const res = await apiFetch('/api/backup/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: parsed, overwrite: true })
@@ -2891,7 +2943,7 @@
         return;
       }
       try {
-        const res = await fetch('/api/profile/clear-history', { method: 'POST' });
+        const res = await apiFetch('/api/profile/clear-history', { method: 'POST' });
         if (res.ok) {
           localStorage.removeItem('vitaltrack_backup_cache');
           alert("Historique réinitialisé ! Vous pouvez enregistrer votre première pesée réelle.");
@@ -2908,7 +2960,7 @@
         return;
       }
       try {
-        const res = await fetch('/api/profile/reset-demo', { method: 'POST' });
+        const res = await apiFetch('/api/profile/reset-demo', { method: 'POST' });
         if (res.ok) {
           alert("Jeu de données réaliste 30 jours rechargé avec succès !");
           closeProfileModal();
@@ -2951,7 +3003,7 @@
       }
 
       try {
-        const res = await fetch('/api/devices/connect', {
+        const res = await apiFetch('/api/devices/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

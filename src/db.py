@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from src.models import ActivityEntry, FoodItem, MealEntry, WeightEntry
+from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
 # Essai d'import de psycopg pour le support Neon PostgreSQL
 try:
@@ -109,6 +110,10 @@ class DatabaseCursorWrapper:
         if self.is_postgres:
             return [dict(r) for r in rows]
         return [dict(r) for r in rows]
+
+    @property
+    def rowcount(self) -> int:
+        return getattr(self.cursor, "rowcount", -1)
 
     @property
     def lastrowid(self) -> Optional[int]:
@@ -288,11 +293,15 @@ class Database:
                         device_id TEXT NOT NULL,
                         name TEXT NOT NULL,
                         device_type TEXT NOT NULL,
+                        is_active INTEGER NOT NULL DEFAULT 1,
                         connected INTEGER NOT NULL DEFAULT 0,
                         auth_type TEXT NOT NULL DEFAULT 'demo',
                         api_key TEXT,
+                        encrypted_credentials TEXT,
                         account_email TEXT,
                         last_sync TEXT,
+                        last_sync_at TEXT,
+                        sync_status TEXT DEFAULT 'disconnected',
                         updated_at TEXT NOT NULL,
                         CONSTRAINT uq_user_devices_user_device UNIQUE (user_id, device_id)
                     );
@@ -318,6 +327,18 @@ class Database:
                         last_login TEXT NOT NULL
                     );
                 """)
+
+                # Migrations douces colonnes user_devices pour PostgreSQL
+                for col, def_val in [
+                    ("is_active", "INTEGER NOT NULL DEFAULT 1"),
+                    ("encrypted_credentials", "TEXT"),
+                    ("last_sync_at", "TEXT"),
+                    ("sync_status", "TEXT DEFAULT 'disconnected'")
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS {col} {def_val};")
+                    except Exception:
+                        pass
 
                 # Index optimisés PostgreSQL
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
@@ -426,11 +447,15 @@ class Database:
                         device_id TEXT NOT NULL,
                         name TEXT NOT NULL,
                         device_type TEXT NOT NULL,
+                        is_active INTEGER NOT NULL DEFAULT 1,
                         connected INTEGER NOT NULL DEFAULT 0,
                         auth_type TEXT NOT NULL DEFAULT 'demo',
                         api_key TEXT,
+                        encrypted_credentials TEXT,
                         account_email TEXT,
                         last_sync TEXT,
+                        last_sync_at TEXT,
+                        sync_status TEXT DEFAULT 'disconnected',
                         updated_at TEXT NOT NULL,
                         UNIQUE(user_id, device_id)
                     );
@@ -461,6 +486,18 @@ class Database:
                 for table in ["weights", "activities", "meals", "user_devices", "user_profile"]:
                     try:
                         cursor.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER DEFAULT 1")
+                    except Exception:
+                        pass
+
+                # Migrations douces colonnes user_devices
+                for col, def_val in [
+                    ("is_active", "INTEGER DEFAULT 1"),
+                    ("encrypted_credentials", "TEXT"),
+                    ("last_sync_at", "TEXT"),
+                    ("sync_status", "TEXT DEFAULT 'disconnected'")
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE user_devices ADD COLUMN {col} {def_val}")
                     except Exception:
                         pass
 
@@ -705,6 +742,71 @@ class Database:
         return results
 
     # ---------------------------------------------------------
+    
+    def get_weight_by_id(self, weight_id: int, user_id: int = 1) -> Optional[WeightEntry]:
+        """Récupère une pesée spécifique par son ID pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            r = cursor.fetchone()
+        if not r:
+            return None
+        return WeightEntry(
+            id=r["id"],
+            date=date.fromisoformat(r["date"][:10]),
+            weight_kg=r["weight_kg"],
+            body_fat_pct=r["body_fat_pct"],
+            muscle_mass_kg=r["muscle_mass_kg"],
+            water_pct=r["water_pct"],
+            bmi=r["bmi"],
+            trend_7d_kg=r["trend_7d_kg"],
+            source=r["source"],
+            notes=r["notes"],
+            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+        )
+
+    def update_weight(self, weight_id: int, entry: WeightEntry, user_id: int = 1) -> Optional[WeightEntry]:
+        """Met à jour une pesée existante et recalcule la tendance 7j."""
+        existing = self.get_weight_by_id(weight_id, user_id=user_id)
+        if not existing:
+            return None
+
+        target_date = entry.date
+        trend = entry.trend_7d_kg
+        if trend is None:
+            trend = self.calculate_7d_trend(target_date, entry.weight_kg, user_id=user_id)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE weights
+                SET date = ?, weight_kg = ?, body_fat_pct = ?, muscle_mass_kg = ?,
+                    water_pct = ?, bmi = ?, trend_7d_kg = ?, source = ?, notes = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                target_date.isoformat(), entry.weight_kg, entry.body_fat_pct,
+                entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
+                entry.source, entry.notes, weight_id, user_id
+            ))
+            conn.commit()
+
+        entry_dict = entry.model_dump()
+        entry_dict["id"] = weight_id
+        entry_dict["trend_7d_kg"] = trend
+        entry_dict["created_at"] = existing.created_at
+        return WeightEntry(**entry_dict)
+
+    def delete_weight(self, weight_id: int, user_id: int = 1) -> bool:
+        """Supprime une pesée pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
+            conn.commit()
+            return True
+
     # Activités Multi-Utilisateurs
     # ---------------------------------------------------------
 
@@ -906,6 +1008,68 @@ class Database:
         return results
 
     # ---------------------------------------------------------
+    
+    def get_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[MealEntry]:
+        """Récupère un repas spécifique par son ID pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            r = cursor.fetchone()
+        if not r:
+            return None
+        raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
+        items = [FoodItem(**item) for item in raw_items]
+        return MealEntry(
+            id=r["id"],
+            date=date.fromisoformat(r["date"][:10]),
+            meal_type=r["meal_type"],
+            total_calories_kcal=r["total_calories_kcal"],
+            protein_g=r["protein_g"],
+            carbs_g=r["carbs_g"],
+            fat_g=r["fat_g"],
+            fiber_g=r["fiber_g"],
+            photo_data_url=r["photo_data_url"],
+            items=items,
+            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
+        )
+
+    def update_meal(self, meal_id: int, entry: MealEntry, user_id: int = 1) -> Optional[MealEntry]:
+        """Met à jour un repas existant pour user_id."""
+        existing = self.get_meal_by_id(meal_id, user_id=user_id)
+        if not existing:
+            return None
+
+        items_json = json.dumps([item.model_dump() for item in entry.items])
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE meals
+                SET date = ?, meal_type = ?, total_calories_kcal = ?, protein_g = ?,
+                    carbs_g = ?, fat_g = ?, fiber_g = ?, photo_data_url = ?, items_json = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                entry.date.isoformat(), entry.meal_type, entry.total_calories_kcal,
+                entry.protein_g, entry.carbs_g, entry.fat_g, entry.fiber_g,
+                entry.photo_data_url or existing.photo_data_url, items_json, meal_id, user_id
+            ))
+            conn.commit()
+
+        entry_dict = entry.model_dump()
+        entry_dict["id"] = meal_id
+        entry_dict["created_at"] = existing.created_at
+        return MealEntry(**entry_dict)
+
+    def delete_meal(self, meal_id: int, user_id: int = 1) -> bool:
+        """Supprime un repas pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            conn.commit()
+            return True
+
     # Profil Utilisateur & Appareils
     # ---------------------------------------------------------
 
@@ -933,21 +1097,27 @@ class Database:
         current = self.get_user_profile(user_id=user_id)
         now_str = datetime.now(timezone.utc).isoformat()
 
-        name = data.get("name", current.get("name", "Sébastien"))
-        gender = data.get("gender", current.get("gender", "male"))
-        age = int(data.get("age", current.get("age", 35)))
-        height_cm = float(data.get("height_cm", current.get("height_cm", 178.0)))
-        target_weight = float(data.get("target_weight_kg", current.get("target_weight_kg", 77.0)))
-        goal_id = data.get("goal_profile_id", current.get("goal_profile_id", "weight_loss"))
-        steps = int(data.get("target_steps", current.get("target_steps", 10000)))
-        cal_intake = float(data.get("target_calories_intake", current.get("target_calories_intake", 2000.0)))
-        prot = float(data.get("protein_target_per_kg", current.get("protein_target_per_kg", 1.8)))
-        ring = data.get("preferred_ring", current.get("preferred_ring", "ringconn"))
-        scale = data.get("preferred_scale", current.get("preferred_scale", "withings"))
-        google_email = data.get("google_email", current.get("google_email"))
-        google_name = data.get("google_name", current.get("google_name"))
-        google_picture = data.get("google_picture", current.get("google_picture"))
-        google_sub = data.get("google_sub", current.get("google_sub"))
+        def _val(key, default):
+            v = data.get(key)
+            if v is not None:
+                return v
+            return current.get(key, default)
+
+        name = _val("name", "Sébastien")
+        gender = _val("gender", "male")
+        age = int(_val("age", 35))
+        height_cm = float(_val("height_cm", 178.0))
+        target_weight = float(_val("target_weight_kg", 77.0))
+        goal_id = _val("goal_profile_id", "weight_loss")
+        steps = int(_val("target_steps", 10000))
+        cal_intake = float(_val("target_calories_intake", 2000.0))
+        prot = float(_val("protein_target_per_kg", 1.8))
+        ring = _val("preferred_ring", "ringconn")
+        scale = _val("preferred_scale", "withings")
+        google_email = _val("google_email", None)
+        google_name = _val("google_name", None)
+        google_picture = _val("google_picture", None)
+        google_sub = _val("google_sub", None)
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -964,13 +1134,77 @@ class Database:
 
         return self.get_user_profile(user_id=user_id)
 
-    def get_user_devices(self, user_id: int = 1) -> List[Dict[str, Any]]:
+    def _format_device_row(self, row: Optional[Dict[str, Any]], reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
+        """Formate et protège une ligne d'appareil en chiffrant/déchiffrant les identifiants au besoin."""
+        if not row:
+            return None
+        d = dict(row)
+        # S'assurer des champs standards
+        d["connected"] = bool(d.get("connected"))
+        d["is_active"] = bool(d.get("is_active", 1))
+        d["sync_status"] = d.get("sync_status") or ("connected" if d["connected"] else "disconnected")
+        d["last_sync_at"] = d.get("last_sync_at") or d.get("last_sync")
+
+        # Déchiffrement des credentials
+        enc_cred = d.get("encrypted_credentials")
+        if enc_cred:
+            creds = decrypt_credentials(enc_cred)
+        elif d.get("api_key"):
+            creds = {"api_key": d["api_key"]}
+        else:
+            creds = {}
+
+        if reveal_secrets:
+            d["credentials"] = creds
+        else:
+            # Masquer les clés pour éviter toute fuite dans les logs ou API publiques
+            d.pop("encrypted_credentials", None)
+            d.pop("api_key", None)
+            d["has_credentials"] = bool(creds)
+            if creds.get("api_key"):
+                raw_k = str(creds["api_key"])
+                d["api_key_masked"] = f"{raw_k[:4]}...{raw_k[-4:]}" if len(raw_k) > 8 else "***"
+        return d
+
+    def get_user_devices(self, user_id: int = 1, reveal_secrets: bool = False) -> List[Dict[str, Any]]:
         """Récupère les objets connectés associés à user_id."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY id ASC", (user_id,))
             rows = cursor.fetchall()
-        return [dict(r) for r in rows]
+        return [self._format_device_row(r, reveal_secrets=reveal_secrets) for r in rows]
+
+    def get_user_device(self, device_id: str, user_id: int = 1, reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
+        """Récupère un objet connecté spécifique pour un user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1", (user_id, device_id))
+            row = cursor.fetchone()
+        return self._format_device_row(row, reveal_secrets=reveal_secrets)
+
+    def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
+        """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+        return deleted
+
+    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
+        """Met à jour le statut temps réel et l'horodatage de dernière synchronisation."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE user_devices
+                SET sync_status = ?, last_sync = ?, last_sync_at = ?, updated_at = ?
+                WHERE user_id = ? AND device_id = ?
+            """, (sync_status, now_str, now_str, now_str, user_id, device_id))
+            conn.commit()
+            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
+            row = cursor.fetchone()
+        return self._format_device_row(row, reveal_secrets=False)
 
     def update_user_device(
         self,
@@ -980,48 +1214,85 @@ class Database:
         connected: bool,
         auth_type: str = "connected",
         api_key: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
         account_email: Optional[str] = None,
+        is_active: bool = True,
+        sync_status: Optional[str] = None,
         user_id: int = 1
     ) -> Dict[str, Any]:
-        """Enregistre ou met à jour un objet connecté pour user_id."""
+        """Enregistre ou met à jour un objet connecté pour user_id avec chiffrement au repos."""
         now_str = datetime.now(timezone.utc).isoformat()
+        if sync_status is None:
+            sync_status = "connected" if connected else "disconnected"
+
+        # Préparation des credentials à chiffrer
+        creds_to_encrypt = dict(credentials) if credentials else {}
+        if api_key and "api_key" not in creds_to_encrypt:
+            creds_to_encrypt["api_key"] = api_key
+
+        encrypted_credentials = encrypt_credentials(creds_to_encrypt) if creds_to_encrypt else None
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
-                    INSERT INTO user_devices (user_id, device_id, name, device_type, connected, auth_type, api_key, account_email, last_sync, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO user_devices (
+                        user_id, device_id, name, device_type, connected, auth_type,
+                        api_key, encrypted_credentials, account_email, is_active,
+                        last_sync, last_sync_at, sync_status, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, device_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         device_type = EXCLUDED.device_type,
                         connected = EXCLUDED.connected,
                         auth_type = EXCLUDED.auth_type,
                         api_key = COALESCE(EXCLUDED.api_key, user_devices.api_key),
+                        encrypted_credentials = COALESCE(EXCLUDED.encrypted_credentials, user_devices.encrypted_credentials),
                         account_email = COALESCE(EXCLUDED.account_email, user_devices.account_email),
+                        is_active = EXCLUDED.is_active,
                         last_sync = EXCLUDED.last_sync,
+                        last_sync_at = EXCLUDED.last_sync_at,
+                        sync_status = EXCLUDED.sync_status,
                         updated_at = EXCLUDED.updated_at
                     RETURNING *;
-                """, (user_id, device_id, name, device_type, 1 if connected else 0, auth_type, api_key, account_email, now_str, now_str))
+                """, (
+                    user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
+                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
+                    now_str, now_str, sync_status, now_str
+                ))
                 row = cursor.fetchone()
             else:
                 cursor.execute("""
-                    INSERT INTO user_devices (user_id, device_id, name, device_type, connected, auth_type, api_key, account_email, last_sync, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO user_devices (
+                        user_id, device_id, name, device_type, connected, auth_type,
+                        api_key, encrypted_credentials, account_email, is_active,
+                        last_sync, last_sync_at, sync_status, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, device_id) DO UPDATE SET
                         name = excluded.name,
                         device_type = excluded.device_type,
                         connected = excluded.connected,
                         auth_type = excluded.auth_type,
                         api_key = COALESCE(excluded.api_key, user_devices.api_key),
+                        encrypted_credentials = COALESCE(excluded.encrypted_credentials, user_devices.encrypted_credentials),
                         account_email = COALESCE(excluded.account_email, user_devices.account_email),
+                        is_active = excluded.is_active,
                         last_sync = excluded.last_sync,
+                        last_sync_at = excluded.last_sync_at,
+                        sync_status = excluded.sync_status,
                         updated_at = excluded.updated_at
-                """, (user_id, device_id, name, device_type, 1 if connected else 0, auth_type, api_key, account_email, now_str, now_str))
+                """, (
+                    user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
+                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
+                    now_str, now_str, sync_status, now_str
+                ))
                 conn.commit()
                 cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
                 row = cursor.fetchone()
             conn.commit()
-        return dict(row)
+        return self._format_device_row(row, reveal_secrets=False)
 
     # ---------------------------------------------------------
     # Google OAuth / GIS Sessions

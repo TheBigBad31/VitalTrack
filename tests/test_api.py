@@ -105,12 +105,36 @@ def test_api_weight_crud(client):
     assert created["weight_kg"] == 78.5
     assert created["trend_7d_kg"] is not None
     assert created["bmi"] is not None
+    weight_id = created["id"]
 
     # 2. Récupération
     get_res = client.get("/api/weights?limit=5")
     assert get_res.status_code == 200
     weights = get_res.json()
     assert any(w["weight_kg"] == 78.5 for w in weights)
+
+    # 3. Modification (PUT)
+    update_payload = {
+        "date": today_str,
+        "weight_kg": 78.2,
+        "body_fat_pct": 19.5,
+        "notes": "Pesée corrigée"
+    }
+    put_res = client.put(f"/api/weights/{weight_id}", json=update_payload)
+    assert put_res.status_code == 200
+    updated = put_res.json()
+    assert updated["weight_kg"] == 78.2
+    assert updated["body_fat_pct"] == 19.5
+    assert updated["notes"] == "Pesée corrigée"
+
+    # 4. Suppression (DELETE)
+    del_res = client.delete(f"/api/weights/{weight_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+
+    # Vérification disparition
+    get_res2 = client.get("/api/weights?limit=50")
+    assert not any(w["id"] == weight_id for w in get_res2.json())
 
 
 def test_api_activity_crud(client):
@@ -170,7 +194,7 @@ def test_api_meal_estimation_and_portion_scaling(client):
 
 
 def test_api_meal_save_to_journal(client):
-    """Teste l'enregistrement d'un repas dans le journal alimentaire."""
+    """Teste l'enregistrement d'un repas dans le journal alimentaire, modification et suppression."""
     payload = {
         "date": date.today().isoformat(),
         "meal_type": "dinner",
@@ -202,6 +226,57 @@ def test_api_meal_save_to_journal(client):
     assert saved["meal_type"] == "dinner"
     assert pytest.approx(saved["total_calories_kcal"], abs=1.0) == 352.0
     assert len(saved["items"]) == 2
+    meal_id = saved["id"]
+
+    # Modification (PUT)
+    put_payload = {
+        "date": date.today().isoformat(),
+        "meal_type": "dinner",
+        "portion_scale": 1.0,
+        "items": [
+            {
+                "name": "Pavé de saumon grand format",
+                "portion_g": 200.0,
+                "calories_kcal": 410.0,
+                "protein_g": 40.0,
+                "carbs_g": 0.0,
+                "fat_g": 25.0,
+                "fiber_g": 0.0
+            }
+        ]
+    }
+    put_res = client.put(f"/api/meals/{meal_id}", json=put_payload)
+    assert put_res.status_code == 200
+    updated_meal = put_res.json()
+    assert updated_meal["total_calories_kcal"] == 410.0
+    assert updated_meal["protein_g"] == 40.0
+
+    # Suppression (DELETE)
+    del_res = client.delete(f"/api/meals/{meal_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+
+    # Test saisie rapide directe globale (kcal, macros sans décomposition d'aliments)
+    direct_payload = {
+        "date": date.today().isoformat(),
+        "meal_type": "lunch",
+        "total_calories_kcal": 650.0,
+        "protein_g": 35.0,
+        "carbs_g": 70.0,
+        "fat_g": 20.0,
+        "fiber_g": 6.0,
+        "meal_name": "Déjeuner rapide restaurant"
+    }
+    direct_res = client.post("/api/meals", json=direct_payload)
+    assert direct_res.status_code == 200
+    direct_saved = direct_res.json()
+    assert direct_saved["total_calories_kcal"] == 650.0
+    assert direct_saved["protein_g"] == 35.0
+    assert direct_saved["carbs_g"] == 70.0
+    assert direct_saved["fat_g"] == 20.0
+    assert len(direct_saved["items"]) == 1
+    assert direct_saved["items"][0]["name"] == "Déjeuner rapide restaurant"
+
 
 
 def test_api_devices_hub_and_sync(client):
