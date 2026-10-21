@@ -178,8 +178,8 @@ class NutritionEngine:
             active_cal = day_activity.active_calories_kcal
         else:
             bmr = self.calculate_bmr_mifflin_st_jeor(user_weight_kg, user_height_cm, user_age, gender)
-            steps = day_activity.steps if day_activity else 8000
-            active_cal = day_activity.active_calories_kcal if day_activity else 350.0
+            steps = day_activity.steps if day_activity else 0
+            active_cal = day_activity.active_calories_kcal if day_activity else 0.0
             burned_kcal = self.calculate_tdee(bmr, steps, active_cal)
 
         # 3. Solde net et impact poids
