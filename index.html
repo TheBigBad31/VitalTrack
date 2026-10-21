@@ -1270,7 +1270,7 @@
   <!-- =================================================================== -->
   <!-- MODAL 6 : AUTHENTIFICATION UNIFIÉE (GOOGLE, EMAIL/MDP, INVITÉ) -->
   <!-- =================================================================== -->
-  <div id="modal-auth" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-auth" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden" style="touch-action: pan-y;">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <!-- En-tête de la Modale -->
@@ -2967,7 +2967,7 @@
           closeConnectWizardModal();
           await loadDashboardData();
           switchTab('devices');
-          alert(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été connecté avec succès à votre profil VitalTrack !`);
+          showToast(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été connecté avec succès à votre profil VitalTrack !`, 'success');
         }
       } catch (e) {
         closeConnectWizardModal();
@@ -2981,18 +2981,61 @@
     let currentGoogleConfig = { google_client_id: "", is_configured: false };
     let currentAuthEmailMode = 'login'; // 'login' ou 'register'
 
+    function showToast(message, type = 'info', duration = 3500) {
+      const container = document.getElementById('pwa-toast-container');
+      if (!container) {
+        console.log(`[Toast ${type}]`, message);
+        return;
+      }
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto p-3.5 rounded-xl border shadow-xl flex items-center space-x-3 text-xs transition-all duration-300 transform translate-y-2 opacity-0 ${
+        type === 'success' ? 'bg-[#0e2a1d] border-emerald-500/50 text-emerald-200 shadow-emerald-950/50' :
+        type === 'error' ? 'bg-[#2d1215] border-red-500/50 text-red-200 shadow-red-950/50' :
+        'bg-[#151D2A] border-[#1F2A3C] text-slate-200 shadow-black/60'
+      }`;
+      const iconName = type === 'success' ? 'check-circle' : (type === 'error' ? 'alert-triangle' : 'info');
+      toast.innerHTML = `
+        <i data-lucide="${iconName}" class="w-4 h-4 shrink-0 ${type === 'success' ? 'text-emerald-400' : (type === 'error' ? 'text-red-400' : 'text-blue-400')}"></i>
+        <div class="flex-1 leading-snug">${message}</div>
+      `;
+      container.appendChild(toast);
+      if (window.lucide && lucide.createIcons) {
+        try { lucide.createIcons(); } catch (e) {}
+      }
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
     function openAuthModal() {
+      // Si l'assistant wizard est ouvert, le fermer proprement pour éviter toute superposition opaque
+      const wizardModal = document.getElementById('modal-connect-wizard');
+      if (wizardModal && !wizardModal.classList.contains('hidden')) {
+        wizardModal.classList.add('hidden');
+      }
       const modal = document.getElementById('modal-auth');
-      if (modal) modal.classList.remove('hidden');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
       if (currentGoogleConfig && currentGoogleConfig.google_client_id) {
         initGoogleIdentityServices();
       }
-      lucide.createIcons();
+      if (window.lucide && lucide.createIcons) {
+        try { lucide.createIcons(); } catch (e) {}
+      }
     }
 
     function closeAuthModal() {
       const modal = document.getElementById('modal-auth');
-      if (modal) modal.classList.add('hidden');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
     }
 
     // Alias de compatibilité
@@ -3138,7 +3181,7 @@
           renderUnifiedAuthState(currentUnifiedSession, data.profile);
           closeAuthModal();
           await loadDashboardData();
-          alert(`✓ ${data.message || 'Authentification réussie !'}`);
+          showToast(`✓ ${data.message || 'Authentification réussie !'}`, "success");
         } else {
           showEmailAuthError(data.detail || "Erreur lors de l'authentification.");
         }
@@ -3329,7 +3372,7 @@
       }
 
       await loadDashboardData();
-      alert("✓ Connecté avec succès en tant que " + accountName + " (" + accountEmail + ") !");
+      showToast("✓ Connecté avec succès en tant que " + accountName + " (" + accountEmail + ") !", "success");
     }
 
     function showOtherGoogleAccountForm() {
@@ -3552,5 +3595,7 @@
       }
     }
   </script>
+  <!-- Toast de notification globale PWA -->
+  <div id="pwa-toast-container" class="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
 </body>
 </html>
