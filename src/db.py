@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
-from src.models import ActivityEntry, FoodItem, MealEntry, WeightEntry
+from src.models import ActivityEntry, FoodItem, MealEntry, SavedMeal, WeightEntry
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
 # Essai d'import de psycopg pour le support Neon PostgreSQL
@@ -220,6 +220,15 @@ class Database:
                         target_steps INTEGER NOT NULL DEFAULT 10000,
                         target_calories_intake REAL NOT NULL DEFAULT 2000.0,
                         protein_target_per_kg REAL NOT NULL DEFAULT 1.8,
+                        daily_protein_target_g REAL,
+                        daily_carbs_target_g REAL,
+                        daily_fat_target_g REAL,
+                        daily_water_target_ml REAL DEFAULT 2000.0,
+                        goal_type TEXT DEFAULT 'weight_loss',
+                        activity_level TEXT DEFAULT 'moderately_active',
+                        birth_date TEXT,
+                        current_weight_kg REAL,
+                        meal_distribution TEXT,
                         preferred_ring TEXT DEFAULT 'ringconn',
                         preferred_scale TEXT DEFAULT 'withings',
                         google_email TEXT,
@@ -283,6 +292,28 @@ class Database:
                         photo_data_url TEXT,
                         items_json TEXT,
                         created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS saved_meals (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        meal_type TEXT NOT NULL DEFAULT 'lunch',
+                        serving_size TEXT DEFAULT '1 portion',
+                        quantity_grams REAL,
+                        calories REAL NOT NULL,
+                        protein_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_g REAL NOT NULL DEFAULT 0.0,
+                        fat_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_g REAL DEFAULT 0.0,
+                        ingredients TEXT,
+                        items_json TEXT,
+                        photo_url TEXT,
+                        is_favorite INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     );
                 """)
 
@@ -351,6 +382,15 @@ class Database:
                     ("google_name", "TEXT"),
                     ("google_picture", "TEXT"),
                     ("google_sub", "TEXT"),
+                    ("daily_protein_target_g", "REAL"),
+                    ("daily_carbs_target_g", "REAL"),
+                    ("daily_fat_target_g", "REAL"),
+                    ("daily_water_target_ml", "REAL DEFAULT 2000.0"),
+                    ("goal_type", "TEXT DEFAULT 'weight_loss'"),
+                    ("activity_level", "TEXT DEFAULT 'moderately_active'"),
+                    ("birth_date", "TEXT"),
+                    ("current_weight_kg", "REAL"),
+                    ("meal_distribution", "TEXT"),
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS {col} {def_val};")
@@ -373,6 +413,7 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -404,6 +445,15 @@ class Database:
                         target_steps INTEGER NOT NULL DEFAULT 10000,
                         target_calories_intake REAL NOT NULL DEFAULT 2000.0,
                         protein_target_per_kg REAL NOT NULL DEFAULT 1.8,
+                        daily_protein_target_g REAL,
+                        daily_carbs_target_g REAL,
+                        daily_fat_target_g REAL,
+                        daily_water_target_ml REAL DEFAULT 2000.0,
+                        goal_type TEXT DEFAULT 'weight_loss',
+                        activity_level TEXT DEFAULT 'moderately_active',
+                        birth_date TEXT,
+                        current_weight_kg REAL,
+                        meal_distribution TEXT,
                         preferred_ring TEXT DEFAULT 'ringconn',
                         preferred_scale TEXT DEFAULT 'withings',
                         google_email TEXT,
@@ -470,6 +520,28 @@ class Database:
                 """)
 
                 cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS saved_meals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        meal_type TEXT NOT NULL DEFAULT 'lunch',
+                        serving_size TEXT DEFAULT '1 portion',
+                        quantity_grams REAL,
+                        calories REAL NOT NULL,
+                        protein_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_g REAL NOT NULL DEFAULT 0.0,
+                        fat_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_g REAL DEFAULT 0.0,
+                        ingredients TEXT,
+                        items_json TEXT,
+                        photo_url TEXT,
+                        is_favorite INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS user_devices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
@@ -512,9 +584,26 @@ class Database:
                 """)
 
                 # Migrations douces pour ajouter user_id si les tables SQLite existaient déjà sans user_id
-                for table in ["weights", "activities", "meals", "user_devices", "user_profile"]:
+                for table in ["weights", "activities", "meals", "user_devices", "user_profile", "saved_meals"]:
                     try:
                         cursor.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER DEFAULT 1")
+                    except Exception:
+                        pass
+
+                # Migrations douces colonnes user_profile pour SQLite
+                for col, def_val in [
+                    ("daily_protein_target_g", "REAL"),
+                    ("daily_carbs_target_g", "REAL"),
+                    ("daily_fat_target_g", "REAL"),
+                    ("daily_water_target_ml", "REAL DEFAULT 2000.0"),
+                    ("goal_type", "TEXT DEFAULT 'weight_loss'"),
+                    ("activity_level", "TEXT DEFAULT 'moderately_active'"),
+                    ("birth_date", "TEXT"),
+                    ("current_weight_kg", "REAL"),
+                    ("meal_distribution", "TEXT"),
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {def_val}")
                     except Exception:
                         pass
 
@@ -539,6 +628,7 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
 
             conn.commit()
 
@@ -635,8 +725,8 @@ class Database:
 
             # Créer automatiquement son profil par défaut
             cursor.execute("""
-                INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, google_email, google_name, google_picture, google_sub, updated_at)
-                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 'ringconn', 'withings', ?, ?, ?, ?, ?)
+                INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, preferred_ring, preferred_scale, google_email, google_name, google_picture, google_sub, updated_at)
+                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', ?, ?, ?, ?, ?)
             """, (user_dict["id"], user_dict["name"] or "Utilisateur", user_dict["email"], user_dict["name"], user_dict["picture"], google_sub, now_str))
             conn.commit()
 
@@ -1097,6 +1187,189 @@ class Database:
             conn.commit()
             return True
 
+    # ---------------------------------------------------------
+    # Plats Sauvegardés / Bibliothèque de Repas Réutilisables
+    # ---------------------------------------------------------
+
+    def insert_saved_meal(self, saved_meal: SavedMeal, user_id: int = 1) -> SavedMeal:
+        """Enregistre un nouveau plat type dans la bibliothèque réutilisable."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO saved_meals (
+                        user_id, name, meal_type, serving_size, quantity_grams,
+                        calories, protein_g, carbs_g, fat_g, fiber_g,
+                        ingredients, items_json, photo_url, is_favorite,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id, created_at, updated_at;
+                """, (
+                    user_id, saved_meal.name, saved_meal.meal_type, saved_meal.serving_size or "1 portion",
+                    saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
+                    saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
+                    saved_meal.ingredients, items_json, saved_meal.photo_url,
+                    1 if saved_meal.is_favorite else 0, now_str, now_str
+                ))
+                row = cursor.fetchone()
+                meal_id = row["id"]
+                created_at = row["created_at"]
+            else:
+                cursor.execute("""
+                    INSERT INTO saved_meals (
+                        user_id, name, meal_type, serving_size, quantity_grams,
+                        calories, protein_g, carbs_g, fat_g, fiber_g,
+                        ingredients, items_json, photo_url, is_favorite,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, saved_meal.name, saved_meal.meal_type, saved_meal.serving_size or "1 portion",
+                    saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
+                    saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
+                    saved_meal.ingredients, items_json, saved_meal.photo_url,
+                    1 if saved_meal.is_favorite else 0, now_str, now_str
+                ))
+                meal_id = cursor.lastrowid
+                created_at = now_str
+            conn.commit()
+
+        result = saved_meal.model_copy()
+        result.id = meal_id
+        result.user_id = user_id
+        result.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
+        result.updated_at = datetime.fromisoformat(now_str)
+        return result
+
+    def get_saved_meals(
+        self,
+        meal_type: Optional[str] = None,
+        is_favorite: Optional[bool] = None,
+        user_id: int = 1
+    ) -> List[SavedMeal]:
+        """Récupère les plats sauvegardés d'un utilisateur avec filtres optionnels."""
+        query = "SELECT * FROM saved_meals WHERE user_id = ?"
+        params: List[Any] = [user_id]
+
+        if meal_type:
+            query += " AND meal_type = ?"
+            params.append(meal_type)
+        if is_favorite is not None:
+            query += " AND is_favorite = ?"
+            params.append(1 if is_favorite else 0)
+
+        query += " ORDER BY is_favorite DESC, updated_at DESC, id DESC"
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
+            items = [FoodItem(**item) for item in raw_items]
+            results.append(SavedMeal(
+                id=r["id"],
+                user_id=r["user_id"],
+                name=r["name"],
+                meal_type=r["meal_type"],
+                serving_size=r["serving_size"],
+                quantity_grams=r["quantity_grams"],
+                calories=r["calories"],
+                protein_g=r["protein_g"],
+                carbs_g=r["carbs_g"],
+                fat_g=r["fat_g"],
+                fiber_g=r["fiber_g"],
+                ingredients=r["ingredients"],
+                items=items,
+                photo_url=r["photo_url"],
+                is_favorite=bool(r["is_favorite"]),
+                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
+                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None
+            ))
+        return results
+
+    def get_saved_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[SavedMeal]:
+        """Récupère un plat réutilisable précis par son ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            r = cursor.fetchone()
+        if not r:
+            return None
+        raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
+        items = [FoodItem(**item) for item in raw_items]
+        return SavedMeal(
+            id=r["id"],
+            user_id=r["user_id"],
+            name=r["name"],
+            meal_type=r["meal_type"],
+            serving_size=r["serving_size"],
+            quantity_grams=r["quantity_grams"],
+            calories=r["calories"],
+            protein_g=r["protein_g"],
+            carbs_g=r["carbs_g"],
+            fat_g=r["fat_g"],
+            fiber_g=r["fiber_g"],
+            ingredients=r["ingredients"],
+            items=items,
+            photo_url=r["photo_url"],
+            is_favorite=bool(r["is_favorite"]),
+            created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
+            updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None
+        )
+
+    def update_saved_meal(self, meal_id: int, saved_meal: SavedMeal, user_id: int = 1) -> Optional[SavedMeal]:
+        """Met à jour un plat type réutilisable."""
+        existing = self.get_saved_meal_by_id(meal_id, user_id=user_id)
+        if not existing:
+            return None
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE saved_meals
+                SET name = ?, meal_type = ?, serving_size = ?, quantity_grams = ?,
+                    calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?,
+                    ingredients = ?, items_json = ?, photo_url = ?, is_favorite = ?,
+                    updated_at = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                saved_meal.name, saved_meal.meal_type, saved_meal.serving_size,
+                saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
+                saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
+                saved_meal.ingredients, items_json,
+                saved_meal.photo_url if saved_meal.photo_url is not None else existing.photo_url,
+                1 if saved_meal.is_favorite else 0, now_str, meal_id, user_id
+            ))
+            conn.commit()
+
+        updated = saved_meal.model_copy()
+        updated.id = meal_id
+        updated.user_id = user_id
+        updated.created_at = existing.created_at
+        updated.updated_at = datetime.fromisoformat(now_str)
+        return updated
+
+    def delete_saved_meal(self, meal_id: int, user_id: int = 1) -> bool:
+        """Supprime un plat réutilisable de la bibliothèque."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            conn.commit()
+            return True
+
     # Profil Utilisateur & Appareils
     # ---------------------------------------------------------
 
@@ -1110,8 +1383,8 @@ class Database:
             if not row:
                 now_str = datetime.now(timezone.utc).isoformat()
                 cursor.execute("""
-                    INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, preferred_ring, preferred_scale, updated_at)
-                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 'ringconn', 'withings', ?)
+                    INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, updated_at)
+                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', ?)
                 """, (user_id, now_str))
                 conn.commit()
                 cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
@@ -1146,6 +1419,29 @@ class Database:
         google_picture = _val("google_picture", None)
         google_sub = _val("google_sub", None)
 
+        # Nouveaux champs profil nutritionnel & métabolique
+        daily_protein = _val("daily_protein_target_g", None)
+        if daily_protein is not None:
+            daily_protein = float(daily_protein)
+        daily_carbs = _val("daily_carbs_target_g", None)
+        if daily_carbs is not None:
+            daily_carbs = float(daily_carbs)
+        daily_fat = _val("daily_fat_target_g", None)
+        if daily_fat is not None:
+            daily_fat = float(daily_fat)
+        daily_water = _val("daily_water_target_ml", 2000.0)
+        if daily_water is not None:
+            daily_water = float(daily_water)
+        goal_type = _val("goal_type", "weight_loss")
+        activity_level = _val("activity_level", "moderately_active")
+        birth_date = _val("birth_date", None)
+        current_weight = _val("current_weight_kg", None)
+        if current_weight is not None:
+            current_weight = float(current_weight)
+        meal_distribution = _val("meal_distribution", None)
+        if isinstance(meal_distribution, (dict, list)):
+            meal_distribution = json.dumps(meal_distribution)
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -1154,9 +1450,17 @@ class Database:
                     goal_profile_id = ?, target_steps = ?, target_calories_intake = ?,
                     protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?,
                     google_email = ?, google_name = ?, google_picture = ?, google_sub = ?,
+                    daily_protein_target_g = ?, daily_carbs_target_g = ?, daily_fat_target_g = ?,
+                    daily_water_target_ml = ?, goal_type = ?, activity_level = ?,
+                    birth_date = ?, current_weight_kg = ?, meal_distribution = ?,
                     updated_at = ?
                 WHERE user_id = ?
-            """, (name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake, prot, ring, scale, google_email, google_name, google_picture, google_sub, now_str, user_id))
+            """, (
+                name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake,
+                prot, ring, scale, google_email, google_name, google_picture, google_sub,
+                daily_protein, daily_carbs, daily_fat, daily_water, goal_type, activity_level,
+                birth_date, current_weight, meal_distribution, now_str, user_id
+            ))
             conn.commit()
 
         return self.get_user_profile(user_id=user_id)
@@ -1640,6 +1944,20 @@ class Database:
                     m["items"] = []
                 meals_list.append(m)
 
+            cursor.execute("SELECT * FROM saved_meals WHERE user_id = ? ORDER BY id ASC", (user_id,))
+            saved_meals_rows = cursor.fetchall()
+            saved_meals_list = []
+            for r in saved_meals_rows:
+                sm = dict(r)
+                if sm.get("items_json"):
+                    try:
+                        sm["items"] = json.loads(sm["items_json"])
+                    except Exception:
+                        sm["items"] = []
+                else:
+                    sm["items"] = []
+                saved_meals_list.append(sm)
+
         return {
             "version": "2.0",
             "user_id": user_id,
@@ -1648,7 +1966,8 @@ class Database:
             "devices": devices_list,
             "weights": weights_list,
             "activities": activities_list,
-            "meals": meals_list
+            "meals": meals_list,
+            "saved_meals": saved_meals_list
         }
 
     def import_full_backup(self, data: Dict[str, Any], overwrite: bool = False, user_id: int = 1) -> Dict[str, Any]:
@@ -1760,6 +2079,7 @@ class Database:
             cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
             if not keep_profile:
+                cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))
             conn.commit()

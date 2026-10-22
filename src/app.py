@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.db import Database, get_db_path
-from src.models import ActivityEntry, FoodItem, MealEntry, MealType, WeightEntry
+from src.models import ActivityEntry, FoodItem, MealEntry, MealType, SavedMeal, WeightEntry
 from src.nutrition_engine import NutritionEngine
 import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
@@ -242,12 +242,59 @@ class UserProfileInput(BaseModel):
     target_steps: Optional[int] = Field(10000, ge=1000, le=50000)
     target_calories_intake: Optional[float] = Field(2000.0, ge=800.0, le=6000.0)
     protein_target_per_kg: Optional[float] = Field(1.8, ge=0.8, le=3.5)
+    daily_protein_target_g: Optional[float] = Field(None, ge=20.0, le=500.0)
+    daily_carbs_target_g: Optional[float] = Field(None, ge=20.0, le=1000.0)
+    daily_fat_target_g: Optional[float] = Field(None, ge=10.0, le=500.0)
+    daily_water_target_ml: Optional[float] = Field(2000.0, ge=500.0, le=10000.0)
+    goal_type: Optional[str] = "weight_loss"
+    activity_level: Optional[str] = "moderately_active"
+    birth_date: Optional[str] = None
+    current_weight_kg: Optional[float] = Field(None, ge=30.0, le=300.0)
+    meal_distribution: Optional[Any] = None
     preferred_ring: Optional[str] = "ringconn"
     preferred_scale: Optional[str] = "withings"
     google_email: Optional[str] = None
     google_name: Optional[str] = None
     google_picture: Optional[str] = None
     google_sub: Optional[str] = None
+
+
+class SavedMealCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="Nom du plat")
+    meal_type: MealType = Field("lunch", description="Type de repas (breakfast, lunch, snack, dinner)")
+    serving_size: Optional[str] = Field("1 portion", description="Taille ou libellé de portion")
+    quantity_grams: Optional[float] = Field(None, ge=0.0)
+    calories: float = Field(..., ge=0.0, description="Calories (kcal)")
+    protein_g: float = Field(0.0, ge=0.0)
+    carbs_g: float = Field(0.0, ge=0.0)
+    fat_g: float = Field(0.0, ge=0.0)
+    fiber_g: Optional[float] = Field(0.0, ge=0.0)
+    ingredients: Optional[str] = None
+    items: Optional[List[FoodItem]] = Field(default_factory=list)
+    photo_url: Optional[str] = None
+    is_favorite: Optional[bool] = False
+
+
+class SavedMealUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    meal_type: Optional[MealType] = None
+    serving_size: Optional[str] = None
+    quantity_grams: Optional[float] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    ingredients: Optional[str] = None
+    items: Optional[List[FoodItem]] = None
+    photo_url: Optional[str] = None
+    is_favorite: Optional[bool] = None
+
+
+class SavedMealLogRequest(BaseModel):
+    date: Optional[date] = None
+    meal_type: Optional[MealType] = None
+    portion_factor: Optional[float] = Field(1.0, ge=0.1, le=10.0, description="Facteur multiplicateur de portion")
 
 
 class DeviceConnectInput(BaseModel):
@@ -683,6 +730,156 @@ def delete_meal(meal_id: int, current_user: AuthUser = Depends(get_current_user)
 
 
 # =====================================================================
+# Endpoints Bibliothèque de Plats Sauvegardés / Favoris Réutilisables
+# =====================================================================
+
+@app.get("/api/meals/saved")
+def list_saved_meals(
+    meal_type: Optional[str] = Query(None, description="Filtre par repas (breakfast, lunch, snack, dinner)"),
+    is_favorite: Optional[bool] = Query(None, description="Filtre par favoris"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère la liste des plats sauvegardés/réutilisables de l'utilisateur connecté."""
+    meals = db.get_saved_meals(meal_type=meal_type, is_favorite=is_favorite, user_id=current_user.id)
+    return [m.model_dump() for m in meals]
+
+
+@app.post("/api/meals/saved")
+def create_saved_meal(
+    req: SavedMealCreateRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Crée et enregistre un nouveau plat type dans la bibliothèque réutilisable."""
+    saved_meal = SavedMeal(
+        user_id=current_user.id,
+        name=req.name,
+        meal_type=req.meal_type,
+        serving_size=req.serving_size or "1 portion",
+        quantity_grams=req.quantity_grams,
+        calories=req.calories,
+        protein_g=req.protein_g,
+        carbs_g=req.carbs_g,
+        fat_g=req.fat_g,
+        fiber_g=req.fiber_g or 0.0,
+        ingredients=req.ingredients,
+        items=req.items or [],
+        photo_url=req.photo_url,
+        is_favorite=bool(req.is_favorite)
+    )
+    created = db.insert_saved_meal(saved_meal, user_id=current_user.id)
+    return created.model_dump()
+
+
+@app.get("/api/meals/saved/{meal_id}")
+def get_saved_meal(
+    meal_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère les détails d'un plat type réutilisable."""
+    saved = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
+    return saved.model_dump()
+
+
+@app.put("/api/meals/saved/{meal_id}")
+def update_saved_meal(
+    meal_id: int,
+    req: SavedMealUpdateRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Met à jour un plat type réutilisable existant."""
+    existing = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
+
+    data = existing.model_dump()
+    req_data = req.model_dump(exclude_unset=True)
+    for k, v in req_data.items():
+        if v is not None:
+            data[k] = v
+
+    to_save = SavedMeal(**data)
+    updated = db.update_saved_meal(meal_id, to_save, user_id=current_user.id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
+    return updated.model_dump()
+
+
+@app.delete("/api/meals/saved/{meal_id}")
+def delete_saved_meal(
+    meal_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Supprime un plat réutilisable de la bibliothèque."""
+    deleted = db.delete_saved_meal(meal_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
+    return {"status": "success", "message": f"Plat sauvegardé #{meal_id} supprimé avec succès"}
+
+
+@app.post("/api/meals/saved/{meal_id}/log")
+def log_saved_meal_to_journal(
+    meal_id: int,
+    req: SavedMealLogRequest = SavedMealLogRequest(),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Logge instantanément un plat réutilisable dans le journal alimentaire du jour."""
+    saved = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
+    if not saved:
+        raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
+
+    factor = req.portion_factor if req.portion_factor is not None else 1.0
+    target_date = req.date or date.today()
+    meal_type = req.meal_type or saved.meal_type
+
+    # Mise à l'échelle des aliments ou de l'aliment global
+    if saved.items:
+        scaled_items = []
+        for it in saved.items:
+            scaled_items.append(FoodItem(
+                name=it.name,
+                portion_g=round(it.portion_g * factor, 1) if it.portion_g else None,
+                calories_kcal=round(it.calories_kcal * factor, 1),
+                protein_g=round(it.protein_g * factor, 1),
+                carbs_g=round(it.carbs_g * factor, 1),
+                fat_g=round(it.fat_g * factor, 1),
+                fiber_g=round((it.fiber_g or 0.0) * factor, 1),
+                confidence_score=it.confidence_score
+            ))
+    else:
+        scaled_items = [FoodItem(
+            name=saved.name,
+            portion_g=round(saved.quantity_grams * factor, 1) if saved.quantity_grams else None,
+            calories_kcal=round(saved.calories * factor, 1),
+            protein_g=round(saved.protein_g * factor, 1),
+            carbs_g=round(saved.carbs_g * factor, 1),
+            fat_g=round(saved.fat_g * factor, 1),
+            fiber_g=round((saved.fiber_g or 0.0) * factor, 1),
+            confidence_score=1.0
+        )]
+
+    entry = MealEntry(
+        date=target_date,
+        meal_type=meal_type,
+        total_calories_kcal=round(saved.calories * factor, 1),
+        protein_g=round(saved.protein_g * factor, 1),
+        carbs_g=round(saved.carbs_g * factor, 1),
+        fat_g=round(saved.fat_g * factor, 1),
+        fiber_g=round((saved.fiber_g or 0.0) * factor, 1),
+        photo_data_url=saved.photo_url,
+        items=scaled_items
+    )
+
+    logged = db.insert_meal(entry, user_id=current_user.id)
+    return {
+        "status": "success",
+        "message": f"Plat '{saved.name}' ajouté au journal ({meal_type}) avec portion x{factor}",
+        "logged_meal": logged.model_dump()
+    }
+
+
+# =====================================================================
 # Endpoints Hub Objets Connectés & Gestion de Flotte Sécurisée
 # =====================================================================
 
@@ -1050,6 +1247,7 @@ def get_user_profile(current_user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/profile")
+@app.put("/api/profile")
 def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(get_current_user)):
     """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
     updated = db.update_user_profile(profile_in.model_dump(), user_id=current_user.id)

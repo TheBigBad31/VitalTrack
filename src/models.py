@@ -67,3 +67,24 @@ class MealEntry(BaseModel):
     photo_data_url: Optional[str] = None
     items: List[FoodItem] = Field(default_factory=list)
     created_at: Optional[datetime] = None
+
+
+class SavedMeal(BaseModel):
+    """Plat type ou favori réutilisable pour la bibliothèque de repas."""
+    id: Optional[int] = None
+    user_id: Optional[int] = 1
+    name: str = Field(..., description="Nom du plat réutilisable")
+    meal_type: MealType = Field("lunch", description="Type de repas (breakfast, lunch, snack, dinner)")
+    serving_size: Optional[str] = Field("1 portion", description="Taille de portion ou description")
+    quantity_grams: Optional[float] = Field(None, description="Poids de la portion en grammes")
+    calories: float = Field(..., ge=0.0, description="Calories totales (kcal)")
+    protein_g: float = Field(0.0, ge=0.0, description="Protéines en grammes")
+    carbs_g: float = Field(0.0, ge=0.0, description="Glucides en grammes")
+    fat_g: float = Field(0.0, ge=0.0, description="Lipides en grammes")
+    fiber_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres en grammes")
+    ingredients: Optional[str] = Field(None, description="Description ou composition détaillée en ingrédients")
+    items: List[FoodItem] = Field(default_factory=list, description="Liste décomposée des aliments")
+    photo_url: Optional[str] = Field(None, description="URL de la photo ou data-url de l'image")
+    is_favorite: bool = Field(False, description="Marqué comme plat favori")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
