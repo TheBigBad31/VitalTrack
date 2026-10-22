@@ -30,7 +30,10 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
-from src.models import ActivityEntry, CatalogItem, FoodItem, MealEntry, MealLog, MealLogItem, SavedMeal, WeightEntry
+from src.models import (
+    ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
+    MealLog, MealLogItem, NutritionBenefitItem, SavedMeal, WeightEntry
+)
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
 # Essai d'import de psycopg pour le support Neon PostgreSQL
@@ -413,6 +416,30 @@ class Database:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS nutrition_benefits (
+                        id TEXT PRIMARY KEY,
+                        category TEXT NOT NULL,
+                        category_id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        rule_config TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS food_item_benefits (
+                        food_item_id INTEGER NOT NULL REFERENCES food_items(id) ON DELETE CASCADE,
+                        benefit_id TEXT NOT NULL REFERENCES nutrition_benefits(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        explanation TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (food_item_id, benefit_id)
+                    );
+                """)
+
                 # Migrations douces colonnes users pour PostgreSQL
                 for col, def_val in [
                     ("uuid", "TEXT"),
@@ -694,6 +721,30 @@ class Database:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS nutrition_benefits (
+                        id TEXT PRIMARY KEY,
+                        category TEXT NOT NULL,
+                        category_id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        rule_config TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS food_item_benefits (
+                        food_item_id INTEGER NOT NULL REFERENCES food_items(id) ON DELETE CASCADE,
+                        benefit_id TEXT NOT NULL REFERENCES nutrition_benefits(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        explanation TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (food_item_id, benefit_id)
+                    );
+                """)
+
                 # Migrations douces pour ajouter user_id si les tables SQLite existaient déjà sans user_id
                 for table in ["weights", "activities", "meals", "user_devices", "user_profile", "saved_meals"]:
                     try:
@@ -739,6 +790,8 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_item_benefits_food ON food_item_benefits(food_item_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_nutrition_benefits_cat ON nutrition_benefits(category_id);")
 
                 # Index SQLite
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
@@ -750,6 +803,8 @@ class Database:
 
         # Garantir l'existence de l'utilisateur par défaut
         self._ensure_default_user()
+        # Seeder le référentiel expert des bienfaits nutritionnels
+        self._seed_nutrition_benefits()
         # Purger toute donnée de démonstration résiduelle
         self.purge_demo_data()
 
@@ -1541,6 +1596,11 @@ class Database:
         res.user_id = user_id
         res.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
         res.updated_at = datetime.fromisoformat(updated_at) if isinstance(updated_at, str) else updated_at
+        if item.benefits:
+            self.set_food_item_benefits(item_id, [b.model_dump() for b in item.benefits])
+            res.benefits = self.get_food_item_benefits(item_id)
+        else:
+            res.benefits = []
         return res
 
     def get_food_items(
@@ -1570,7 +1630,7 @@ class Database:
 
         items = []
         for r in rows:
-            items.append(CatalogItem(
+            it = CatalogItem(
                 id=r["id"],
                 user_id=r["user_id"],
                 name=r["name"],
@@ -1583,9 +1643,11 @@ class Database:
                 fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
                 fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
                 photo_url=r.get("photo_url"),
+                benefits=self.get_food_item_benefits(r["id"]),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
-            ))
+            )
+            items.append(it)
         return items
 
     def get_food_item_by_id(self, item_id: int, user_id: int = 1) -> Optional[CatalogItem]:
@@ -1609,6 +1671,7 @@ class Database:
                 fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
                 fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
                 photo_url=r.get("photo_url"),
+                benefits=self.get_food_item_benefits(r["id"]),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
@@ -1673,7 +1736,131 @@ class Database:
             return True
 
     # ---------------------------------------------------------
-    # Journal Quotidien des Repas (Stage 12 - meal_logs & meal_log_items)
+    # Référentiel des Bienfaits Nutritionnels (Stage 13)
+    # ---------------------------------------------------------
+
+    def _seed_nutrition_benefits(self):
+        """Seede le référentiel des bienfaits nutritionnels depuis le fichier source ou le fallback."""
+        from src.nutrition_rules import EXPERT_BENEFITS_CATALOG
+
+        # On essaie d'abord de charger les données complètes
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for b in EXPERT_BENEFITS_CATALOG:
+                rule_cfg = json.dumps(b.get("rule_config") or {})
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO nutrition_benefits (id, category, category_id, title, description, icon, rule_config, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (id) DO UPDATE SET
+                            category = EXCLUDED.category,
+                            category_id = EXCLUDED.category_id,
+                            title = EXCLUDED.title,
+                            description = EXCLUDED.description,
+                            icon = EXCLUDED.icon,
+                            rule_config = EXCLUDED.rule_config;
+                    """, (
+                        b["id"], b["category"], b["category_id"], b["title"],
+                        b["description"], b["icon"], rule_cfg, now_str
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO nutrition_benefits (id, category, category_id, title, description, icon, rule_config, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (id) DO UPDATE SET
+                            category = excluded.category,
+                            category_id = excluded.category_id,
+                            title = excluded.title,
+                            description = excluded.description,
+                            icon = excluded.icon,
+                            rule_config = excluded.rule_config;
+                    """, (
+                        b["id"], b["category"], b["category_id"], b["title"],
+                        b["description"], b["icon"], rule_cfg, now_str
+                    ))
+            conn.commit()
+
+    def get_all_nutrition_benefits(self) -> List[NutritionBenefitItem]:
+        """Retourne la liste de tous les bienfaits disponibles ordonnés par catégorie."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM nutrition_benefits ORDER BY category_id ASC, title ASC")
+            rows = cursor.fetchall()
+
+        benefits = []
+        for r in rows:
+            cfg = None
+            if r.get("rule_config"):
+                try:
+                    cfg = json.loads(r["rule_config"])
+                except Exception:
+                    cfg = None
+            benefits.append(NutritionBenefitItem(
+                id=r["id"],
+                category=r["category"],
+                category_id=int(r["category_id"]),
+                title=r["title"],
+                description=r["description"],
+                icon=r["icon"],
+                rule_config=cfg
+            ))
+        return benefits
+
+    def get_food_item_benefits(self, food_item_id: int) -> List[AssociatedBenefit]:
+        """Récupère les bienfaits associés à un aliment/plat du catalogue."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT nb.id, nb.category, nb.category_id, nb.title, nb.description, nb.icon,
+                       fib.source, fib.explanation
+                FROM food_item_benefits fib
+                JOIN nutrition_benefits nb ON fib.benefit_id = nb.id
+                WHERE fib.food_item_id = ?
+                ORDER BY nb.category_id ASC, nb.title ASC
+            """, (food_item_id,))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            results.append(AssociatedBenefit(
+                benefit_id=r["id"],
+                category=r["category"],
+                category_id=int(r["category_id"]),
+                title=r["title"],
+                description=r["description"],
+                icon=r["icon"],
+                source=r["source"],
+                explanation=r.get("explanation")
+            ))
+        return results
+
+    def set_food_item_benefits(
+        self,
+        food_item_id: int,
+        benefits_data: List[Dict[str, Any]]
+    ) -> List[AssociatedBenefit]:
+        """Associe ou remplace l'ensemble des bienfaits d'un aliment/plat."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Supprimer les anciens bienfaits
+            cursor.execute("DELETE FROM food_item_benefits WHERE food_item_id = ?", (food_item_id,))
+
+            for b in benefits_data:
+                benefit_id = b.get("benefit_id") or b.get("id")
+                if not benefit_id:
+                    continue
+                source = b.get("source", "manual")
+                explanation = b.get("explanation", "")
+                cursor.execute("""
+                    INSERT INTO food_item_benefits (food_item_id, benefit_id, source, explanation, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (food_item_id, benefit_id, source, explanation, now_str))
+            conn.commit()
+
+        return self.get_food_item_benefits(food_item_id)
+
     # ---------------------------------------------------------
 
     def get_or_create_meal_log(self, date_val: date, meal_type: str, user_id: int = 1) -> MealLog:

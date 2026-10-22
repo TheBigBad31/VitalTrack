@@ -25,8 +25,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.db import Database, get_db_path
-from src.models import ActivityEntry, FoodItem, MealEntry, MealType, SavedMeal, WeightEntry, CatalogItem, MealLog, MealLogItem
+from src.models import (
+    ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
+    MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry
+)
 from src.nutrition_engine import NutritionEngine
+from src.nutrition_rules import evaluate_dish_benefits
 import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
 from src.connectors.registry import DeviceConnectorRegistry
@@ -885,6 +889,36 @@ def log_saved_meal_to_journal(
 # Endpoints Catalogue d'Aliments & Plats (Stage 12)
 # =====================================================================
 
+class UpdateCatalogItemBenefitsRequest(BaseModel):
+    benefits: List[Dict[str, Any]] = Field(default_factory=list, description="Liste des bienfaits associés [{benefit_id, source, explanation}]")
+
+
+class NutritionEvaluateRequest(BaseModel):
+    name: Optional[str] = None
+    default_quantity: Optional[float] = None
+    portion_g: Optional[float] = None
+    quantity_grams: Optional[float] = None
+    calories: Optional[float] = None
+    calories_per_unit: Optional[float] = None
+    calories_kcal: Optional[float] = None
+    protein_g: Optional[float] = None
+    protein_per_unit_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    carbs_per_unit_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fat_per_unit_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    fiber_per_unit_g: Optional[float] = None
+    sugars_g: Optional[float] = None
+    saturated_fat_g: Optional[float] = None
+    unsaturated_fat_g: Optional[float] = None
+    sodium_mg: Optional[float] = None
+    potassium_mg: Optional[float] = None
+    calcium_mg: Optional[float] = None
+    water_pct: Optional[float] = None
+    ingredients: Optional[str] = None
+
+
 class CatalogItemCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
     item_type: Literal["food", "dish"] = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
@@ -896,6 +930,7 @@ class CatalogItemCreateRequest(BaseModel):
     fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides (g)")
     fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres (g)")
     photo_url: Optional[str] = Field(None, description="Photo ou data URL")
+    benefits: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Bienfaits associés à la création")
 
 
 class CatalogItemUpdateRequest(BaseModel):
@@ -994,6 +1029,60 @@ def delete_catalog_item(
     if not deleted:
         raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
     return {"status": "success", "message": f"Élément #{item_id} supprimé du catalogue"}
+
+
+@app.get("/api/catalog/items/{item_id}/benefits")
+def get_catalog_item_benefits(
+    item_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère les bienfaits associés à un aliment/plat donné."""
+    item = db.get_food_item_by_id(item_id, user_id=current_user.id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+    benefits = db.get_food_item_benefits(item_id)
+    return [b.model_dump() for b in benefits]
+
+
+@app.put("/api/catalog/items/{item_id}/benefits")
+def update_catalog_item_benefits(
+    item_id: int,
+    req: UpdateCatalogItemBenefitsRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Met à jour les bienfaits associés à un aliment/plat donné (sélection manuelle ou auto)."""
+    item = db.get_food_item_by_id(item_id, user_id=current_user.id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+    updated_benefits = db.set_food_item_benefits(item_id, req.benefits)
+    return [b.model_dump() for b in updated_benefits]
+
+
+@app.get("/api/nutrition/benefits")
+def get_nutrition_benefits():
+    """Récupère la liste de tous les bienfaits disponibles dans le référentiel expert groupés par catégorie."""
+    all_benefits = db.get_all_nutrition_benefits()
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for b in all_benefits:
+        if b.category not in grouped:
+            grouped[b.category] = []
+        grouped[b.category].append(b.model_dump())
+    return {
+        "count": len(all_benefits),
+        "benefits": [b.model_dump() for b in all_benefits],
+        "categories": grouped
+    }
+
+
+@app.post("/api/nutrition/evaluate")
+def evaluate_nutrition_benefits(req: NutritionEvaluateRequest):
+    """Évalue instantanément un ensemble de valeurs nutritionnelles et retourne les bienfaits qualifiés (règles EFSA/ANSES)."""
+    data = req.model_dump()
+    results = evaluate_dish_benefits(data)
+    return {
+        "matched_count": len(results),
+        "results": [r.model_dump() for r in results]
+    }
 
 
 # =====================================================================

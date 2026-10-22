@@ -583,6 +583,23 @@
                   Plats
                 </button>
               </div>
+
+              <!-- Filtre par Bienfait Santé (Stage 13) -->
+              <div class="flex items-center gap-2">
+                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500">
+                  <option value="">🎯 Tous les bienfaits santé (EFSA / ANSES)</option>
+                  <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
+                  <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
+                  <option value="blood_pressure">🩺 Contrôle pression artérielle</option>
+                  <option value="glycemic_regulation">📉 Régulation glycémique</option>
+                  <option value="satiety_control">⚡ Satiété & appétit</option>
+                  <option value="gut_transit">🌿 Transit intestinal</option>
+                  <option value="bone_health">🦴 Santé osseuse</option>
+                  <option value="muscle_function">💪 Récupération musculaire</option>
+                  <option value="cellular_hydration">💧 Hydratation cellulaire</option>
+                  <option value="antioxidant">🫐 Protection antioxydante</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -621,6 +638,22 @@
               <span class="text-sky-400 font-semibold" id="journal-day-carbs">0g G</span>
               <span class="text-amber-400 font-semibold" id="journal-day-fat">0g L</span>
               <span class="text-slate-400" id="journal-day-fiber">0g F</span>
+            </div>
+          </div>
+
+          <!-- Synthèse Métabolique & Bienfaits Santé de la Journée (Stage 13) -->
+          <div id="journal-day-benefits-summary" class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-3.5 sm:p-4 space-y-2 shadow-sm">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="text-base">🧬</span>
+                <h4 class="text-xs font-bold text-white uppercase tracking-wider">Synthèse des Bienfaits du Jour</h4>
+              </div>
+              <span id="journal-benefits-count-badge" class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                0 bienfait actif
+              </span>
+            </div>
+            <div id="journal-day-benefits-tags" class="flex flex-wrap gap-1.5 items-center">
+              <span class="text-xs text-slate-500 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>
             </div>
           </div>
 
@@ -1014,7 +1047,62 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Fibres (optionnel)</label>
-          <input type="number" step="0.1" id="cat-item-fiber" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <!-- Section Bienfaits Santé EFSA / ANSES (Stage 13) -->
+        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>🩺</span>
+              <span>Bienfaits Nutritionnels & Santé</span>
+            </span>
+            <span class="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              Règles EFSA / ANSES
+            </span>
+          </div>
+
+          <!-- Suggestions automatiques en temps réel -->
+          <div>
+            <div class="text-[11px] text-slate-400 mb-1 flex items-center justify-between">
+              <span>Suggestions automatiques calculées :</span>
+              <button type="button" onclick="triggerModalNutritionEvaluation()" class="text-[10px] text-emerald-400 hover:underline">Recalculer</button>
+            </div>
+            <div id="modal-auto-benefits-container" class="flex flex-wrap gap-1.5 min-h-[28px] items-center">
+              <span class="text-[10px] text-slate-500 italic">Renseignez les valeurs nutritionnelles pour détecter les bienfaits éligibles.</span>
+            </div>
+          </div>
+
+          <!-- Sélecteur manuel de bienfaits -->
+          <div>
+            <div class="text-[11px] text-slate-400 mb-1">Bienfaits associés au plat (actifs) :</div>
+            <div id="modal-selected-benefits-tags" class="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
+              <!-- Tags sélectionnés -->
+            </div>
+            <select id="modal-benefit-picker" onchange="addBenefitToModalSelection(this.value); this.value='';" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500">
+              <option value="">+ Ajouter un bienfait du référentiel...</option>
+              <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
+              <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
+              <option value="blood_pressure">🩺 Contrôle pression artérielle</option>
+              <option value="vascular_elasticity">🫀 Élastification vasculaire</option>
+              <option value="glycemic_regulation">📉 Régulation glycémique</option>
+              <option value="satiety_control">⚡ Satiété & appétit</option>
+              <option value="energy_metabolism">🔥 Métabolisme énergétique</option>
+              <option value="gut_transit">🌿 Transit intestinal</option>
+              <option value="gut_microbiota">🦠 Microbiote & prébiotique</option>
+              <option value="liver_support">🍃 Soutien hépatique</option>
+              <option value="bone_health">🦴 Santé osseuse</option>
+              <option value="muscle_function">💪 Fonction musculaire & récupération</option>
+              <option value="immune_support">🛡️ Renforcement immunitaire</option>
+              <option value="antioxidant">🫐 Protection antioxydante</option>
+              <option value="cellular_hydration">💧 Hydratation cellulaire</option>
+              <option value="electrolyte_balance">⚡ Équilibre électrolytique</option>
+              <option value="cognitive_function">🧠 Fonctions cognitives</option>
+              <option value="vision_health">👁️ Maintien de la vision</option>
+              <option value="skin_health">✨ Santé cutanée</option>
+              <option value="oral_health">🦷 Santé bucco-dentaire</option>
+            </select>
+          </div>
         </div>
 
         <div>

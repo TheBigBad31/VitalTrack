@@ -1,7 +1,7 @@
 """Modèles de données standardisés pour VitalTrack."""
 
 from datetime import date as DateType, datetime
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -55,7 +55,7 @@ class FoodItem(BaseModel):
 
 
 class MealEntry(BaseModel):
-    """Entrée de repas (préparée pour Stage 2 - Photo IA \u0026 OpenFoodFacts)."""
+    """Entrée de repas (préparée pour Stage 2 - Photo IA & OpenFoodFacts)."""
     id: Optional[int] = None
     date: DateType
     meal_type: MealType
@@ -91,41 +91,77 @@ class SavedMeal(BaseModel):
 
 
 CatalogItemType = Literal["food", "dish"]
-CatalogUnit = Literal["g", "portion", "ml", "piece", "pi\u00e8ce"]
+CatalogUnit = Literal["g", "portion", "ml", "piece", "pièce"]
 MealSlot = Literal["breakfast", "lunch", "snack", "dinner"]
 
 
+class NutritionBenefitItem(BaseModel):
+    """Bienfait nutritionnel issu du référentiel expert."""
+    id: str
+    category: str
+    category_id: int
+    title: str
+    description: str
+    icon: str
+    rule_config: Optional[Dict[str, Any]] = None
+
+
+class AssociatedBenefit(BaseModel):
+    """Bienfait associé à un aliment ou plat."""
+    benefit_id: str
+    category: str
+    category_id: int
+    title: str
+    description: str
+    icon: str
+    source: str = "manual"  # 'auto_rule' ou 'manual'
+    explanation: Optional[str] = None
+
+
+class BenefitEvaluationResult(BaseModel):
+    """Résultat d'évaluation d'un bienfait par le moteur de règles."""
+    benefit_id: str
+    category: str
+    category_id: int
+    title: str
+    description: str
+    icon: str
+    explanation: str
+    matched: bool = True
+
+
 class CatalogItem(BaseModel):
-    """Aliment simple ou plat/recette r\u00e9utilisable du catalogue personnel."""
+    """Aliment simple ou plat/recette réutilisable du catalogue personnel."""
     id: Optional[int] = None
     user_id: Optional[int] = 1
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
     item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
-    default_unit: str = Field("g", description="Unit\u00e9 de r\u00e9f\u00e9rence (g, portion, ml, pi\u00e8ce)")
-    default_quantity: float = Field(100.0, gt=0, description="Quantit\u00e9 de r\u00e9f\u00e9rence")
-    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantit\u00e9 de r\u00e9f\u00e9rence")
-    protein_per_unit_g: float = Field(0.0, ge=0.0, description="Prot\u00e9ines en grammes")
+    default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
+    default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
+    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")
+    protein_per_unit_g: float = Field(0.0, ge=0.0, description="Protéines en grammes")
     carbs_per_unit_g: float = Field(0.0, ge=0.0, description="Glucides en grammes")
     fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides en grammes")
     fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres en grammes")
-    photo_url: Optional[str] = Field(None, description="Photo ou image de r\u00e9f\u00e9rence")
+    photo_url: Optional[str] = Field(None, description="Photo ou image de référence")
+    benefits: List[AssociatedBenefit] = Field(default_factory=list, description="Bienfaits associés")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
 class MealLogItem(BaseModel):
-    """Ligne d'aliment ou de plat consomm\u00e9 au sein d'un repas donn\u00e9."""
+    """Ligne d'aliment ou de plat consommé au sein d'un repas donné."""
     id: Optional[int] = None
     meal_log_id: Optional[int] = None
     food_item_id: Optional[int] = None
-    name: str = Field(..., min_length=1, description="Nom de l'aliment/plat consomm\u00e9")
-    quantity: float = Field(..., gt=0, description="Quantit\u00e9 consomm\u00e9")
-    unit: str = Field("g", description="Unit\u00e9 consomm\u00e9")
-    calories: float = Field(..., ge=0.0, description="Calories calcul\u00e9es au prorata")
-    protein_g: float = Field(0.0, ge=0.0, description="Prot\u00e9ines calcul\u00e9es")
-    carbs_g: float = Field(0.0, ge=0.0, description="Glucides calcul\u00e9es")
-    fat_g: float = Field(0.0, ge=0.0, description="Lipides calcul\u00e9es")
-    fiber_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres calcul\u00e9es")
+    name: str = Field(..., min_length=1, description="Nom de l'aliment/plat consommé")
+    quantity: float = Field(..., gt=0, description="Quantité consommé")
+    unit: str = Field("g", description="Unité consommé")
+    calories: float = Field(..., ge=0.0, description="Calories calculées au prorata")
+    protein_g: float = Field(0.0, ge=0.0, description="Protéines calculées")
+    carbs_g: float = Field(0.0, ge=0.0, description="Glucides calculées")
+    fat_g: float = Field(0.0, ge=0.0, description="Lipides calculées")
+    fiber_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres calculées")
     created_at: Optional[datetime] = None
 
 

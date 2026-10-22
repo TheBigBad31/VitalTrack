@@ -2,12 +2,16 @@
 
 let currentCatalogItems = [];
 let currentCatalogFilter = 'all'; // 'all', 'food', 'dish'
+let currentCatalogBenefitFilter = ''; // Filtre par bienfait (Stage 13)
 let currentCatalogSearch = '';
 let currentJournalDate = new Date().toISOString().split('T')[0];
 let currentJournalData = null;
 let currentActiveMealSlot = 'lunch';
 let catalogItemPhotoBase64 = null;
 let currentNutritionLayoutMode = 'split'; // 'split' (desktop côte à côte), 'journal', 'catalog'
+
+// Bienfaits actifs dans la modale d'édition/création de plat (Stage 13)
+let modalSelectedBenefits = []; // Array of { benefit_id, source, explanation, icon, title }
 
 // Variables Drag & Drop Desktop
 let draggedCatalogItem = null;
@@ -129,21 +133,35 @@ function handleCatalogSearch(e) {
   loadCatalogItems();
 }
 
+function handleBenefitFilterChange(event) {
+  currentCatalogBenefitFilter = event.target.value;
+  renderCatalogItems();
+}
+
 function renderCatalogItems() {
   const container = document.getElementById('catalog-items-grid');
   const countBadge = document.getElementById('catalog-items-count');
+
+  let itemsToRender = currentCatalogItems;
+  if (currentCatalogBenefitFilter) {
+    itemsToRender = itemsToRender.filter(it => {
+      const bList = it.benefits || [];
+      return bList.some(b => (b.benefit_id || b.id) === currentCatalogBenefitFilter);
+    });
+  }
+
   if (countBadge) {
-    countBadge.textContent = `${currentCatalogItems.length} élément${currentCatalogItems.length > 1 ? 's' : ''}`;
+    countBadge.textContent = `${itemsToRender.length} élément${itemsToRender.length > 1 ? 's' : ''}`;
   }
 
   if (!container) return;
 
-  if (currentCatalogItems.length === 0) {
+  if (itemsToRender.length === 0) {
     container.innerHTML = `
       <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
-        <h4 class="text-sm font-bold text-slate-300">Votre catalogue est vide</h4>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">Créez vos aliments bruts ou plats préparés pour composer vos repas par simple glisser-déposer.</p>
+        <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto">Aucun élément ne correspond à votre filtre de bienfait ou recherche.</p>
         <div class="flex items-center justify-center gap-2 pt-2">
           <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
           <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
@@ -154,7 +172,7 @@ function renderCatalogItems() {
     return;
   }
 
-  container.innerHTML = currentCatalogItems.map(item => {
+  container.innerHTML = itemsToRender.map(item => {
     const isDish = item.item_type === 'dish';
     const typeBadge = isDish
       ? '<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Plat</span>'
@@ -165,6 +183,27 @@ function renderCatalogItems() {
     const g = Math.round((item.carbs_per_unit_g || 0) * 10) / 10;
     const l = Math.round((item.fat_per_unit_g || 0) * 10) / 10;
     const cal = Math.round(item.calories_per_unit);
+
+    // Badges de bienfaits santé (Stage 13)
+    const benefitsList = item.benefits || [];
+    const benefitsHtml = benefitsList.length > 0 ? `
+      <div class="flex flex-wrap gap-1 pt-1">
+        ${benefitsList.slice(0, 3).map(b => `
+          <span 
+            class="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-md font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 cursor-help"
+            title="${b.title || ''} : ${b.explanation || b.description || ''}"
+          >
+            <span>${b.icon || '🛡️'}</span>
+            <span class="truncate max-w-[110px]">${b.title || b.benefit_id}</span>
+          </span>
+        `).join('')}
+        ${benefitsList.length > 3 ? `
+          <span class="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-slate-800 text-slate-400 border border-slate-700">
+            +${benefitsList.length - 3}
+          </span>
+        ` : ''}
+      </div>
+    ` : '';
 
     return `
       <div 
@@ -207,6 +246,8 @@ function renderCatalogItems() {
           <div><span class="text-slate-500 font-medium">L:</span> <strong class="text-amber-400">${l}g</strong></div>
         </div>
 
+        ${benefitsHtml}
+
         <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70">
           <button 
             type="button"
@@ -232,6 +273,86 @@ function renderCatalogItems() {
   }).join('');
 
   if (window.lucide && lucide.createIcons) lucide.createIcons();
+
+  // 3. Synthèse des bienfaits du jour (Stage 13)
+  renderJournalDayBenefitsSummary(meals);
+}
+
+function renderJournalDayBenefitsSummary(meals) {
+  const container = document.getElementById('journal-day-benefits-tags');
+  const countBadge = document.getElementById('journal-benefits-count-badge');
+  if (!container) return;
+
+  // Récupérer tous les food_item_id consommés au cours des repas de la journée
+  const consumedFoodItemIds = new Set();
+  meals.forEach(m => {
+    (m.items || []).forEach(it => {
+      if (it.food_item_id) consumedFoodItemIds.add(it.food_item_id);
+    });
+  });
+
+  const activeBenefitsMap = new Map();
+
+  // Trouver les bienfaits via les items du catalogue
+  currentCatalogItems.forEach(catItem => {
+    if (consumedFoodItemIds.has(catItem.id)) {
+      (catItem.benefits || []).forEach(b => {
+        const bId = b.benefit_id || b.id;
+        if (!activeBenefitsMap.has(bId)) {
+          activeBenefitsMap.set(bId, {
+            ...b,
+            foodNames: [catItem.name]
+          });
+        } else {
+          activeBenefitsMap.get(bId).foodNames.push(catItem.name);
+        }
+      });
+    }
+  });
+
+  // Calcul synthétique supplémentaire selon les macros totales du jour
+  const sum = currentJournalData.day_summary || {};
+  if ((sum.total_fiber_g || 0) >= 25) {
+    if (!activeBenefitsMap.has('gut_transit')) {
+      activeBenefitsMap.set('gut_transit', {
+        title: "Transit et confort intestinal",
+        icon: "🌿",
+        explanation: `Objectif journalier EFSA atteint (${Math.round(sum.total_fiber_g)}g >= 25g de fibres)`,
+        foodNames: ["Fibres totales"]
+      });
+    }
+  }
+  if ((sum.total_protein_g || 0) >= 80) {
+    if (!activeBenefitsMap.has('muscle_function')) {
+      activeBenefitsMap.set('muscle_function', {
+        title: "Fonction musculaire et récupération",
+        icon: "💪",
+        explanation: `Apport protéique majeur (${Math.round(sum.total_protein_g)}g) soutenant la synthèse musculaire`,
+        foodNames: ["Protéines totales"]
+      });
+    }
+  }
+
+  const benefitsList = Array.from(activeBenefitsMap.values());
+  if (countBadge) {
+    countBadge.textContent = `${benefitsList.length} bienfait${benefitsList.length > 1 ? 's' : ''} actif${benefitsList.length > 1 ? 's' : ''}`;
+  }
+
+  if (benefitsList.length === 0) {
+    container.innerHTML = '<span class="text-xs text-slate-500 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>';
+    return;
+  }
+
+  container.innerHTML = benefitsList.map(b => `
+    <div 
+      class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 transition-all"
+      title="${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
+    >
+      <span class="text-sm">${b.icon || '🛡️'}</span>
+      <span class="font-bold text-white">${b.title}</span>
+      <span class="text-[10px] text-emerald-400 font-mono">(${(b.foodNames || []).length} aliment${(b.foodNames || []).length > 1 ? 's' : ''})</span>
+    </div>
+  `).join('');
 }
 
 // ============================================================================
@@ -495,6 +616,7 @@ async function confirmDropPortionModal() {
 
 function openCreateCatalogItemModal(type = 'food') {
   catalogItemPhotoBase64 = null;
+  modalSelectedBenefits = [];
   document.getElementById('form-catalog-item').reset();
   document.getElementById('cat-item-id').value = '';
   document.getElementById('cat-item-type').value = type;
@@ -508,6 +630,9 @@ function openCreateCatalogItemModal(type = 'food') {
     document.getElementById('cat-item-qty').value = '100';
   }
 
+  renderModalSelectedBenefits();
+  renderModalAutoBenefits([]);
+
   const modal = document.getElementById('modal-catalog-item');
   if (modal) modal.classList.remove('hidden');
 }
@@ -517,6 +642,14 @@ function openEditCatalogItemModal(itemId) {
   if (!item) return;
 
   catalogItemPhotoBase64 = item.photo_url || null;
+  modalSelectedBenefits = (item.benefits || []).map(b => ({
+    benefit_id: b.benefit_id || b.id,
+    title: b.title,
+    icon: b.icon || '🛡️',
+    source: b.source || 'manual',
+    explanation: b.explanation || ''
+  }));
+
   document.getElementById('cat-item-id').value = item.id;
   document.getElementById('cat-item-name').value = item.name;
   document.getElementById('cat-item-type').value = item.item_type;
@@ -531,8 +664,155 @@ function openEditCatalogItemModal(itemId) {
 
   document.getElementById('cat-modal-title').textContent = `Modifier ${item.item_type === 'dish' ? 'le Plat' : "l'Aliment"}`;
 
+  renderModalSelectedBenefits();
+  triggerModalNutritionEvaluation();
+
   const modal = document.getElementById('modal-catalog-item');
   if (modal) modal.classList.remove('hidden');
+}
+
+// ----------------------------------------------------------------------------
+// Fonctions d'évaluation et de gestion des bienfaits dans la modale (Stage 13)
+// ----------------------------------------------------------------------------
+
+function renderModalSelectedBenefits() {
+  const container = document.getElementById('modal-selected-benefits-tags');
+  if (!container) return;
+
+  if (modalSelectedBenefits.length === 0) {
+    container.innerHTML = '<span class="text-[10px] text-slate-500 italic">Aucun bienfait manuellement associé pour l\'instant.</span>';
+    return;
+  }
+
+  container.innerHTML = modalSelectedBenefits.map((b, idx) => `
+    <span class="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+      <span>${b.icon || '🛡️'}</span>
+      <span>${b.title || b.benefit_id}</span>
+      <button type="button" onclick="removeBenefitFromModalSelection(${idx})" class="hover:text-rose-400 ml-1">
+        &times;
+      </button>
+    </span>
+  `).join('');
+}
+
+function removeBenefitFromModalSelection(index) {
+  modalSelectedBenefits.splice(index, 1);
+  renderModalSelectedBenefits();
+}
+
+function addBenefitToModalSelection(benefitId) {
+  if (!benefitId) return;
+  if (modalSelectedBenefits.some(b => b.benefit_id === benefitId)) return;
+
+  const titleMap = {
+    cardio_protection: { title: "Protection cardiovasculaire", icon: "❤️" },
+    cholesterol_regulation: { title: "Régulation du cholestérol", icon: "🩸" },
+    blood_pressure: { title: "Contrôle pression artérielle", icon: "🩺" },
+    vascular_elasticity: { title: "Élastification vasculaire", icon: "🫀" },
+    glycemic_regulation: { title: "Régulation glycémique", icon: "📉" },
+    satiety_control: { title: "Satiété & appétit", icon: "⚡" },
+    energy_metabolism: { title: "Métabolisme énergétique", icon: "🔥" },
+    gut_transit: { title: "Transit intestinal", icon: "🌿" },
+    gut_microbiota: { title: "Microbiote & prébiotique", icon: "🦠" },
+    liver_support: { title: "Soutien hépatique", icon: "🍃" },
+    bone_health: { title: "Santé osseuse", icon: "🦴" },
+    muscle_function: { title: "Fonction musculaire & récupération", icon: "💪" },
+    immune_support: { title: "Renforcement immunitaire", icon: "🛡️" },
+    antioxidant: { title: "Protection antioxydante", icon: "🫐" },
+    cellular_hydration: { title: "Hydratation cellulaire", icon: "💧" },
+    electrolyte_balance: { title: "Équilibre électrolytique", icon: "⚡" },
+    cognitive_function: { title: "Fonctions cognitives", icon: "🧠" },
+    vision_health: { title: "Maintien de la vision", icon: "👁️" },
+    skin_health: { title: "Santé cutanée", icon: "✨" },
+    oral_health: { title: "Santé bucco-dentaire", icon: "🦷" }
+  };
+
+  const meta = titleMap[benefitId] || { title: benefitId, icon: "🛡️" };
+  modalSelectedBenefits.push({
+    benefit_id: benefitId,
+    title: meta.title,
+    icon: meta.icon,
+    source: 'manual',
+    explanation: 'Choix de qualification utilisateur'
+  });
+  renderModalSelectedBenefits();
+}
+
+async function triggerModalNutritionEvaluation() {
+  const container = document.getElementById('modal-auto-benefits-container');
+  if (!container) return;
+
+  const payload = {
+    name: document.getElementById('cat-item-name')?.value || '',
+    default_quantity: parseFloat(document.getElementById('cat-item-qty')?.value) || 100,
+    calories_per_unit: parseFloat(document.getElementById('cat-item-cals')?.value) || 0,
+    protein_per_unit_g: parseFloat(document.getElementById('cat-item-prot')?.value) || 0,
+    carbs_per_unit_g: parseFloat(document.getElementById('cat-item-carbs')?.value) || 0,
+    fat_per_unit_g: parseFloat(document.getElementById('cat-item-fat')?.value) || 0,
+    fiber_per_unit_g: parseFloat(document.getElementById('cat-item-fiber')?.value) || 0,
+  };
+
+  try {
+    const res = await (typeof apiFetch === 'function' ? apiFetch('/api/nutrition/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }) : fetch('/api/nutrition/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }));
+
+    if (res.ok) {
+      const data = await res.json();
+      renderModalAutoBenefits(data.results || []);
+    }
+  } catch (e) {
+    console.warn("Échec évaluation nutritionnelle", e);
+  }
+}
+
+function renderModalAutoBenefits(results) {
+  const container = document.getElementById('modal-auto-benefits-container');
+  if (!container) return;
+
+  if (results.length === 0) {
+    container.innerHTML = '<span class="text-[10px] text-slate-500 italic">Aucun bienfait supplémentaire automatiquement détecté selon les seuils actuels.</span>';
+    return;
+  }
+
+  container.innerHTML = results.map(r => {
+    const alreadySelected = modalSelectedBenefits.some(b => b.benefit_id === r.benefit_id);
+    return `
+      <button 
+        type="button"
+        onclick="applyAutoBenefitToModal('${r.benefit_id}', '${r.title.replace(/'/g, "\\'")}', '${r.icon}', '${r.explanation.replace(/'/g, "\\'")}')"
+        class="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-md font-semibold transition-all ${
+          alreadySelected 
+            ? 'bg-emerald-500 text-slate-950 font-bold' 
+            : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+        }"
+        title="${r.explanation}"
+      >
+        <span>${r.icon}</span>
+        <span>${r.title}</span>
+        <span>${alreadySelected ? '✓' : '+'}</span>
+      </button>
+    `;
+  }).join('');
+}
+
+function applyAutoBenefitToModal(id, title, icon, explanation) {
+  if (modalSelectedBenefits.some(b => b.benefit_id === id)) return;
+  modalSelectedBenefits.push({
+    benefit_id: id,
+    title,
+    icon,
+    source: 'auto_rule',
+    explanation
+  });
+  renderModalSelectedBenefits();
+  triggerModalNutritionEvaluation();
 }
 
 function closeCatalogItemModal() {
@@ -586,6 +866,30 @@ async function handleCatalogItemFormSubmit(event) {
     }));
 
     if (res.ok) {
+      const createdOrUpdated = await res.json();
+      const realItemId = createdOrUpdated.id || itemId;
+
+      // Synchroniser les bienfaits associés (Stage 13)
+      if (realItemId) {
+        try {
+          const bUrl = `/api/catalog/items/${realItemId}/benefits`;
+          const bPayload = {
+            benefits: modalSelectedBenefits.map(b => ({
+              benefit_id: b.benefit_id,
+              source: b.source || 'manual',
+              explanation: b.explanation || ''
+            }))
+          };
+          if (typeof apiFetch === 'function') {
+            await apiFetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
+          } else {
+            await fetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
+          }
+        } catch (bErr) {
+          console.warn("Erreur mise à jour bienfaits:", bErr);
+        }
+      }
+
       if (typeof showToast === 'function') showToast(`'${payload.name}' enregistré dans le catalogue !`, 'success');
       closeCatalogItemModal();
       loadCatalogItems();
@@ -764,6 +1068,86 @@ function renderMealsJournal() {
   }).join('');
 
   if (window.lucide && lucide.createIcons) lucide.createIcons();
+
+  // 3. Synthèse des bienfaits du jour (Stage 13)
+  renderJournalDayBenefitsSummary(meals);
+}
+
+function renderJournalDayBenefitsSummary(meals) {
+  const container = document.getElementById('journal-day-benefits-tags');
+  const countBadge = document.getElementById('journal-benefits-count-badge');
+  if (!container) return;
+
+  // Récupérer tous les food_item_id consommés au cours des repas de la journée
+  const consumedFoodItemIds = new Set();
+  meals.forEach(m => {
+    (m.items || []).forEach(it => {
+      if (it.food_item_id) consumedFoodItemIds.add(it.food_item_id);
+    });
+  });
+
+  const activeBenefitsMap = new Map();
+
+  // Trouver les bienfaits via les items du catalogue
+  currentCatalogItems.forEach(catItem => {
+    if (consumedFoodItemIds.has(catItem.id)) {
+      (catItem.benefits || []).forEach(b => {
+        const bId = b.benefit_id || b.id;
+        if (!activeBenefitsMap.has(bId)) {
+          activeBenefitsMap.set(bId, {
+            ...b,
+            foodNames: [catItem.name]
+          });
+        } else {
+          activeBenefitsMap.get(bId).foodNames.push(catItem.name);
+        }
+      });
+    }
+  });
+
+  // Calcul synthétique supplémentaire selon les macros totales du jour
+  const sum = currentJournalData.day_summary || {};
+  if ((sum.total_fiber_g || 0) >= 25) {
+    if (!activeBenefitsMap.has('gut_transit')) {
+      activeBenefitsMap.set('gut_transit', {
+        title: "Transit et confort intestinal",
+        icon: "🌿",
+        explanation: `Objectif journalier EFSA atteint (${Math.round(sum.total_fiber_g)}g >= 25g de fibres)`,
+        foodNames: ["Fibres totales"]
+      });
+    }
+  }
+  if ((sum.total_protein_g || 0) >= 80) {
+    if (!activeBenefitsMap.has('muscle_function')) {
+      activeBenefitsMap.set('muscle_function', {
+        title: "Fonction musculaire et récupération",
+        icon: "💪",
+        explanation: `Apport protéique majeur (${Math.round(sum.total_protein_g)}g) soutenant la synthèse musculaire`,
+        foodNames: ["Protéines totales"]
+      });
+    }
+  }
+
+  const benefitsList = Array.from(activeBenefitsMap.values());
+  if (countBadge) {
+    countBadge.textContent = `${benefitsList.length} bienfait${benefitsList.length > 1 ? 's' : ''} actif${benefitsList.length > 1 ? 's' : ''}`;
+  }
+
+  if (benefitsList.length === 0) {
+    container.innerHTML = '<span class="text-xs text-slate-500 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>';
+    return;
+  }
+
+  container.innerHTML = benefitsList.map(b => `
+    <div 
+      class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 transition-all"
+      title="${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
+    >
+      <span class="text-sm">${b.icon || '🛡️'}</span>
+      <span class="font-bold text-white">${b.title}</span>
+      <span class="text-[10px] text-emerald-400 font-mono">(${(b.foodNames || []).length} aliment${(b.foodNames || []).length > 1 ? 's' : ''})</span>
+    </div>
+  `).join('');
 }
 
 async function removeMealLogItem(itemId) {
