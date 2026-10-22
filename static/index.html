@@ -534,6 +534,10 @@
             <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-emerald-400 font-mono">/</kbd>
             <span>rechercher</span>
           </div>
+          <button id="btn-quick-add-to-meal" onclick="openSelectFromCatalogModal('lunch')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-emerald-600/20 transition-all">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+            <span>+ Ajouter au Repas</span>
+          </button>
           <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-emerald-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             <span>+ Aliment</span>
@@ -2376,6 +2380,12 @@
       if (mobBtn) {
         mobBtn.classList.remove('text-slate-400');
         mobBtn.classList.add('text-emerald-400');
+      }
+
+      if (tabId === 'nutrition') {
+        if (typeof initNutritionNavigation === 'function') initNutritionNavigation();
+        if (typeof loadCatalogItems === 'function') loadCatalogItems();
+        if (typeof loadMealsJournal === 'function') loadMealsJournal();
       }
 
       // Re-render des graphiques si nécessaire après affichage

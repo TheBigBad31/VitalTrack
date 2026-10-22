@@ -31,8 +31,14 @@ function switchNutritionLayout(mode) {
   const btnCatalog = document.getElementById('btn-subnav-catalog');
 
   if (mode === 'split') {
-    if (secJournal) secJournal.classList.remove('hidden');
-    if (secCatalog) secCatalog.classList.remove('hidden');
+    if (secJournal) {
+      secJournal.classList.remove('hidden');
+      secJournal.className = 'xl:col-span-7 space-y-4';
+    }
+    if (secCatalog) {
+      secCatalog.classList.remove('hidden');
+      secCatalog.className = 'xl:col-span-5 space-y-4';
+    }
     if (btnDesktopSplit) {
       btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 items-center justify-center space-x-2 transition-all';
     }
@@ -45,7 +51,10 @@ function switchNutritionLayout(mode) {
     loadCatalogItems();
     loadMealsJournal(currentJournalDate);
   } else if (mode === 'journal') {
-    if (secJournal) secJournal.classList.remove('hidden');
+    if (secJournal) {
+      secJournal.classList.remove('hidden');
+      secJournal.className = 'col-span-12 space-y-4';
+    }
     if (secCatalog) secCatalog.classList.add('hidden');
     if (btnDesktopSplit) {
       btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
@@ -59,7 +68,10 @@ function switchNutritionLayout(mode) {
     loadMealsJournal(currentJournalDate);
   } else if (mode === 'catalog') {
     if (secJournal) secJournal.classList.add('hidden');
-    if (secCatalog) secCatalog.classList.remove('hidden');
+    if (secCatalog) {
+      secCatalog.classList.remove('hidden');
+      secCatalog.className = 'col-span-12 space-y-4';
+    }
     if (btnDesktopSplit) {
       btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
     }
@@ -74,8 +86,82 @@ function switchNutritionLayout(mode) {
 }
 
 function switchNutritionSubSection(sub) {
-  // Sur grand écran (>= 1280px), basculer entre journal et catalogue reste possible si l'utilisateur le souhaite
+  // 1. S'assurer que l'onglet parent Nutrition & Repas est actif
+  if (typeof switchTab === 'function') {
+    switchTab('nutrition');
+  }
+
+  // 2. Basculer l'affichage vers la vue demandée
   switchNutritionLayout(sub);
+
+  // 3. Déclenchement visuel immédiat & scroll fluide
+  if (sub === 'journal') {
+    const secJournal = document.getElementById('nutrition-sec-journal');
+    if (secJournal) {
+      secJournal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (typeof showToast === 'function') {
+      showToast("📅 Vue Journal des 4 Repas active", "info");
+    }
+  } else if (sub === 'catalog') {
+    const secCatalog = document.getElementById('nutrition-sec-catalog');
+    if (secCatalog) {
+      secCatalog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setTimeout(() => {
+      const searchInput = document.getElementById('catalog-search-input');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    }, 150);
+    if (typeof showToast === 'function') {
+      showToast("📖 Catalogue d'Aliments & Plats actif (Touche '/' pour chercher)", "info");
+    }
+  }
+}
+
+// Initialisation des écouteurs explicites addEventListener pour la navigation
+function initNutritionNavigation() {
+  const btnJournal = document.getElementById('btn-subnav-journal');
+  if (btnJournal && !btnJournal.dataset.bound) {
+    btnJournal.dataset.bound = "true";
+    btnJournal.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchNutritionSubSection('journal');
+    });
+  }
+
+  const btnCatalog = document.getElementById('btn-subnav-catalog');
+  if (btnCatalog && !btnCatalog.dataset.bound) {
+    btnCatalog.dataset.bound = "true";
+    btnCatalog.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchNutritionSubSection('catalog');
+    });
+  }
+
+  const btnDesktopSplit = document.getElementById('btn-subnav-desktop-split');
+  if (btnDesktopSplit && !btnDesktopSplit.dataset.bound) {
+    btnDesktopSplit.dataset.bound = "true";
+    btnDesktopSplit.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof switchTab === 'function') switchTab('nutrition');
+      switchNutritionLayout('split');
+      if (typeof showToast === 'function') showToast("🖥️ Vue Bureau Multi-Colonnes active", "info");
+    });
+  }
+
+  const btnQuickAdd = document.getElementById('btn-quick-add-to-meal');
+  if (btnQuickAdd && !btnQuickAdd.dataset.bound) {
+    btnQuickAdd.dataset.bound = "true";
+    btnQuickAdd.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof openSelectFromCatalogModal === 'function') {
+        openSelectFromCatalogModal(currentActiveMealSlot || 'lunch');
+      }
+    });
+  }
 }
 
 // ============================================================================
@@ -1345,7 +1431,15 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Initialisation globale au chargement
-document.addEventListener('DOMContentLoaded', () => {
+// Initialisation globale au chargement & binding des écouteurs
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    initNutritionNavigation();
+    loadCatalogItems();
+    loadMealsJournal();
+  });
+} else {
+  initNutritionNavigation();
   loadCatalogItems();
   loadMealsJournal();
-});
+}
