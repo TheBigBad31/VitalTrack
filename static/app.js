@@ -191,11 +191,16 @@ async function loadCatalogItems() {
     if (res.ok) {
       currentCatalogItems = await res.json();
       renderCatalogItems();
+      if (document.getElementById("modal-catalog-picker-list")) {
+        renderModalCatalogList();
+      }
     } else {
+      console.warn("Échec requête catalogue:", res.status);
       if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
     }
   } catch (err) {
-    if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur réseau</div>';
+    console.error("Erreur réseau ou rendu catalogue:", err);
+    if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
   }
 }
 
@@ -361,85 +366,11 @@ function renderCatalogItems() {
   if (window.lucide && lucide.createIcons) lucide.createIcons();
 
   // 3. Synthèse des bienfaits du jour (Stage 13)
-  renderJournalDayBenefitsSummary(meals);
+  if (typeof renderJournalDayBenefitsSummary === "function" && typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.meals) {
+    renderJournalDayBenefitsSummary(currentJournalData.meals);
+  }
 }
 
-function renderJournalDayBenefitsSummary(meals) {
-  const container = document.getElementById('journal-day-benefits-tags');
-  const countBadge = document.getElementById('journal-benefits-count-badge');
-  if (!container) return;
-
-  // Récupérer tous les food_item_id consommés au cours des repas de la journée
-  const consumedFoodItemIds = new Set();
-  meals.forEach(m => {
-    (m.items || []).forEach(it => {
-      if (it.food_item_id) consumedFoodItemIds.add(it.food_item_id);
-    });
-  });
-
-  const activeBenefitsMap = new Map();
-
-  // Trouver les bienfaits via les items du catalogue
-  currentCatalogItems.forEach(catItem => {
-    if (consumedFoodItemIds.has(catItem.id)) {
-      (catItem.benefits || []).forEach(b => {
-        const bId = b.benefit_id || b.id;
-        if (!activeBenefitsMap.has(bId)) {
-          activeBenefitsMap.set(bId, {
-            ...b,
-            foodNames: [catItem.name]
-          });
-        } else {
-          activeBenefitsMap.get(bId).foodNames.push(catItem.name);
-        }
-      });
-    }
-  });
-
-  // Calcul synthétique supplémentaire selon les macros totales du jour
-  const sum = currentJournalData.day_summary || {};
-  if ((sum.total_fiber_g || 0) >= 25) {
-    if (!activeBenefitsMap.has('gut_transit')) {
-      activeBenefitsMap.set('gut_transit', {
-        title: "Transit et confort intestinal",
-        icon: "🌿",
-        explanation: `Objectif journalier EFSA atteint (${Math.round(sum.total_fiber_g)}g >= 25g de fibres)`,
-        foodNames: ["Fibres totales"]
-      });
-    }
-  }
-  if ((sum.total_protein_g || 0) >= 80) {
-    if (!activeBenefitsMap.has('muscle_function')) {
-      activeBenefitsMap.set('muscle_function', {
-        title: "Fonction musculaire et récupération",
-        icon: "💪",
-        explanation: `Apport protéique majeur (${Math.round(sum.total_protein_g)}g) soutenant la synthèse musculaire`,
-        foodNames: ["Protéines totales"]
-      });
-    }
-  }
-
-  const benefitsList = Array.from(activeBenefitsMap.values());
-  if (countBadge) {
-    countBadge.textContent = `${benefitsList.length} bienfait${benefitsList.length > 1 ? 's' : ''} actif${benefitsList.length > 1 ? 's' : ''}`;
-  }
-
-  if (benefitsList.length === 0) {
-    container.innerHTML = '<span class="text-xs text-slate-500 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>';
-    return;
-  }
-
-  container.innerHTML = benefitsList.map(b => `
-    <div 
-      class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 transition-all"
-      title="${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
-    >
-      <span class="text-sm">${b.icon || '🛡️'}</span>
-      <span class="font-bold text-white">${b.title}</span>
-      <span class="text-[10px] text-emerald-400 font-mono">(${(b.foodNames || []).length} aliment${(b.foodNames || []).length > 1 ? 's' : ''})</span>
-    </div>
-  `).join('');
-}
 
 // ============================================================================
 // 2. GESTION DU GLISSER-DÉPOSER NATIF (HTML5 DRAG & DROP & POINTER EVENTS)
@@ -1166,7 +1097,8 @@ function renderJournalDayBenefitsSummary(meals) {
 
   // Récupérer tous les food_item_id consommés au cours des repas de la journée
   const consumedFoodItemIds = new Set();
-  meals.forEach(m => {
+  const actualMeals = meals || (typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.meals) || [];
+  actualMeals.forEach(m => {
     (m.items || []).forEach(it => {
       if (it.food_item_id) consumedFoodItemIds.add(it.food_item_id);
     });
@@ -1175,24 +1107,25 @@ function renderJournalDayBenefitsSummary(meals) {
   const activeBenefitsMap = new Map();
 
   // Trouver les bienfaits via les items du catalogue
-  currentCatalogItems.forEach(catItem => {
-    if (consumedFoodItemIds.has(catItem.id)) {
-      (catItem.benefits || []).forEach(b => {
-        const bId = b.benefit_id || b.id;
-        if (!activeBenefitsMap.has(bId)) {
-          activeBenefitsMap.set(bId, {
-            ...b,
-            foodNames: [catItem.name]
-          });
-        } else {
-          activeBenefitsMap.get(bId).foodNames.push(catItem.name);
-        }
-      });
-    }
-  });
-
+  if (Array.isArray(currentCatalogItems)) {
+    currentCatalogItems.forEach(catItem => {
+      if (consumedFoodItemIds.has(catItem.id)) {
+        (catItem.benefits || []).forEach(b => {
+          const bId = b.benefit_id || b.id;
+          if (!activeBenefitsMap.has(bId)) {
+            activeBenefitsMap.set(bId, {
+              ...b,
+              foodNames: [catItem.name]
+            });
+          } else {
+            activeBenefitsMap.get(bId).foodNames.push(catItem.name);
+          }
+        });
+      }
+    });
+  }
   // Calcul synthétique supplémentaire selon les macros totales du jour
-  const sum = currentJournalData.day_summary || {};
+  const sum = (typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.day_summary) || {};
   if ((sum.total_fiber_g || 0) >= 25) {
     if (!activeBenefitsMap.has('gut_transit')) {
       activeBenefitsMap.set('gut_transit', {
