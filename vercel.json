@@ -10,9 +10,16 @@
       "destination": "/api/index.py?__path=$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/static/(.*)",
+      "destination": "/static/$1"
+    },
+    {
+      "source": "/",
+      "destination": "/static/index.html"
+    },
+    {
+      "source": "/((?!static|api).*)",
       "destination": "/static/index.html"
     }
   ]
 }
-
