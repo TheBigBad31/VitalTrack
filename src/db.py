@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
-from src.models import ActivityEntry, FoodItem, MealEntry, SavedMeal, WeightEntry
+from src.models import ActivityEntry, CatalogItem, FoodItem, MealEntry, MealLog, MealLogItem, SavedMeal, WeightEntry
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
 # Essai d'import de psycopg pour le support Neon PostgreSQL
@@ -296,6 +296,60 @@ class Database:
                 """)
 
                 cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS food_items (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        item_type TEXT NOT NULL DEFAULT 'food',
+                        default_unit TEXT NOT NULL DEFAULT 'g',
+                        default_quantity REAL NOT NULL DEFAULT 100.0,
+                        calories_per_unit REAL NOT NULL,
+                        protein_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        fat_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_per_unit_g REAL DEFAULT 0.0,
+                        photo_url TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS meal_logs (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        meal_type TEXT NOT NULL,
+                        photo_url TEXT,
+                        total_calories REAL NOT NULL DEFAULT 0.0,
+                        total_protein_g REAL NOT NULL DEFAULT 0.0,
+                        total_carbs_g REAL NOT NULL DEFAULT 0.0,
+                        total_fat_g REAL NOT NULL DEFAULT 0.0,
+                        total_fiber_g REAL DEFAULT 0.0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        CONSTRAINT uq_meal_logs_user_date_type UNIQUE (user_id, date, meal_type)
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS meal_log_items (
+                        id SERIAL PRIMARY KEY,
+                        meal_log_id INTEGER NOT NULL REFERENCES meal_logs(id) ON DELETE CASCADE,
+                        food_item_id INTEGER REFERENCES food_items(id) ON DELETE SET NULL,
+                        name TEXT NOT NULL,
+                        quantity REAL NOT NULL,
+                        unit TEXT NOT NULL DEFAULT 'g',
+                        calories REAL NOT NULL DEFAULT 0.0,
+                        protein_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_g REAL NOT NULL DEFAULT 0.0,
+                        fat_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_g REAL DEFAULT 0.0,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS saved_meals (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -414,6 +468,9 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -515,6 +572,60 @@ class Database:
                         fiber_g REAL,
                         photo_data_url TEXT,
                         items_json TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS food_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        item_type TEXT NOT NULL DEFAULT 'food',
+                        default_unit TEXT NOT NULL DEFAULT 'g',
+                        default_quantity REAL NOT NULL DEFAULT 100.0,
+                        calories_per_unit REAL NOT NULL,
+                        protein_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        fat_per_unit_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_per_unit_g REAL DEFAULT 0.0,
+                        photo_url TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS meal_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        meal_type TEXT NOT NULL,
+                        photo_url TEXT,
+                        total_calories REAL NOT NULL DEFAULT 0.0,
+                        total_protein_g REAL NOT NULL DEFAULT 0.0,
+                        total_carbs_g REAL NOT NULL DEFAULT 0.0,
+                        total_fat_g REAL NOT NULL DEFAULT 0.0,
+                        total_fiber_g REAL DEFAULT 0.0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(user_id, date, meal_type)
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS meal_log_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        meal_log_id INTEGER NOT NULL REFERENCES meal_logs(id) ON DELETE CASCADE,
+                        food_item_id INTEGER REFERENCES food_items(id) ON DELETE SET NULL,
+                        name TEXT NOT NULL,
+                        quantity REAL NOT NULL,
+                        unit TEXT NOT NULL DEFAULT 'g',
+                        calories REAL NOT NULL DEFAULT 0.0,
+                        protein_g REAL NOT NULL DEFAULT 0.0,
+                        carbs_g REAL NOT NULL DEFAULT 0.0,
+                        fat_g REAL NOT NULL DEFAULT 0.0,
+                        fiber_g REAL DEFAULT 0.0,
                         created_at TEXT NOT NULL
                     );
                 """)
@@ -623,6 +734,11 @@ class Database:
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_weights_user_date ON weights(user_id, date);")
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_user_date ON activities(user_id, date);")
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_devices_user_dev ON user_devices(user_id, device_id);")
+
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_meal_logs_user_date_type ON meal_logs(user_id, date, meal_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
 
                 # Index SQLite
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
@@ -1370,6 +1486,390 @@ class Database:
             conn.commit()
             return True
 
+
+    # ---------------------------------------------------------
+    # Catalogue Aliments & Plats (Stage 12 - food_items)
+    # ---------------------------------------------------------
+
+    def insert_food_item(self, item: CatalogItem, user_id: int = 1) -> CatalogItem:
+        """Crée un aliment ou un plat dans le catalogue de l'utilisateur."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO food_items (
+                        user_id, name, item_type, default_unit, default_quantity,
+                        calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id, created_at, updated_at;
+                """, (
+                    user_id, item.name, item.item_type, item.default_unit or "g",
+                    item.default_quantity or 100.0, item.calories_per_unit,
+                    item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
+                    item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
+                    item.photo_url, now_str, now_str
+                ))
+                row = cursor.fetchone()
+                item_id = row["id"]
+                created_at = row["created_at"]
+                updated_at = row["updated_at"]
+            else:
+                cursor.execute("""
+                    INSERT INTO food_items (
+                        user_id, name, item_type, default_unit, default_quantity,
+                        calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, item.name, item.item_type, item.default_unit or "g",
+                    item.default_quantity or 100.0, item.calories_per_unit,
+                    item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
+                    item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
+                    item.photo_url, now_str, now_str
+                ))
+                item_id = cursor.lastrowid
+                created_at = now_str
+                updated_at = now_str
+            conn.commit()
+
+        res = item.model_copy()
+        res.id = item_id
+        res.user_id = user_id
+        res.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
+        res.updated_at = datetime.fromisoformat(updated_at) if isinstance(updated_at, str) else updated_at
+        return res
+
+    def get_food_items(
+        self,
+        item_type: Optional[str] = None,
+        query: Optional[str] = None,
+        user_id: int = 1
+    ) -> List[CatalogItem]:
+        """Récupère les éléments du catalogue de l'utilisateur avec filtres optionnels."""
+        sql = "SELECT * FROM food_items WHERE user_id = ?"
+        params: List[Any] = [user_id]
+
+        if item_type:
+            sql += " AND item_type = ?"
+            params.append(item_type)
+
+        if query:
+            sql += " AND LOWER(name) LIKE ?"
+            params.append(f"%{query.strip().lower()}%")
+
+        sql += " ORDER BY name ASC"
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+
+        items = []
+        for r in rows:
+            items.append(CatalogItem(
+                id=r["id"],
+                user_id=r["user_id"],
+                name=r["name"],
+                item_type=r["item_type"],
+                default_unit=r["default_unit"],
+                default_quantity=float(r["default_quantity"]),
+                calories_per_unit=float(r["calories_per_unit"]),
+                protein_per_unit_g=float(r.get("protein_per_unit_g") or 0.0),
+                carbs_per_unit_g=float(r.get("carbs_per_unit_g") or 0.0),
+                fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
+                fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
+                photo_url=r.get("photo_url"),
+                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
+                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
+            ))
+        return items
+
+    def get_food_item_by_id(self, item_id: int, user_id: int = 1) -> Optional[CatalogItem]:
+        """Récupère un élément du catalogue par son ID pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return CatalogItem(
+                id=r["id"],
+                user_id=r["user_id"],
+                name=r["name"],
+                item_type=r["item_type"],
+                default_unit=r["default_unit"],
+                default_quantity=float(r["default_quantity"]),
+                calories_per_unit=float(r["calories_per_unit"]),
+                protein_per_unit_g=float(r.get("protein_per_unit_g") or 0.0),
+                carbs_per_unit_g=float(r.get("carbs_per_unit_g") or 0.0),
+                fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
+                fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
+                photo_url=r.get("photo_url"),
+                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
+                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
+            )
+
+    def update_food_item(self, item_id: int, data: Dict[str, Any], user_id: int = 1) -> Optional[CatalogItem]:
+        """Met à jour un aliment ou plat du catalogue."""
+        existing = self.get_food_item_by_id(item_id, user_id=user_id)
+        if not existing:
+            return None
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        name = data.get("name", existing.name)
+        item_type = data.get("item_type", existing.item_type)
+        default_unit = data.get("default_unit", existing.default_unit)
+        default_quantity = data.get("default_quantity", existing.default_quantity)
+        calories_per_unit = data.get("calories_per_unit", existing.calories_per_unit)
+        protein_per_unit_g = data.get("protein_per_unit_g", existing.protein_per_unit_g)
+        carbs_per_unit_g = data.get("carbs_per_unit_g", existing.carbs_per_unit_g)
+        fat_per_unit_g = data.get("fat_per_unit_g", existing.fat_per_unit_g)
+        fiber_per_unit_g = data.get("fiber_per_unit_g", existing.fiber_per_unit_g)
+        photo_url = data.get("photo_url", existing.photo_url)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE food_items
+                SET name = ?, item_type = ?, default_unit = ?, default_quantity = ?,
+                    calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
+                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                name, item_type, default_unit, default_quantity,
+                calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
+                fat_per_unit_g, fiber_per_unit_g, photo_url, now_str,
+                item_id, user_id
+            ))
+            conn.commit()
+
+        updated = existing.model_copy()
+        updated.name = name
+        updated.item_type = item_type
+        updated.default_unit = default_unit
+        updated.default_quantity = default_quantity
+        updated.calories_per_unit = calories_per_unit
+        updated.protein_per_unit_g = protein_per_unit_g
+        updated.carbs_per_unit_g = carbs_per_unit_g
+        updated.fat_per_unit_g = fat_per_unit_g
+        updated.fiber_per_unit_g = fiber_per_unit_g
+        updated.photo_url = photo_url
+        updated.updated_at = datetime.fromisoformat(now_str)
+        return updated
+
+    def delete_food_item(self, item_id: int, user_id: int = 1) -> bool:
+        """Supprime un aliment ou plat du catalogue de l'utilisateur."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute("DELETE FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+            conn.commit()
+            return True
+
+    # ---------------------------------------------------------
+    # Journal Quotidien des Repas (Stage 12 - meal_logs & meal_log_items)
+    # ---------------------------------------------------------
+
+    def get_or_create_meal_log(self, date_val: date, meal_type: str, user_id: int = 1) -> MealLog:
+        """Récupère l'instance de repas pour une date et un type, ou la crée si inexistante."""
+        date_str = date_val.isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM meal_logs
+                WHERE user_id = ? AND date = ? AND meal_type = ?
+            """, (user_id, date_str, meal_type))
+            row = cursor.fetchone()
+
+            if not row:
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                        ON CONFLICT (user_id, date, meal_type) DO NOTHING
+                        RETURNING id, date, meal_type, photo_url, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at;
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+                    row = cursor.fetchone()
+                else:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+                conn.commit()
+
+                if not row:
+                    cursor.execute("""
+                        SELECT * FROM meal_logs
+                        WHERE user_id = ? AND date = ? AND meal_type = ?
+                    """, (user_id, date_str, meal_type))
+                    row = cursor.fetchone()
+
+        return self._build_meal_log(dict(row), user_id=user_id)
+
+    def _build_meal_log(self, row: Dict[str, Any], user_id: int = 1) -> MealLog:
+        """Construit un objet MealLog avec tous ses MealLogItem associés."""
+        meal_log_id = row["id"]
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM meal_log_items
+                WHERE meal_log_id = ?
+                ORDER BY id ASC
+            """, (meal_log_id,))
+            item_rows = cursor.fetchall()
+
+        items = [
+            MealLogItem(
+                id=it["id"],
+                meal_log_id=it["meal_log_id"],
+                food_item_id=it.get("food_item_id"),
+                name=it["name"],
+                quantity=float(it["quantity"]),
+                unit=it["unit"],
+                calories=float(it["calories"]),
+                protein_g=float(it.get("protein_g") or 0.0),
+                carbs_g=float(it.get("carbs_g") or 0.0),
+                fat_g=float(it.get("fat_g") or 0.0),
+                fiber_g=float(it["fiber_g"]) if it.get("fiber_g") is not None else 0.0,
+                created_at=datetime.fromisoformat(it["created_at"]) if it.get("created_at") else None,
+            )
+            for it in item_rows
+        ]
+
+        return MealLog(
+            id=row["id"],
+            user_id=row["user_id"],
+            date=date.fromisoformat(row["date"][:10]),
+            meal_type=row["meal_type"],
+            photo_url=row.get("photo_url"),
+            total_calories=float(row.get("total_calories") or 0.0),
+            total_protein_g=float(row.get("total_protein_g") or 0.0),
+            total_carbs_g=float(row.get("total_carbs_g") or 0.0),
+            total_fat_g=float(row.get("total_fat_g") or 0.0),
+            total_fiber_g=float(row["total_fiber_g"]) if row.get("total_fiber_g") is not None else 0.0,
+            items=items,
+            created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+            updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
+        )
+
+    def get_meal_logs_for_date(self, target_date: date, user_id: int = 1) -> List[MealLog]:
+        """Récupère les 4 repas d'une date (avec les instances existantes)."""
+        date_str = target_date.isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM meal_logs
+                WHERE user_id = ? AND date = ?
+                ORDER BY id ASC
+            """, (user_id, date_str))
+            rows = cursor.fetchall()
+
+        return [self._build_meal_log(dict(r), user_id=user_id) for r in rows]
+
+    def add_item_to_meal_log(
+        self,
+        date_val: date,
+        meal_type: str,
+        name: str,
+        quantity: float,
+        unit: str,
+        calories: float,
+        protein_g: float = 0.0,
+        carbs_g: float = 0.0,
+        fat_g: float = 0.0,
+        fiber_g: float = 0.0,
+        food_item_id: Optional[int] = None,
+        user_id: int = 1
+    ) -> MealLog:
+        """Ajoute un aliment/plat à un repas pour une date et recalcule les totaux."""
+        meal_log = self.get_or_create_meal_log(date_val, meal_type, user_id=user_id)
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO meal_log_items (
+                    meal_log_id, food_item_id, name, quantity, unit,
+                    calories, protein_g, carbs_g, fat_g, fiber_g, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                meal_log.id, food_item_id, name, quantity, unit,
+                calories, protein_g, carbs_g, fat_g, fiber_g, now_str
+            ))
+            conn.commit()
+
+        self._recalculate_meal_log_totals(meal_log.id, user_id=user_id)
+        return self._get_meal_log_by_id(meal_log.id, user_id=user_id)
+
+    def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
+        """Supprime une ligne d'aliment consommée et recalcule le repas parent."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT m.id AS meal_log_id
+                FROM meal_log_items it
+                JOIN meal_logs m ON it.meal_log_id = m.id
+                WHERE it.id = ? AND m.user_id = ?
+            """, (item_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            meal_log_id = row["meal_log_id"]
+            cursor.execute("DELETE FROM meal_log_items WHERE id = ?", (item_id,))
+            conn.commit()
+
+        self._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
+        return self._get_meal_log_by_id(meal_log_id, user_id=user_id)
+
+    def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
+        """Recalcule et met à jour les totaux d'un MealLog."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT
+                    COALESCE(SUM(calories), 0.0) AS total_cal,
+                    COALESCE(SUM(protein_g), 0.0) AS total_prot,
+                    COALESCE(SUM(carbs_g), 0.0) AS total_carbs,
+                    COALESCE(SUM(fat_g), 0.0) AS total_fat,
+                    COALESCE(SUM(fiber_g), 0.0) AS total_fiber
+                FROM meal_log_items
+                WHERE meal_log_id = ?
+            """, (meal_log_id,))
+            totals = cursor.fetchone()
+
+            cursor.execute("""
+                UPDATE meal_logs
+                SET total_calories = ?, total_protein_g = ?, total_carbs_g = ?,
+                    total_fat_g = ?, total_fiber_g = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+            """, (
+                round(float(totals["total_cal"]), 1),
+                round(float(totals["total_prot"]), 1),
+                round(float(totals["total_carbs"]), 1),
+                round(float(totals["total_fat"]), 1),
+                round(float(totals["total_fiber"]), 1),
+                now_str, meal_log_id, user_id
+            ))
+            conn.commit()
+
+    def _get_meal_log_by_id(self, meal_log_id: int, user_id: int = 1) -> MealLog:
+        """Récupère un MealLog complet par son ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
+            row = cursor.fetchone()
+        return self._build_meal_log(dict(row), user_id=user_id)
+
     # Profil Utilisateur & Appareils
     # ---------------------------------------------------------
 
@@ -1980,6 +2480,8 @@ class Database:
                 cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
+                cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
                 conn.commit()
 
         # 1. Profil
@@ -2078,7 +2580,10 @@ class Database:
             cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
             if not keep_profile:
+                cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))

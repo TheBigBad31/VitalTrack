@@ -507,7 +507,123 @@
     <!-- =================================================================== -->
     <!-- VUE 3 : JOURNAL ALIMENTAIRE & CALORIES PAR REPAS -->
     <!-- =================================================================== -->
-    <section id="view-nutrition" class="view-content hidden space-y-6">
+        <section id="view-nutrition" class="view-content hidden space-y-6">
+
+      <!-- Barre de navigation des 2 espaces distincts : Journal Quotidien vs Catalogue -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-md">
+        <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C] w-full sm:w-auto">
+          <button id="btn-subnav-journal" onclick="switchNutritionSubSection('journal')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-2 transition-all">
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+            <span>Mon Journal des Repas</span>
+          </button>
+          <button id="btn-subnav-catalog" onclick="switchNutritionSubSection('catalog')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all">
+            <i data-lucide="book-open" class="w-4 h-4"></i>
+            <span>Mon Catalogue (Aliments & Plats)</span>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-emerald-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>+ Aliment</span>
+          </button>
+          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>+ Plat</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- SECTION A : MON JOURNAL DES REPAS (Vue Journalière 4 Repas) -->
+      <!-- =================================================================== -->
+      <div id="nutrition-sec-journal" class="space-y-6">
+
+        <!-- Barre de Navigation Temporelle / Sélecteur de Date -->
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div class="flex items-center space-x-2">
+            <button onclick="changeJournalDate(-1)" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <input type="date" id="journal-date-input" onchange="handleJournalDateChange(event)" class="bg-[#0B0F17] border border-[#1F2A3C] text-white text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer">
+            <button onclick="changeJournalDate(1)" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+            <button onclick="setJournalToToday()" class="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-semibold transition-colors">
+              Aujourd'hui
+            </button>
+          </div>
+
+          <!-- Totaux Macronutriments de la journée sélectionnée -->
+          <div class="flex items-center gap-3 text-xs bg-[#0B0F17] border border-[#1F2A3C] px-3.5 py-2 rounded-xl">
+            <div>
+              <span class="text-slate-400">Total :</span>
+              <span id="journal-day-cals" class="font-extrabold text-white text-sm ml-1">0</span>
+              <span class="text-[10px] text-slate-400">kcal</span>
+            </div>
+            <div class="h-4 w-px bg-[#1F2A3C]"></div>
+            <span class="text-emerald-400 font-semibold" id="journal-day-prot">0g P</span>
+            <span class="text-sky-400 font-semibold" id="journal-day-carbs">0g G</span>
+            <span class="text-amber-400 font-semibold" id="journal-day-fat">0g L</span>
+            <span class="text-slate-400" id="journal-day-fiber">0g F</span>
+          </div>
+        </div>
+
+        <!-- Les 4 Repas de la Journée (Composition & Totaux) -->
+        <div id="journal-slots-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Dynamique via renderMealsJournal() -->
+        </div>
+
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- SECTION B : MON CATALOGUE (Aliments & Plats Réutilisables) -->
+      <!-- =================================================================== -->
+      <div id="nutrition-sec-catalog" class="hidden space-y-6">
+
+        <!-- En-tête et barre de recherche du catalogue -->
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-white text-base flex items-center space-x-2">
+                <i data-lucide="book-open" class="w-5 h-5 text-emerald-400"></i>
+                <span>Bibliothèque de Référence</span>
+              </h3>
+              <p class="text-xs text-slate-400">Gérez vos aliments simples et plats élaborés indépendamment de toute date.</p>
+            </div>
+            <span id="catalog-items-count" class="text-xs px-3 py-1 bg-[#0B0F17] border border-[#1F2A3C] text-slate-300 rounded-xl self-start sm:self-auto font-medium">
+              0 éléments
+            </span>
+          </div>
+
+          <!-- Filtres et Recherche -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+              <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un aliment ou un plat..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            </div>
+
+            <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C] shrink-0">
+              <button id="cat-filter-all" onclick="filterCatalog('all')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-colors">
+                Tous
+              </button>
+              <button id="cat-filter-food" onclick="filterCatalog('food')" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                Aliments
+              </button>
+              <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                Plats
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grille des cartes du Catalogue -->
+        <div id="catalog-items-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Dynamique via renderCatalogItems() -->
+        </div>
+
+      </div>
+
       
       <!-- Sélecteur rapide des 4 Repas & Plats Sauvegardés -->
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
@@ -820,7 +936,181 @@
   </nav>
 
   <!-- =================================================================== -->
-  <!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
+
+  <!-- =================================================================== -->
+  <!-- MODAL : CRÉATION / ÉDITION D'UN ÉLÉMENT DU CATALOGUE -->
+  <!-- =================================================================== -->
+  <div id="modal-catalog-item" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="book-open" class="w-5 h-5 text-emerald-400"></i>
+          <h3 class="font-bold text-white text-base" id="cat-modal-title">Créer un élément de catalogue</h3>
+        </div>
+        <button onclick="closeCatalogItemModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-catalog-item" onsubmit="handleCatalogItemFormSubmit(event)" class="space-y-3">
+        <input type="hidden" id="cat-item-id" value="">
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'aliment ou du plat *</label>
+          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Type *</label>
+            <select id="cat-item-type" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <option value="food">Aliment simple</option>
+              <option value="dish">Plat / Recette</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Unité *</label>
+            <select id="cat-item-unit" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <option value="g">Grammes (g)</option>
+              <option value="portion">Portion</option>
+              <option value="ml">Millilitres (ml)</option>
+              <option value="pièce">Pièce</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Quantité réf. *</label>
+            <input type="number" step="0.1" id="cat-item-qty" required value="100" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <!-- Calories & Macros pour la quantité de référence -->
+        <div class="grid grid-cols-4 gap-2">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Calories *</label>
+            <input type="number" step="1" id="cat-item-cals" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-emerald-400 mb-1">Protéines</label>
+            <input type="number" step="0.1" id="cat-item-prot" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-sky-400 mb-1">Glucides</label>
+            <input type="number" step="0.1" id="cat-item-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-amber-400 mb-1">Lipides</label>
+            <input type="number" step="0.1" id="cat-item-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Fibres (optionnel)</label>
+          <input type="number" step="0.1" id="cat-item-fiber" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
+          <div class="flex items-center gap-2">
+            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
+              <i data-lucide="camera" class="w-4 h-4 text-emerald-400"></i>
+              <span>Photo</span>
+              <input type="file" accept="image/*" class="hidden" onchange="handleCatalogPhotoFile(event)">
+            </label>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
+          <button type="button" onclick="closeCatalogItemModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium transition-colors">
+            Annuler
+          </button>
+          <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-1">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>Enregistrer dans le Catalogue</span>
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- MODAL : SÉLECTION D'UN ÉLÉMENT DU CATALOGUE VERS UN REPAS DU JOUR -->
+  <!-- =================================================================== -->
+  <div id="modal-select-catalog-item" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-400"></i>
+          <div>
+            <h3 class="font-bold text-white text-base">Ajouter au repas</h3>
+            <p class="text-xs text-slate-400">Repas sélectionné : <span id="modal-select-cat-slot-title" class="text-emerald-400 font-bold">Déjeuner</span></p>
+          </div>
+        </div>
+        <button onclick="closeSelectFromCatalogModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Étape 1 : Choisir dans le catalogue -->
+      <div id="picker-step-select" class="space-y-3">
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div id="modal-catalog-picker-list" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <!-- Dynamique -->
+        </div>
+
+        <div class="pt-2 border-t border-[#1F2A3C] flex items-center justify-between">
+          <span class="text-xs text-slate-400">Aliment absent ?</span>
+          <button onclick="openCreateCatalogItemModal('food')" class="text-xs font-semibold text-emerald-400 hover:underline">
+            + Créer dans mon catalogue
+          </button>
+        </div>
+      </div>
+
+      <!-- Étape 2 : Indiquer la portion consommée avec calcul live -->
+      <div id="picker-step-portion" class="hidden space-y-4">
+        <button onclick="backToPickerList()" class="text-xs text-slate-400 hover:text-white flex items-center space-x-1">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+          <span>Choisir un autre aliment</span>
+        </button>
+
+        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl">
+          <h4 id="picker-selected-item-name" class="font-bold text-sm text-white mb-1">Riz basmati</h4>
+          <div class="flex items-center gap-2 mt-2">
+            <label class="text-xs text-slate-300 font-semibold">Quantité consommée :</label>
+            <input type="number" step="0.1" id="picker-portion-qty" oninput="updatePickerLiveMacros()" value="100" class="w-24 bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            <span id="picker-portion-unit-label" class="text-xs text-slate-400">g</span>
+          </div>
+        </div>
+
+        <!-- Aperçu dynamique live des macros calculées -->
+        <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-1">
+          <div class="text-[11px] text-slate-400 font-medium">Valeurs nutritionnelles au prorata :</div>
+          <div class="text-base font-extrabold text-emerald-400" id="picker-live-cals">0 kcal</div>
+          <div class="text-xs text-slate-300" id="picker-live-macros">Protéines: 0g | Glucides: 0g | Lipides: 0g</div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
+          <button type="button" onclick="closeSelectFromCatalogModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium">
+            Annuler
+          </button>
+          <button type="button" onclick="confirmAddCatalogItemToMeal()" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-1">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>Valider et Ajouter au Repas</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+    <!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
   <!-- =================================================================== -->
   <div id="modal-meal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
@@ -4282,5 +4572,6 @@
   </script>
   <!-- Toast de notification globale PWA -->
   <div id="pwa-toast-container" class="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+  <script src="/static/app.js"></script>
 </body>
 </html>

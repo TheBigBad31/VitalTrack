@@ -88,3 +88,59 @@ class SavedMeal(BaseModel):
     is_favorite: bool = Field(False, description="Marqué comme plat favori")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+CatalogItemType = Literal["food", "dish"]
+CatalogUnit = Literal["g", "portion", "ml", "piece", "pi\u00e8ce"]
+MealSlot = Literal["breakfast", "lunch", "snack", "dinner"]
+
+
+class CatalogItem(BaseModel):
+    """Aliment simple ou plat/recette r\u00e9utilisable du catalogue personnel."""
+    id: Optional[int] = None
+    user_id: Optional[int] = 1
+    name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
+    item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
+    default_unit: str = Field("g", description="Unit\u00e9 de r\u00e9f\u00e9rence (g, portion, ml, pi\u00e8ce)")
+    default_quantity: float = Field(100.0, gt=0, description="Quantit\u00e9 de r\u00e9f\u00e9rence")
+    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantit\u00e9 de r\u00e9f\u00e9rence")
+    protein_per_unit_g: float = Field(0.0, ge=0.0, description="Prot\u00e9ines en grammes")
+    carbs_per_unit_g: float = Field(0.0, ge=0.0, description="Glucides en grammes")
+    fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides en grammes")
+    fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres en grammes")
+    photo_url: Optional[str] = Field(None, description="Photo ou image de r\u00e9f\u00e9rence")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class MealLogItem(BaseModel):
+    """Ligne d'aliment ou de plat consomm\u00e9 au sein d'un repas donn\u00e9."""
+    id: Optional[int] = None
+    meal_log_id: Optional[int] = None
+    food_item_id: Optional[int] = None
+    name: str = Field(..., min_length=1, description="Nom de l'aliment/plat consomm\u00e9")
+    quantity: float = Field(..., gt=0, description="Quantit\u00e9 consomm\u00e9")
+    unit: str = Field("g", description="Unit\u00e9 consomm\u00e9")
+    calories: float = Field(..., ge=0.0, description="Calories calcul\u00e9es au prorata")
+    protein_g: float = Field(0.0, ge=0.0, description="Prot\u00e9ines calcul\u00e9es")
+    carbs_g: float = Field(0.0, ge=0.0, description="Glucides calcul\u00e9es")
+    fat_g: float = Field(0.0, ge=0.0, description="Lipides calcul\u00e9es")
+    fiber_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres calcul\u00e9es")
+    created_at: Optional[datetime] = None
+
+
+class MealLog(BaseModel):
+    """Instance d'un des 4 repas quotidiens (breakfast, lunch, snack, dinner)."""
+    id: Optional[int] = None
+    user_id: Optional[int] = 1
+    date: DateType
+    meal_type: MealSlot
+    photo_url: Optional[str] = None
+    total_calories: float = 0.0
+    total_protein_g: float = 0.0
+    total_carbs_g: float = 0.0
+    total_fat_g: float = 0.0
+    total_fiber_g: Optional[float] = 0.0
+    items: List[MealLogItem] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

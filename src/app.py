@@ -17,7 +17,7 @@ Endpoints :
 
 import os
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.db import Database, get_db_path
-from src.models import ActivityEntry, FoodItem, MealEntry, MealType, SavedMeal, WeightEntry
+from src.models import ActivityEntry, FoodItem, MealEntry, MealType, SavedMeal, WeightEntry, CatalogItem, MealLog, MealLogItem
 from src.nutrition_engine import NutritionEngine
 import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
@@ -292,7 +292,7 @@ class SavedMealUpdateRequest(BaseModel):
 
 
 class SavedMealLogRequest(BaseModel):
-    date: Optional[date] = None
+    date: Optional[dt_module.date] = None
     meal_type: Optional[MealType] = None
     portion_factor: Optional[float] = Field(1.0, ge=0.1, le=10.0, description="Facteur multiplicateur de portion")
 
@@ -878,6 +878,304 @@ def log_saved_meal_to_journal(
         "logged_meal": logged.model_dump()
     }
 
+
+
+
+# =====================================================================
+# Endpoints Catalogue d'Aliments & Plats (Stage 12)
+# =====================================================================
+
+class CatalogItemCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
+    item_type: Literal["food", "dish"] = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
+    default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
+    default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
+    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")
+    protein_per_unit_g: float = Field(0.0, ge=0.0, description="Protéines (g)")
+    carbs_per_unit_g: float = Field(0.0, ge=0.0, description="Glucides (g)")
+    fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides (g)")
+    fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres (g)")
+    photo_url: Optional[str] = Field(None, description="Photo ou data URL")
+
+
+class CatalogItemUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    item_type: Optional[Literal["food", "dish"]] = None
+    default_unit: Optional[str] = None
+    default_quantity: Optional[float] = None
+    calories_per_unit: Optional[float] = None
+    protein_per_unit_g: Optional[float] = None
+    carbs_per_unit_g: Optional[float] = None
+    fat_per_unit_g: Optional[float] = None
+    fiber_per_unit_g: Optional[float] = None
+    photo_url: Optional[str] = None
+
+
+class MealJournalAddItemRequest(BaseModel):
+    date: Optional[dt_module.date] = None
+    food_item_id: Optional[int] = None
+    name: Optional[str] = None
+    quantity: float = Field(..., gt=0, description="Quantité consommée")
+    unit: Optional[str] = "g"
+    # Macros optionnelles si pas de food_item_id
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+
+
+class MealJournalAddBatchRequest(BaseModel):
+    date: Optional[dt_module.date] = None
+    items: List[MealJournalAddItemRequest] = Field(..., min_length=1)
+
+
+class SaveAsDishRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="Nom du plat à créer dans le catalogue")
+    date: Optional[dt_module.date] = None
+    photo_url: Optional[str] = None
+
+
+@app.get("/api/catalog/items")
+def get_catalog_items(
+    type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
+    q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère le catalogue d'aliments et de plats de l'utilisateur."""
+    items = db.get_food_items(item_type=type, query=q, user_id=current_user.id)
+    return [it.model_dump() for it in items]
+
+
+@app.post("/api/catalog/items")
+def create_catalog_item(
+    req: CatalogItemCreateRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Crée un nouvel aliment ou plat dans le catalogue."""
+    item = CatalogItem(
+        user_id=current_user.id,
+        name=req.name.strip(),
+        item_type=req.item_type,
+        default_unit=req.default_unit or "g",
+        default_quantity=req.default_quantity or 100.0,
+        calories_per_unit=req.calories_per_unit,
+        protein_per_unit_g=req.protein_per_unit_g or 0.0,
+        carbs_per_unit_g=req.carbs_per_unit_g or 0.0,
+        fat_per_unit_g=req.fat_per_unit_g or 0.0,
+        fiber_per_unit_g=req.fiber_per_unit_g or 0.0,
+        photo_url=req.photo_url
+    )
+    created = db.insert_food_item(item, user_id=current_user.id)
+    return created.model_dump()
+
+
+@app.put("/api/catalog/items/{item_id}")
+def update_catalog_item(
+    item_id: int,
+    req: CatalogItemUpdateRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Met à jour un aliment ou un plat du catalogue."""
+    update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = db.update_food_item(item_id, update_data, user_id=current_user.id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+    return updated.model_dump()
+
+
+@app.delete("/api/catalog/items/{item_id}")
+def delete_catalog_item(
+    item_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Supprime un aliment ou un plat du catalogue."""
+    deleted = db.delete_food_item(item_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+    return {"status": "success", "message": f"Élément #{item_id} supprimé du catalogue"}
+
+
+# =====================================================================
+# Endpoints Journal des Repas Quotidiens (Stage 12)
+# =====================================================================
+
+@app.get("/api/meals/journal")
+def get_meals_journal(
+    date_param: Optional[str] = Query(None, alias="date", description="Date YYYY-MM-DD"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère les 4 repas du jour avec la composition et les totaux."""
+    target_date = date.fromisoformat(date_param) if date_param else date.today()
+    logs = db.get_meal_logs_for_date(target_date, user_id=current_user.id)
+    logs_by_type = {log.meal_type: log for log in logs}
+
+    meal_types = ["breakfast", "lunch", "snack", "dinner"]
+    meals_response = []
+    day_total_cal = 0.0
+    day_total_prot = 0.0
+    day_total_carbs = 0.0
+    day_total_fat = 0.0
+    day_total_fiber = 0.0
+
+    for mt in meal_types:
+        mlog = logs_by_type.get(mt)
+        if not mlog:
+            mlog = db.get_or_create_meal_log(target_date, mt, user_id=current_user.id)
+        
+        m_dict = mlog.model_dump()
+        meals_response.append(m_dict)
+
+        day_total_cal += mlog.total_calories
+        day_total_prot += mlog.total_protein_g
+        day_total_carbs += mlog.total_carbs_g
+        day_total_fat += mlog.total_fat_g
+        day_total_fiber += (mlog.total_fiber_g or 0.0)
+
+    # Calcul des pourcentages de macros pour la journée
+    cal_p = day_total_prot * 4.0
+    cal_c = day_total_carbs * 4.0
+    cal_f = day_total_fat * 9.0
+    sum_macro_cal = cal_p + cal_c + cal_f
+    macros_pct = {
+        "protein_pct": round((cal_p / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0,
+        "carbs_pct": round((cal_c / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0,
+        "fat_pct": round((cal_f / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0
+    }
+
+    return {
+        "date": target_date.isoformat(),
+        "meals": meals_response,
+        "day_summary": {
+            "total_calories": round(day_total_cal, 1),
+            "total_protein_g": round(day_total_prot, 1),
+            "total_carbs_g": round(day_total_carbs, 1),
+            "total_fat_g": round(day_total_fat, 1),
+            "total_fiber_g": round(day_total_fiber, 1),
+            "macros_pct": macros_pct
+        }
+    }
+
+
+@app.post("/api/meals/journal/{meal_type}/items")
+def add_item_to_meal_journal(
+    meal_type: str,
+    payload: Union[MealJournalAddItemRequest, MealJournalAddBatchRequest, List[MealJournalAddItemRequest]],
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Ajoute un ou plusieurs aliments/plats (avec quantité spécifiée) dans le repas d'une date."""
+    if meal_type not in ["breakfast", "lunch", "snack", "dinner"]:
+        raise HTTPException(status_code=400, detail="meal_type invalide (breakfast, lunch, snack, dinner)")
+
+    # Déterminer la liste d'items à ajouter
+    if isinstance(payload, list):
+        items_to_add = payload
+        target_date = date.today()
+    elif isinstance(payload, MealJournalAddBatchRequest):
+        items_to_add = payload.items
+        target_date = payload.date or date.today()
+    else:
+        items_to_add = [payload]
+        target_date = payload.date or date.today()
+
+    last_log = None
+    for it in items_to_add:
+        item_target_date = it.date or target_date
+        # Résolution par food_item_id si fourni
+        food_item = None
+        if it.food_item_id:
+            food_item = db.get_food_item_by_id(it.food_item_id, user_id=current_user.id)
+            if not food_item:
+                raise HTTPException(status_code=404, detail=f"Aliment de catalogue #{it.food_item_id} introuvable")
+
+        name = it.name or (food_item.name if food_item else "Aliment")
+        unit = it.unit or (food_item.default_unit if food_item else "g")
+        qty = it.quantity
+
+        if food_item:
+            ratio = qty / (food_item.default_quantity or 100.0)
+            cal = round(food_item.calories_per_unit * ratio, 1)
+            prot = round(food_item.protein_per_unit_g * ratio, 1)
+            carbs = round(food_item.carbs_per_unit_g * ratio, 1)
+            fat = round(food_item.fat_per_unit_g * ratio, 1)
+            fiber = round((food_item.fiber_per_unit_g or 0.0) * ratio, 1)
+        else:
+            cal = it.calories if it.calories is not None else 0.0
+            prot = it.protein_g if it.protein_g is not None else 0.0
+            carbs = it.carbs_g if it.carbs_g is not None else 0.0
+            fat = it.fat_g if it.fat_g is not None else 0.0
+            fiber = it.fiber_g if it.fiber_g is not None else 0.0
+
+        last_log = db.add_item_to_meal_log(
+            date_val=item_target_date,
+            meal_type=meal_type,
+            name=name,
+            quantity=qty,
+            unit=unit,
+            calories=cal,
+            protein_g=prot,
+            carbs_g=carbs,
+            fat_g=fat,
+            fiber_g=fiber,
+            food_item_id=it.food_item_id,
+            user_id=current_user.id
+        )
+
+    return {
+        "status": "success",
+        "meal_type": meal_type,
+        "meal_log": last_log.model_dump() if last_log else None
+    }
+
+
+@app.delete("/api/meals/journal/items/{item_id}")
+def delete_meal_journal_item(
+    item_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Retire un aliment d'un repas et actualise le repas parent."""
+    updated_log = db.delete_meal_log_item(item_id, user_id=current_user.id)
+    if not updated_log:
+        raise HTTPException(status_code=404, detail="Ligne d'aliment introuvable dans le journal")
+    return {
+        "status": "success",
+        "message": f"Aliment #{item_id} retiré du repas",
+        "meal_log": updated_log.model_dump()
+    }
+
+
+@app.post("/api/meals/journal/{meal_type}/save-as-dish")
+def save_meal_as_dish(
+    meal_type: str,
+    req: SaveAsDishRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Transforme la composition d'un repas consommé en un nouveau plat réutilisable dans le catalogue."""
+    target_date = req.date or date.today()
+    meal_log = db.get_or_create_meal_log(target_date, meal_type, user_id=current_user.id)
+
+    if not meal_log.items:
+        raise HTTPException(status_code=400, detail="Ce repas ne contient aucun aliment à sauvegarder comme plat")
+
+    dish_item = CatalogItem(
+        user_id=current_user.id,
+        name=req.name.strip(),
+        item_type="dish",
+        default_unit="portion",
+        default_quantity=1.0,
+        calories_per_unit=meal_log.total_calories,
+        protein_per_unit_g=meal_log.total_protein_g,
+        carbs_per_unit_g=meal_log.total_carbs_g,
+        fat_per_unit_g=meal_log.total_fat_g,
+        fiber_per_unit_g=meal_log.total_fiber_g or 0.0,
+        photo_url=req.photo_url or meal_log.photo_url
+    )
+    created_dish = db.insert_food_item(dish_item, user_id=current_user.id)
+    return {
+        "status": "success",
+        "message": f"Repas transformé en plat '{created_dish.name}' dans votre catalogue !",
+        "dish": created_dish.model_dump()
+    }
 
 # =====================================================================
 # Endpoints Hub Objets Connectés & Gestion de Flotte Sécurisée
