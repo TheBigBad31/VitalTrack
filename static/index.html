@@ -2870,7 +2870,7 @@
               <td class="py-2.5 px-3">
                 <div class="flex items-center space-x-1.5">
                   <span class="font-bold text-white">${day}</span>
-                  ${isToday ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 font-bold">Aujourd'hui</span>' : ''}
+                  ${isToday ? `<span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 font-bold">Aujourd'hui</span>` : ""}
                 </div>
               </td>
               <td class="py-2.5 px-3 text-amber-400 font-semibold">${b > 0 ? Math.round(b) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
