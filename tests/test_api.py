@@ -479,6 +479,17 @@ def test_reset_demo_data(client):
 
 def test_health_webhook_endpoints(client):
     """Vérifie la réception de pesées et d'activités via les endpoints webhooks."""
+    # Configurer un appareil avec webhook_secret pour le compte par défaut (user_id=1)
+    app_module.db.update_user_device(
+        device_id="ringconn",
+        name="RingConn Gen 3",
+        device_type="ring",
+        connected=True,
+        auth_type="webhook",
+        credentials={"webhook_secret": "test_ringconn_secret"},
+        user_id=1
+    )
+
     webhook_payload = {
         "date": "2026-10-17",
         "source": "ringconn_gen3",
@@ -490,10 +501,12 @@ def test_health_webhook_endpoints(client):
         "hrv_ms": 64.0,
         "sleep_score": 89
     }
-    res = client.post("/api/webhooks/ringconn", json=webhook_payload)
+    # Appel avec le token associé à l'appareil
+    res = client.post("/api/webhooks/ringconn?token=test_ringconn_secret", json=webhook_payload)
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "success"
+    assert data["user_id"] == 1
     assert data["ingested"]["weight"] is not None
     assert data["ingested"]["weight"]["weight_kg"] == 78.9
     assert data["ingested"]["activity"] is not None

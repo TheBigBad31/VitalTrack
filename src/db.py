@@ -932,6 +932,14 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Récupère la liste de tous les utilisateurs enregistrés."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users ORDER BY id ASC")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
     # ---------------------------------------------------------
     # Tendance et Pesées Multi-Utilisateurs
     # ---------------------------------------------------------
@@ -2304,6 +2312,44 @@ class Database:
             cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1", (user_id, device_id))
             row = cursor.fetchone()
         return self._format_device_row(row, reveal_secrets=reveal_secrets)
+
+    def find_user_by_device_token(self, token: str, device_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Identifie l'utilisateur associé à un token ou webhook secret d'appareil dans user_devices."""
+        if not token or not token.strip():
+            return None
+        token_clean = token.strip()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if device_id:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ?", (device_id,))
+            else:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1")
+            rows = cursor.fetchall()
+
+        for r in rows:
+            formatted = self._format_device_row(r, reveal_secrets=True)
+            if not formatted:
+                continue
+            creds = formatted.get("credentials") or {}
+            # Vérifier api_key, webhook_secret, token, bearer_token ou webhook_token
+            matched = False
+            for key in ["api_key", "webhook_secret", "token", "bearer_token", "webhook_token"]:
+                val = creds.get(key)
+                if val and str(val).strip() == token_clean:
+                    matched = True
+                    break
+
+            if matched:
+                user_id = r["user_id"] if isinstance(r, dict) else r[1]
+                user = self.get_user_by_id(int(user_id))
+                return {
+                    "user_id": int(user_id),
+                    "user": user,
+                    "device": formatted
+                }
+
+        return None
 
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""

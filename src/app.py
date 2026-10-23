@@ -1757,35 +1757,79 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 @app.post("/api/webhook/health")
 @app.post("/api/webhooks/health-connect")
 @app.post("/api/webhooks/ringconn")
-def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(None)):
+def handle_health_webhook(
+    payload: Dict[str, Any],
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None)
+):
     """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
-    connector = MobileHealthWebhookConnector()
-    if token and not connector.authenticate_request(token):
-        raise HTTPException(status_code=401, detail="Token webhook invalide")
+    # 1. Extraction du token de l'appareil
+    webhook_token = token
+    if not webhook_token and authorization:
+        if authorization.startswith("Bearer "):
+            webhook_token = authorization.split("Bearer ", 1)[1].strip()
+        else:
+            webhook_token = authorization.strip()
 
+    if not webhook_token and "token" in payload:
+        webhook_token = str(payload["token"]).strip()
+
+    if not webhook_token:
+        raise HTTPException(status_code=401, detail="Token webhook manquant : un token d'appareil valide est requis")
+
+    # 2. Résolution du user_id via le token dans user_devices
+    user_match = db.find_user_by_device_token(webhook_token)
+    resolved_user_id = None
+    matched_device = None
+
+    if user_match:
+        resolved_user_id = user_match["user_id"]
+        matched_device = user_match.get("device")
+    else:
+        # Fallback : vérifier si le token correspond au secret global démo/config et qu'un seul compte par défaut existe
+        global_secret = os.getenv("WEBHOOK_SECRET") or "vitaltrack_secure_webhook_key_sample"
+        if webhook_token == global_secret:
+            default_user = db.get_user_by_id(1)
+            if default_user:
+                resolved_user_id = 1
+
+    if not resolved_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Token webhook non reconnu : aucun compte utilisateur ou appareil n'est associé à ce token"
+        )
+
+    # 3. Extraction et validation des données de pesée / activité
+    connector = MobileHealthWebhookConnector()
     weight_entry, act_entry = connector.process_webhook_payload(payload)
     saved_weight = None
     saved_act = None
 
     if weight_entry:
-        saved_weight = db.insert_weight(weight_entry).model_dump()
+        saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
     if act_entry:
-        saved_act = db.insert_activity(act_entry).model_dump()
+        saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
 
-    # Mettre à jour l'état de l'appareil associé
+    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu
     source_name = payload.get("source", "health_connect")
-    dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+    dev_id = matched_device.get("device_id") if matched_device else (
+        "ringconn" if "ring" in source_name.lower() else (
+            "withings" if "withings" in source_name.lower() else "health_connect"
+        )
+    )
     db.update_user_device(
         device_id=dev_id,
         name=dev_id.replace("_", " ").title(),
         device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),
         connected=True,
-        auth_type="webhook"
+        auth_type="webhook",
+        user_id=resolved_user_id
     )
 
     return {
         "status": "success",
-        "message": "Données de santé webhook ingérées avec succès",
+        "message": f"Données de santé webhook ingérées avec succès pour l'utilisateur {resolved_user_id}",
+        "user_id": resolved_user_id,
         "ingested": {
             "weight": saved_weight,
             "activity": saved_act

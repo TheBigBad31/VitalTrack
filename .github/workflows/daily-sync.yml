@@ -29,6 +29,9 @@ jobs:
 
       - name: Run Daily Sync Script (Withings & Oura Ring)
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           WITHINGS_CLIENT_ID: ${{ secrets.WITHINGS_CLIENT_ID }}
           WITHINGS_ACCESS_TOKEN: ${{ secrets.WITHINGS_ACCESS_TOKEN }}
           OURA_PERSONAL_ACCESS_TOKEN: ${{ secrets.OURA_PERSONAL_ACCESS_TOKEN }}
