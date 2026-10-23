@@ -149,3 +149,237 @@ def test_auth_login_endpoint(isolated_app):
     assert data["status"] == "success"
     assert "access_token" in data
     assert data["user"]["email"] == "charlie@vitaltrack.io"
+
+
+def test_webhook_multiuser_device_token_isolation(isolated_app):
+    """Vérifie que les webhooks associent strictement les données au compte de l'appareil via le token."""
+    client, test_db = isolated_app
+
+    # Inscription de User 1 et User 2
+    res1 = client.post("/api/auth/register", json={
+        "email": "user1_webhook@vitaltrack.io",
+        "password": "Password123!",
+        "name": "Utilisateur 1 Webhook"
+    })
+    token1 = res1.json()["access_token"]
+    u1_id = res1.json()["user"]["id"]
+
+    res2 = client.post("/api/auth/register", json={
+        "email": "user2_webhook@vitaltrack.io",
+        "password": "Password123!",
+        "name": "Utilisateur 2 Webhook"
+    })
+    token2 = res2.json()["access_token"]
+    u2_id = res2.json()["user"]["id"]
+
+    # Associer un appareil avec token spécifique pour User 1 (Health Connect)
+    client.post("/api/devices/connect", json={
+        "device_id": "health_connect",
+        "name": "Health Connect de User 1",
+        "device_type": "mobile_aggregator",
+        "auth_type": "webhook",
+        "api_key": "secret_token_user_1",
+        "connected": True
+    }, headers={"Authorization": f"Bearer {token1}"})
+
+    # Associer un appareil avec token spécifique pour User 2 (RingConn)
+    client.post("/api/devices/connect", json={
+        "device_id": "ringconn",
+        "name": "RingConn de User 2",
+        "device_type": "ring",
+        "auth_type": "webhook",
+        "api_key": "secret_token_user_2",
+        "connected": True
+    }, headers={"Authorization": f"Bearer {token2}"})
+
+    # 1. Envoi sans token -> Doit échouer en 401
+    bad_req = client.post("/api/webhook/health", json={"weight_kg": 75.0, "steps": 8000})
+    assert bad_req.status_code == 401
+
+    # 2. Envoi avec un token inconnu -> Doit échouer en 401
+    unknown_req = client.post("/api/webhook/health?token=token_inexistant", json={"weight_kg": 75.0, "steps": 8000})
+    assert unknown_req.status_code == 401
+
+    # 3. Envoi d'une pesée (71.2 kg) et activité (9500 pas) via le token de User 1
+    resp1 = client.post("/api/webhook/health?token=secret_token_user_1", json={
+        "date": "2026-10-22",
+        "source": "health_connect",
+        "weight_kg": 71.2,
+        "steps": 9500,
+        "active_calories_kcal": 420.0
+    })
+    assert resp1.status_code == 200
+    assert resp1.json()["user_id"] == u1_id
+
+    # 4. Envoi d'une pesée (84.6 kg) et activité (12500 pas) via le token de User 2
+    resp2 = client.post("/api/webhooks/ringconn?token=secret_token_user_2", json={
+        "date": "2026-10-22",
+        "source": "ringconn",
+        "weight_kg": 84.6,
+        "steps": 12500,
+        "active_calories_kcal": 580.0
+    })
+    assert resp2.status_code == 200
+    assert resp2.json()["user_id"] == u2_id
+
+    # 5. Vérifier l'isolation stricte des données
+    weights_u1 = client.get("/api/weights", headers={"Authorization": f"Bearer {token1}"}).json()
+    weights_u2 = client.get("/api/weights", headers={"Authorization": f"Bearer {token2}"}).json()
+
+    assert any(w["weight_kg"] == 71.2 for w in weights_u1)
+    assert not any(w["weight_kg"] == 84.6 for w in weights_u1)
+
+    assert any(w["weight_kg"] == 84.6 for w in weights_u2)
+    assert not any(w["weight_kg"] == 71.2 for w in weights_u2)
+
+    acts_u1 = client.get("/api/activities", headers={"Authorization": f"Bearer {token1}"}).json()
+    acts_u2 = client.get("/api/activities", headers={"Authorization": f"Bearer {token2}"}).json()
+
+    assert any(a["steps"] == 9500 for a in acts_u1)
+    assert not any(a["steps"] == 12500 for a in acts_u1)
+
+    assert any(a["steps"] == 12500 for a in acts_u2)
+    assert not any(a["steps"] == 9500 for a in acts_u2)
+
+
+def test_daily_sync_multiuser_iteration(isolated_app):
+    """Vérifie que daily_sync itère sur chaque utilisateur et synchronise avec ses identifiants propres."""
+    from src.daily_sync import run_daily_sync
+    client, test_db = isolated_app
+
+    # Inscription de User A et User B
+    res_a = client.post("/api/auth/register", json={
+        "email": "userA_sync@vitaltrack.io",
+        "password": "Password123!",
+        "name": "User A Sync"
+    })
+    token_a = res_a.json()["access_token"]
+    u_a_id = res_a.json()["user"]["id"]
+
+    res_b = client.post("/api/auth/register", json={
+        "email": "userB_sync@vitaltrack.io",
+        "password": "Password123!",
+        "name": "User B Sync"
+    })
+    token_b = res_b.json()["access_token"]
+    u_b_id = res_b.json()["user"]["id"]
+
+    # Connecter Withings pour User A avec un mock_payload
+    mock_withings_payload = {
+        "body": {
+            "measuregrps": [
+                {
+                    "date": 1792656000,
+                    "measures": [
+                        {"value": 73200, "unit": -3, "type": 1},
+                        {"value": 17800, "unit": -3, "type": 6}
+                    ]
+                }
+            ]
+        }
+    }
+    test_db.update_user_device(
+        device_id="withings",
+        name="Withings de A",
+        device_type="scale",
+        connected=True,
+        is_active=True,
+        credentials={"client_id": "test_cid_a", "access_token": "test_tok_a", "mock_payload": mock_withings_payload},
+        user_id=u_a_id
+    )
+
+    # Connecter Oura pour User B avec des mock_payloads
+    mock_oura_payloads = {
+        "activity": [{"day": "2026-10-22", "steps": 10500, "active_calories": 500, "total_calories": 2300}],
+        "readiness": [{"day": "2026-10-22", "contributors": {"resting_heart_rate": 58}}],
+        "sleep": []
+    }
+    test_db.update_user_device(
+        device_id="oura",
+        name="Oura de B",
+        device_type="ring",
+        connected=True,
+        is_active=True,
+        credentials={"personal_access_token": "test_oura_tok_b", "mock_payloads": mock_oura_payloads},
+        user_id=u_b_id
+    )
+
+    # Exécution de la synchronisation journalière sur la base de test isolée
+    run_daily_sync(db=test_db)
+
+    # Vérification que l'appareil de A a synchronisé pour user A
+    weights_a = client.get("/api/weights", headers={"Authorization": f"Bearer {token_a}"}).json()
+    assert len(weights_a) > 0
+
+    # Vérification que l'appareil de B a synchronisé pour user B
+    acts_b = client.get("/api/activities", headers={"Authorization": f"Bearer {token_b}"}).json()
+    assert len(acts_b) > 0
+
+
+def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch):
+    """Vérifie la sécurité fail-closed (503 en prod sans WEBHOOK_SECRET) et le rejet des tokens sans utilisateur lié."""
+    client, test_db = isolated_app
+
+    # Inscription d'un utilisateur
+    res = client.post("/api/auth/register", json={
+        "email": "failclosed@vitaltrack.io",
+        "password": "Password123!",
+        "name": "Fail Closed User"
+    })
+    token_auth = res.json()["access_token"]
+    user_id = res.json()["user"]["id"]
+
+    sample_payload = {
+        "date": "2026-10-25",
+        "weight_kg": 76.5,
+        "steps": 10000
+    }
+
+    # 1. En environnement VERCEL=1 ou ENV=production, si WEBHOOK_SECRET est absent, rejet HTTP 503
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+
+    res_prod_no_secret = client.post(
+        "/api/webhook/health",
+        json=sample_payload,
+        headers={"X-Webhook-Token": "some_random_token"}
+    )
+    assert res_prod_no_secret.status_code == 503
+    assert "non configuré en production" in res_prod_no_secret.json()["detail"]
+
+    # Même chose avec ENV=production
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setenv("ENV", "production")
+    res_prod_no_secret2 = client.post(
+        "/api/webhook/health",
+        json=sample_payload,
+        headers={"X-Webhook-Token": "some_random_token"}
+    )
+    assert res_prod_no_secret2.status_code == 503
+
+    # 2. Hors production sans WEBHOOK_SECRET : un token inconnu doit être rejeté en 401 (aucun fallback silencieux sur user_id=1)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+
+    res_unknown_token = client.post(
+        "/api/webhook/health",
+        json=sample_payload,
+        headers={"X-Webhook-Token": "vitaltrack_secure_webhook_key_sample"}
+    )
+    assert res_unknown_token.status_code == 401
+    assert "aucun compte utilisateur ou appareil associé" in res_unknown_token.json()["detail"]
+
+    # 3. Avec WEBHOOK_SECRET configuré et user_id explicite dans le payload
+    monkeypatch.setenv("WEBHOOK_SECRET", "super_secret_webhook_admin")
+    res_with_global_secret = client.post(
+        "/api/webhook/health",
+        json={**sample_payload, "user_id": user_id},
+        headers={"X-Webhook-Token": "super_secret_webhook_admin"}
+    )
+    assert res_with_global_secret.status_code == 200
+    assert res_with_global_secret.json()["user_id"] == user_id
+
+    # Vérifier que les poids ont bien été ingérés pour cet utilisateur
+    weights = client.get("/api/weights", headers={"Authorization": f"Bearer {token_auth}"}).json()
+    assert any(w["weight_kg"] == 76.5 for w in weights)
+

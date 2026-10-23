@@ -932,6 +932,14 @@ class Database:
             row = cursor.fetchone()
             return dict(row) if row else None
 
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Récupère la liste de tous les utilisateurs enregistrés."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users ORDER BY id ASC")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
     # ---------------------------------------------------------
     # Tendance et Pesées Multi-Utilisateurs
     # ---------------------------------------------------------
@@ -2305,33 +2313,69 @@ class Database:
             row = cursor.fetchone()
         return self._format_device_row(row, reveal_secrets=reveal_secrets)
 
-    def find_user_device_by_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Recherche et resout dynamiquement un appareil et son user_id par token / api_key."""
+    def find_user_by_device_token(self, token: str, device_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Identifie l'utilisateur et l'appareil associés à un token ou webhook secret dans user_devices."""
         if not token or not str(token).strip():
             return None
         token_clean = str(token).strip()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # 1. Verification directe sur api_key en clair
-            cursor.execute("SELECT * FROM user_devices WHERE api_key = ? LIMIT 1", (token_clean,))
+            # 1. Vérification directe sur api_key en clair (si renseignée)
+            if device_id:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND api_key = ? LIMIT 1", (device_id, token_clean))
+            else:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND api_key = ? LIMIT 1", (token_clean,))
             row = cursor.fetchone()
             if row:
-                return self._format_device_row(row, reveal_secrets=True)
+                formatted = self._format_device_row(row, reveal_secrets=True)
+                user_id = row["user_id"] if isinstance(row, dict) else row[1]
+                user = self.get_user_by_id(int(user_id))
+                return {
+                    "user_id": int(user_id),
+                    "user": user,
+                    "device": formatted
+                }
 
-            # 2. Verification dans les credentials chiffres de chaque device
-            cursor.execute("SELECT * FROM user_devices WHERE encrypted_credentials IS NOT NULL")
+            # 2. Vérification dans les credentials chiffrés de chaque device
+            if device_id:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND encrypted_credentials IS NOT NULL", (device_id,))
+            else:
+                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND encrypted_credentials IS NOT NULL")
             rows = cursor.fetchall()
 
         for r in rows:
-            dev = self._format_device_row(r, reveal_secrets=True)
-            if not dev:
+            formatted = self._format_device_row(r, reveal_secrets=True)
+            if not formatted:
                 continue
-            creds = dev.get("credentials") or {}
-            for key_field in ("api_key", "token", "webhook_secret", "webhook_token"):
-                val = creds.get(key_field)
+            creds = formatted.get("credentials") or {}
+            # Vérifier api_key, webhook_secret, token, bearer_token ou webhook_token
+            matched = False
+            for key in ["api_key", "webhook_secret", "token", "bearer_token", "webhook_token"]:
+                val = creds.get(key)
                 if val and str(val).strip() == token_clean:
-                    return dev
+                    matched = True
+                    break
+
+            if matched:
+                user_id = r["user_id"] if isinstance(r, dict) else r[1]
+                user = self.get_user_by_id(int(user_id))
+                return {
+                    "user_id": int(user_id),
+                    "user": user,
+                    "device": formatted
+                }
+
+        return None
+
+    def find_user_device_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Compatibilité Lot 1.1 : renvoie le dict de l'appareil (avec user_id inclus)."""
+        res = self.find_user_by_device_token(token)
+        if res and res.get("device"):
+            dev = dict(res["device"])
+            dev["user_id"] = res["user_id"]
+            return dev
+        return None
 
         return None
 

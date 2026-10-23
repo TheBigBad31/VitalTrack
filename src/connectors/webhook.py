@@ -8,6 +8,7 @@ Permet d'ingérer instantanément les données en provenance de :
 Valide et convertit le payload JSON universel vers WeightEntry et ActivityEntry.
 """
 
+import hmac
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -23,13 +24,13 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
         return True
 
     def authenticate_request(self, token: Optional[str]) -> bool:
-        """Vérifie strictement le token secret d'authentification s'il est configuré."""
+        """Vérifie strictement le token secret d'authentification en temps constant."""
         if not token or not str(token).strip():
             return False
         secret = self.config.get("webhook_secret")
         if not secret:
             return False
-        return str(token).strip() == str(secret).strip()
+        return hmac.compare_digest(str(token).strip(), str(secret).strip())
 
     def process_webhook_payload(
         self, payload: Dict[str, Any]

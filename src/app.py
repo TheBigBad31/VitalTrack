@@ -15,6 +15,7 @@ Endpoints :
 - GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
 """
 
+import hmac
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -1798,54 +1799,82 @@ def handle_health_webhook(
         )
 
     # 2. Validation du token et résolution dynamique device / user
-    matched_device = db.find_user_device_by_token(auth_token)
-    user_id = 1
-    device_id = None
-    device_name = None
-    device_type = None
+    user_match = db.find_user_by_device_token(auth_token)
+    resolved_user_id = None
+    matched_device = None
 
-    if matched_device:
-        user_id = matched_device.get("user_id") or 1
-        device_id = matched_device.get("device_id")
-        device_name = matched_device.get("name")
-        device_type = matched_device.get("device_type")
+    if user_match:
+        resolved_user_id = user_match.get("user_id")
+        matched_device = user_match.get("device")
     else:
-        # Fallback de validation via connecteur universel configuré
-        connector = MobileHealthWebhookConnector()
-        if not connector.authenticate_request(auth_token):
-            raise HTTPException(status_code=401, detail="Token webhook invalide ou non autorisé")
+        # Fallback de validation via connecteur universel configuré ou WEBHOOK_SECRET global
+        # Comportement fail-closed strict :
+        # - En environnement de production (VERCEL=1 ou ENV=production), si WEBHOOK_SECRET est absent -> HTTP 503
+        is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
+        global_secret = os.getenv("WEBHOOK_SECRET")
 
+        if not global_secret:
+            if is_production:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Service Webhook non configuré en production (secret absent)"
+                )
+        else:
+            if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
+                # Si le payload spécifie explicitement un user_id valide, on l'utilise, sinon vérification du compte 1
+                target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
+                if target_user_id:
+                    user_obj = db.get_user_by_id(int(target_user_id))
+                    if user_obj:
+                        resolved_user_id = int(target_user_id)
+                else:
+                    default_user = db.get_user_by_id(1)
+                    if default_user:
+                        resolved_user_id = 1
+
+    if not resolved_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Token webhook invalide ou non autorisé : aucun compte utilisateur ou appareil associé"
+        )
+
+    # 3. Extraction et validation des données de pesée / activité
     connector = MobileHealthWebhookConnector()
     weight_entry, act_entry = connector.process_webhook_payload(payload)
     saved_weight = None
     saved_act = None
 
     if weight_entry:
-        saved_weight = db.insert_weight(weight_entry, user_id=user_id).model_dump()
+        saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
     if act_entry:
-        saved_act = db.insert_activity(act_entry, user_id=user_id).model_dump()
+        saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
 
-    # 3. Mettre à jour l'état de l'appareil associé
+    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu
     source_name = payload.get("source", "health_connect")
-    if not device_id:
-        device_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
-        device_name = device_id.replace("_", " ").title()
-        device_type = "ring" if device_id == "ringconn" else ("scale" if device_id == "withings" else "mobile_aggregator")
+    dev_id = matched_device.get("device_id") if matched_device else (
+        "ringconn" if "ring" in source_name.lower() else (
+            "withings" if "withings" in source_name.lower() else "health_connect"
+        )
+    )
+    dev_name = matched_device.get("name") if matched_device else dev_id.replace("_", " ").title()
+    dev_type = matched_device.get("device_type") if matched_device else (
+        "ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator")
+    )
 
     db.update_user_device(
-        device_id=device_id,
-        name=device_name or device_id.replace("_", " ").title(),
-        device_type=device_type or "mobile_aggregator",
+        device_id=dev_id,
+        name=dev_name,
+        device_type=dev_type,
         connected=True,
         auth_type="webhook",
-        user_id=user_id
+        user_id=resolved_user_id
     )
 
     return {
         "status": "success",
-        "message": "Données de santé webhook ingérées avec succès",
-        "device_id": device_id,
-        "user_id": user_id,
+        "message": f"Données de santé webhook ingérées avec succès pour l'utilisateur {resolved_user_id}",
+        "device_id": dev_id,
+        "user_id": resolved_user_id,
         "ingested": {
             "weight": saved_weight,
             "activity": saved_act
