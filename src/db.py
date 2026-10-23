@@ -2305,6 +2305,36 @@ class Database:
             row = cursor.fetchone()
         return self._format_device_row(row, reveal_secrets=reveal_secrets)
 
+    def find_user_device_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Recherche et resout dynamiquement un appareil et son user_id par token / api_key."""
+        if not token or not str(token).strip():
+            return None
+        token_clean = str(token).strip()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Verification directe sur api_key en clair
+            cursor.execute("SELECT * FROM user_devices WHERE api_key = ? LIMIT 1", (token_clean,))
+            row = cursor.fetchone()
+            if row:
+                return self._format_device_row(row, reveal_secrets=True)
+
+            # 2. Verification dans les credentials chiffres de chaque device
+            cursor.execute("SELECT * FROM user_devices WHERE encrypted_credentials IS NOT NULL")
+            rows = cursor.fetchall()
+
+        for r in rows:
+            dev = self._format_device_row(r, reveal_secrets=True)
+            if not dev:
+                continue
+            creds = dev.get("credentials") or {}
+            for key_field in ("api_key", "token", "webhook_secret", "webhook_token"):
+                val = creds.get(key_field)
+                if val and str(val).strip() == token_clean:
+                    return dev
+
+        return None
+
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
         with self.get_connection() as conn:

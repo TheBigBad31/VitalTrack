@@ -478,7 +478,7 @@ def test_reset_demo_data(client):
 
 
 def test_health_webhook_endpoints(client):
-    """Vérifie la réception de pesées et d'activités via les endpoints webhooks."""
+    """Vérifie la réception sécurisée de pesées et d'activités via les endpoints webhooks."""
     webhook_payload = {
         "date": "2026-10-17",
         "source": "ringconn_gen3",
@@ -490,14 +490,63 @@ def test_health_webhook_endpoints(client):
         "hrv_ms": 64.0,
         "sleep_score": 89
     }
-    res = client.post("/api/webhooks/ringconn", json=webhook_payload)
-    assert res.status_code == 200
-    data = res.json()
+
+    # 1. Rejet strict si token manquant (401)
+    res_no_token = client.post("/api/webhooks/ringconn", json=webhook_payload)
+    assert res_no_token.status_code == 401
+    assert "Jeton d'authentification manquant" in res_no_token.json()["detail"]
+
+    # 2. Rejet si token invalide (401)
+    res_bad_token = client.post("/api/webhooks/ringconn?token=token_invalide_xyz", json=webhook_payload)
+    assert res_bad_token.status_code == 401
+
+    # 3. Enregistrement d'un device lié à un utilisateur spécifique avec token
+    app_module.db.update_user_device(
+        device_id="ringconn_seb",
+        name="RingConn Sébastien",
+        device_type="ring",
+        connected=True,
+        auth_type="webhook",
+        api_key="secret_ring_token_456",
+        user_id=2
+    )
+
+    # 4. Succès avec header X-Webhook-Token et vérification de la liaison device/user
+    res_header = client.post(
+        "/api/webhooks/ringconn",
+        json=webhook_payload,
+        headers={"X-Webhook-Token": "secret_ring_token_456"}
+    )
+    assert res_header.status_code == 200
+    data = res_header.json()
     assert data["status"] == "success"
+    assert data["device_id"] == "ringconn_seb"
+    assert data["user_id"] == 2
     assert data["ingested"]["weight"] is not None
     assert data["ingested"]["weight"]["weight_kg"] == 78.9
     assert data["ingested"]["activity"] is not None
     assert data["ingested"]["activity"]["steps"] == 14200
+
+    # 5. Succès également via Header Authorization Bearer
+    res_auth = client.post(
+        "/api/webhooks/ringconn",
+        json=webhook_payload,
+        headers={"Authorization": "Bearer secret_ring_token_456"}
+    )
+    assert res_auth.status_code == 200
+
+    # 6. Succès également via query param token
+    res_query = client.post(
+        "/api/webhooks/ringconn?token=secret_ring_token_456",
+        json=webhook_payload
+    )
+    assert res_query.status_code == 200
+
+    # 7. Succès via payload token
+    payload_with_token = dict(webhook_payload)
+    payload_with_token["token"] = "secret_ring_token_456"
+    res_payload = client.post("/api/webhooks/ringconn", json=payload_with_token)
+    assert res_payload.status_code == 200
 
 
 def test_daily_sync_execution():
