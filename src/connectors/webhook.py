@@ -23,11 +23,13 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
         return True
 
     def authenticate_request(self, token: Optional[str]) -> bool:
-        """Vérifie le token secret d'authentification s'il est configuré."""
+        """Vérifie strictement le token secret d'authentification s'il est configuré."""
+        if not token or not str(token).strip():
+            return False
         secret = self.config.get("webhook_secret")
         if not secret:
-            return True
-        return token == secret
+            return False
+        return str(token).strip() == str(secret).strip()
 
     def process_webhook_payload(
         self, payload: Dict[str, Any]

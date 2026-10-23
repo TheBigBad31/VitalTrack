@@ -1757,35 +1757,95 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 @app.post("/api/webhook/health")
 @app.post("/api/webhooks/health-connect")
 @app.post("/api/webhooks/ringconn")
-def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(None)):
-    """Point d'entrée universel pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn)."""
-    connector = MobileHealthWebhookConnector()
-    if token and not connector.authenticate_request(token):
-        raise HTTPException(status_code=401, detail="Token webhook invalide")
+def handle_health_webhook(
+    payload: Dict[str, Any],
+    token: Optional[str] = Query(None),
+    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
+    authorization: Optional[str] = Header(None)
+):
+    """Point d'entrée universel et sécurisé pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn).
+    
+    Exige obligatoirement un token d'authentification valide fourni via :
+    - Header 'X-Webhook-Token'
+    - Header 'Authorization' (Bearer <token> ou token direct)
+    - Query parameter '?token=...'
+    - Payload JSON champ 'token', 'webhook_token' ou 'api_key'
+    """
+    # 1. Extraction du jeton (Headers prioritaires, puis Query, puis Payload)
+    auth_token = None
+    if x_webhook_token and str(x_webhook_token).strip():
+        auth_token = str(x_webhook_token).strip()
+    elif authorization and str(authorization).strip():
+        auth_str = str(authorization).strip()
+        if auth_str.lower().startswith("bearer "):
+            auth_token = auth_str[7:].strip()
+        else:
+            auth_token = auth_str
+    elif token and str(token).strip():
+        auth_token = str(token).strip()
+    elif isinstance(payload, dict):
+        for candidate_key in ("token", "webhook_token", "api_key"):
+            cand = payload.get(candidate_key)
+            if cand and str(cand).strip():
+                auth_token = str(cand).strip()
+                break
 
+    # Rendre le jeton obligatoire
+    if not auth_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Jeton d'authentification manquant. Fournissez un token via header 'X-Webhook-Token', 'Authorization' ou query param 'token'."
+        )
+
+    # 2. Validation du token et résolution dynamique device / user
+    matched_device = db.find_user_device_by_token(auth_token)
+    user_id = 1
+    device_id = None
+    device_name = None
+    device_type = None
+
+    if matched_device:
+        user_id = matched_device.get("user_id") or 1
+        device_id = matched_device.get("device_id")
+        device_name = matched_device.get("name")
+        device_type = matched_device.get("device_type")
+    else:
+        # Fallback de validation via connecteur universel configuré
+        connector = MobileHealthWebhookConnector()
+        if not connector.authenticate_request(auth_token):
+            raise HTTPException(status_code=401, detail="Token webhook invalide ou non autorisé")
+
+    connector = MobileHealthWebhookConnector()
     weight_entry, act_entry = connector.process_webhook_payload(payload)
     saved_weight = None
     saved_act = None
 
     if weight_entry:
-        saved_weight = db.insert_weight(weight_entry).model_dump()
+        saved_weight = db.insert_weight(weight_entry, user_id=user_id).model_dump()
     if act_entry:
-        saved_act = db.insert_activity(act_entry).model_dump()
+        saved_act = db.insert_activity(act_entry, user_id=user_id).model_dump()
 
-    # Mettre à jour l'état de l'appareil associé
+    # 3. Mettre à jour l'état de l'appareil associé
     source_name = payload.get("source", "health_connect")
-    dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+    if not device_id:
+        device_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
+        device_name = device_id.replace("_", " ").title()
+        device_type = "ring" if device_id == "ringconn" else ("scale" if device_id == "withings" else "mobile_aggregator")
+
     db.update_user_device(
-        device_id=dev_id,
-        name=dev_id.replace("_", " ").title(),
-        device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),
+        device_id=device_id,
+        name=device_name or device_id.replace("_", " ").title(),
+        device_type=device_type or "mobile_aggregator",
         connected=True,
-        auth_type="webhook"
+        auth_type="webhook",
+        user_id=user_id
     )
 
     return {
         "status": "success",
         "message": "Données de santé webhook ingérées avec succès",
+        "device_id": device_id,
+        "user_id": user_id,
         "ingested": {
             "weight": saved_weight,
             "activity": saved_act
