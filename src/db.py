@@ -2068,6 +2068,92 @@ class Database:
             ))
             conn.commit()
 
+
+    def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
+        """Synchronise un meal_log avec la table meals pour alimenter l'historique et les calories journalières."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
+            ml = cursor.fetchone()
+            if not ml:
+                return
+
+            date_str = ml["date"][:10]
+            meal_type = ml["meal_type"]
+            total_cals = round(float(ml["total_calories"] or 0.0), 1)
+            total_prot = round(float(ml["total_protein_g"] or 0.0), 1)
+            total_carbs = round(float(ml["total_carbs_g"] or 0.0), 1)
+            total_fat = round(float(ml["total_fat_g"] or 0.0), 1)
+            total_fiber = round(float(ml["total_fiber_g"] or 0.0), 1)
+
+            # Charger les items
+            cursor.execute("""
+                SELECT name, quantity, unit, calories, protein_g, carbs_g, fat_g, fiber_g
+                FROM meal_log_items
+                WHERE meal_log_id = ?
+            """, (meal_log_id,))
+            items_rows = cursor.fetchall()
+            items_list = [
+                {
+                    "name": r["name"],
+                    "portion_g": float(r["quantity"]) if r["unit"] == "g" else 100.0,
+                    "calories_kcal": float(r["calories"] or 0.0),
+                    "protein_g": float(r["protein_g"] or 0.0),
+                    "carbs_g": float(r["carbs_g"] or 0.0),
+                    "fat_g": float(r["fat_g"] or 0.0),
+                    "fiber_g": float(r["fiber_g"] or 0.0),
+                    "confidence_score": 1.0
+                }
+                for r in items_rows
+            ]
+            items_json = json.dumps(items_list)
+
+            # Chercher dans meals si une entrée existe déjà
+            cursor.execute("""
+                SELECT id FROM meals
+                WHERE user_id = ? AND date = ? AND meal_type = ?
+                ORDER BY id DESC LIMIT 1
+            """, (user_id, date_str, meal_type))
+            existing = cursor.fetchone()
+
+            if total_cals > 0:
+                if existing:
+                    cursor.execute("""
+                        UPDATE meals
+                        SET total_calories_kcal = ?, protein_g = ?, carbs_g = ?,
+                            fat_g = ?, fiber_g = ?, items_json = ?
+                        WHERE id = ?
+                    """, (total_cals, total_prot, total_carbs, total_fat, total_fiber, items_json, existing["id"]))
+                else:
+                    cursor.execute("""
+                        INSERT INTO meals (
+                            user_id, date, meal_type, total_calories_kcal,
+                            protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_id, date_str, meal_type, total_cals,
+                        total_prot, total_carbs, total_fat, total_fiber,
+                        None, items_json, now_str
+                    ))
+            else:
+                if existing:
+                    cursor.execute("DELETE FROM meals WHERE id = ?", (existing["id"],))
+            conn.commit()
+
+    def sync_all_meal_logs_to_meals(self, user_id: Optional[int] = None):
+        """Synchronise l'ensemble des meal_logs existants vers la table meals."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id:
+                cursor.execute("SELECT id, user_id FROM meal_logs WHERE user_id = ?", (user_id,))
+            else:
+                cursor.execute("SELECT id, user_id FROM meal_logs")
+            rows = cursor.fetchall()
+        for r in rows:
+            self._sync_meal_log_to_meals(r["id"], user_id=r["user_id"])
+
     def _get_meal_log_by_id(self, meal_log_id: int, user_id: int = 1) -> MealLog:
         """Récupère un MealLog complet par son ID."""
         with self.get_connection() as conn:

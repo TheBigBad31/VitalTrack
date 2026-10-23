@@ -218,3 +218,41 @@ def test_meal_journal_multi_user_isolation(journal_setup):
     alice_item_id = alice_bfast["items"][0]["id"]
     res_bad_del = client.delete(f"/api/meals/journal/items/{alice_item_id}", headers=headers2)
     assert res_bad_del.status_code == 404
+
+
+def test_meal_journal_sync_with_meals_and_dashboard(journal_setup):
+    """Vérifie que les repas du journal quotidien synchronisent automatiquement la table meals et le dashboard."""
+    client = journal_setup["client"]
+    token1 = journal_setup["token1"]
+    headers = {"Authorization": f"Bearer {token1}"}
+    today_str = date.today().isoformat()
+
+    # 1. Ajout d'un aliment au déjeuner
+    res_add = client.post("/api/meals/journal/lunch/items", json={
+        "date": today_str,
+        "name": "Tartine Avocat & Oeuf",
+        "quantity": 1.0,
+        "unit": "portion",
+        "calories": 350.0,
+        "protein_g": 14.0,
+        "carbs_g": 25.0,
+        "fat_g": 18.0,
+        "fiber_g": 6.0
+    }, headers=headers)
+    assert res_add.status_code == 200
+
+    # 2. Vérification que le dashboard a synchronisé le repas et les calories journalières
+    res_dash = client.get("/api/dashboard", headers=headers)
+    assert res_dash.status_code == 200
+    dash_data = res_dash.json()
+
+    recent_meals = dash_data["recent_meals"]
+    lunch_meal = next((m for m in recent_meals if m["date"] == today_str and m["meal_type"] == "lunch"), None)
+    assert lunch_meal is not None
+    assert lunch_meal["total_calories_kcal"] == 350.0
+    assert lunch_meal["protein_g"] == 14.0
+
+    # Vérification que le dictionnaire 7j contient les calories du déjeuner
+    assert today_str in dash_data["meals_by_day_7d"]
+    assert dash_data["meals_by_day_7d"][today_str]["lunch"] == 350.0
+    assert dash_data["meals_by_day_7d"][today_str]["total"] >= 350.0

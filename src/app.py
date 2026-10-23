@@ -347,6 +347,7 @@ def health_check():
 def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
     user_id = current_user.id
+    db.sync_all_meal_logs_to_meals(user_id=user_id)
     weights = db.get_weights(limit=30, user_id=user_id)
     activities = db.get_activities(limit=30, user_id=user_id)
     meals = db.get_meals(limit=60, user_id=user_id)

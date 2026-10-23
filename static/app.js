@@ -285,40 +285,35 @@ function renderCatalogItems() {
 
   container.innerHTML = itemsToRender.map(item => {
     const isDish = item.item_type === 'dish';
+    // Remplacement du texte par un code couleur + icône intuitive (assiette Plat / pomme Aliment)
     const typeBadge = isDish
-      ? '<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Plat</span>'
-      : '<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Aliment</span>';
+      ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
+      : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
 
-    const unitLabel = `${item.default_quantity} ${item.default_unit}`;
+    const unitLabel = `${item.default_quantity}${item.default_unit || 'g'}`;
     const p = Math.round((item.protein_per_unit_g || 0) * 10) / 10;
     const g = Math.round((item.carbs_per_unit_g || 0) * 10) / 10;
     const l = Math.round((item.fat_per_unit_g || 0) * 10) / 10;
     const cal = Math.round(item.calories_per_unit);
 
-    // Badges de bienfaits santé (Stage 13)
+    // Badges de bienfaits santé : uniquement les icônes compactes avec tooltips
     const benefitsList = item.benefits || [];
     const benefitsHtml = benefitsList.length > 0 ? `
-      <div class="flex flex-wrap gap-1 pt-1">
-        ${benefitsList.slice(0, 3).map(b => `
+      <div class="flex flex-wrap items-center gap-1 pt-0.5">
+        ${benefitsList.map(b => `
           <span 
-            class="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-md font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 cursor-help"
-            title="${b.title || ''} : ${b.explanation || b.description || ''}"
+            class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-xs cursor-help hover:scale-110 hover:bg-emerald-500/25 transition-all shadow-sm"
+            title="${b.title || b.benefit_id}${b.explanation ? ' : ' + b.explanation : ''}"
           >
-            <span>${b.icon || '🛡️'}</span>
-            <span class="truncate max-w-[110px]">${b.title || b.benefit_id}</span>
+            ${b.icon || '🛡️'}
           </span>
         `).join('')}
-        ${benefitsList.length > 3 ? `
-          <span class="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-slate-800 text-slate-400 border border-slate-700">
-            +${benefitsList.length - 3}
-          </span>
-        ` : ''}
       </div>
     ` : '';
 
     return `
       <div 
-        class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-emerald-500/60 rounded-xl p-3.5 flex flex-col justify-between space-y-2.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-emerald-500/5 select-none group"
+        class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-emerald-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-emerald-500/5 select-none group"
         draggable="true"
         ondragstart="handleCatalogDragStart(event, '${item.id}')"
         ondragend="handleCatalogDragEnd(event)"
@@ -326,46 +321,39 @@ function renderCatalogItems() {
         title="Glisser vers un repas ou double-cliquer pour ajouter"
         ondblclick="promptAddToMeal('${item.id}')"
       >
-        <div class="flex items-start justify-between gap-2">
-          <div class="flex items-start space-x-2.5 flex-1 min-w-0">
-            <div class="mt-0.5 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0">
-              <i data-lucide="grip-vertical" class="w-4 h-4"></i>
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center space-x-1.5 min-w-0 flex-1">
+            <div class="text-slate-500 group-hover:text-emerald-400 shrink-0 cursor-grab active:cursor-grabbing">
+              <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
             </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5 mb-1">
-                ${typeBadge}
-                <span class="text-[10px] text-slate-400 font-medium">Réf: ${unitLabel}</span>
-              </div>
-              <h4 class="font-bold text-xs sm:text-sm text-white truncate">${item.name}</h4>
-            </div>
+            ${typeBadge}
+            <h4 class="font-bold text-xs text-white truncate" title="${item.name}">${item.name}</h4>
           </div>
           <div class="text-right shrink-0">
-            <span class="text-sm sm:text-base font-extrabold text-white">${cal}</span>
-            <span class="text-[10px] text-slate-400">kcal</span>
+            <span class="text-xs font-black text-amber-400">${cal}</span>
+            <span class="text-[9px] text-slate-400">kcal</span>
           </div>
         </div>
 
         ${item.photo_url ? `
-          <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-20 bg-[#151D2A]">
+          <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-14 bg-[#151D2A]">
             <img src="${item.photo_url}" alt="${item.name}" class="w-full h-full object-cover pointer-events-none">
           </div>
         ` : ''}
 
-        <div class="grid grid-cols-3 gap-1 py-1.5 px-2 bg-[#151D2A] rounded-lg text-center text-[10px] text-slate-300">
-          <div><span class="text-slate-500 font-medium">P:</span> <strong class="text-emerald-400">${p}g</strong></div>
-          <div><span class="text-slate-500 font-medium">G:</span> <strong class="text-sky-400">${g}g</strong></div>
-          <div><span class="text-slate-500 font-medium">L:</span> <strong class="text-amber-400">${l}g</strong></div>
+        <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-[#151D2A] rounded-lg">
+          <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
+          <span class="shrink-0 space-x-1.5">
+            <span class="text-emerald-400 font-semibold">P:${p}g</span>
+            <span class="text-sky-400 font-semibold">G:${g}g</span>
+            <span class="text-amber-400 font-semibold">L:${l}g</span>
+          </span>
         </div>
 
         ${isDish && item.recipe_items && item.recipe_items.length > 0 ? `
-          <div class="px-2.5 py-1.5 bg-[#151D2A]/80 rounded-xl border border-indigo-500/20 text-[10px] text-slate-400 space-y-0.5">
-            <div class="text-indigo-300 font-bold flex items-center space-x-1">
-              <span>🥗</span>
-              <span>Ingrédients (${item.recipe_items.length}) :</span>
-            </div>
-            <div class="text-slate-300 font-medium truncate" title="${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}">
-              ${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}
-            </div>
+          <div class="px-2 py-0.5 bg-[#151D2A]/80 rounded-lg border border-indigo-500/20 text-[10px] text-slate-400 truncate" title="${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}">
+            <span class="text-indigo-300 font-bold">🥗 ${item.recipe_items.length} ingr. :</span>
+            <span class="text-slate-300 font-medium">${item.recipe_items.map(ing => ing.name).join(', ')}</span>
           </div>
         ` : ''}
 
@@ -376,18 +364,18 @@ function renderCatalogItems() {
             type="button"
             onclick="promptAddToMeal('${item.id}')" 
             title="Ajouter au repas sélectionné"
-            class="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center space-x-1 py-1 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
+            class="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
           >
-            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <i data-lucide="plus" class="w-3 h-3"></i>
             <span>Ajouter</span>
           </button>
           
           <div class="flex items-center gap-1">
-            <button onclick="openEditCatalogItemModal('${item.id}')" title="Modifier l'aliment" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A]">
-              <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+            <button onclick="openEditCatalogItemModal('${item.id}')" title="Modifier" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A]">
+              <i data-lucide="pencil" class="w-3 h-3"></i>
             </button>
-            <button onclick="deleteCatalogItem('${item.id}')" title="Supprimer du catalogue" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <button onclick="deleteCatalogItem('${item.id}')" title="Supprimer" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
             </button>
           </div>
         </div>
@@ -1309,6 +1297,9 @@ async function loadMealsJournal(dateStr) {
     if (res.ok) {
       currentJournalData = await res.json();
       renderMealsJournal();
+      if (typeof loadDashboardData === 'function') {
+        loadDashboardData();
+      }
     }
   } catch (err) {
     console.error("Erreur chargement journal repas:", err);
@@ -1518,12 +1509,11 @@ function renderJournalDayBenefitsSummary(meals) {
 
   container.innerHTML = benefitsList.map(b => `
     <div 
-      class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 transition-all"
-      title="${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
+      class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 hover:scale-105 transition-all"
+      title="${b.title} : ${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
     >
-      <span class="text-sm">${b.icon || '🛡️'}</span>
-      <span class="font-bold text-white">${b.title}</span>
-      <span class="text-[10px] text-emerald-400 font-mono">(${(b.foodNames || []).length} aliment${(b.foodNames || []).length > 1 ? 's' : ''})</span>
+      <span class="text-base">${b.icon || '🛡️'}</span>
+      <span class="text-[10px] font-bold text-emerald-300 font-mono">${(b.foodNames || []).length}</span>
     </div>
   `).join('');
 }
