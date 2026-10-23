@@ -930,6 +930,7 @@ class CatalogItemCreateRequest(BaseModel):
     fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides (g)")
     fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres (g)")
     photo_url: Optional[str] = Field(None, description="Photo ou data URL")
+    recipe_items: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Ingrédients composant le plat")
     benefits: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Bienfaits associés à la création")
 
 
@@ -944,6 +945,7 @@ class CatalogItemUpdateRequest(BaseModel):
     fat_per_unit_g: Optional[float] = None
     fiber_per_unit_g: Optional[float] = None
     photo_url: Optional[str] = None
+    recipe_items: Optional[List[Dict[str, Any]]] = None
 
 
 class MealJournalAddItemRequest(BaseModel):
@@ -999,7 +1001,8 @@ def create_catalog_item(
         carbs_per_unit_g=req.carbs_per_unit_g or 0.0,
         fat_per_unit_g=req.fat_per_unit_g or 0.0,
         fiber_per_unit_g=req.fiber_per_unit_g or 0.0,
-        photo_url=req.photo_url
+        photo_url=req.photo_url,
+        recipe_items=req.recipe_items or []
     )
     created = db.insert_food_item(item, user_id=current_user.id)
     return created.model_dump()

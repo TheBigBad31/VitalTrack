@@ -312,6 +312,7 @@ class Database:
                         fat_per_unit_g REAL NOT NULL DEFAULT 0.0,
                         fiber_per_unit_g REAL DEFAULT 0.0,
                         photo_url TEXT,
+                        recipe_items_json TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -490,6 +491,11 @@ class Database:
                     except Exception:
                         pass
 
+                try:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN IF NOT EXISTS recipe_items_json TEXT;")
+                except Exception:
+                    pass
+
                 # Index optimisés PostgreSQL
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
@@ -617,6 +623,7 @@ class Database:
                         fat_per_unit_g REAL NOT NULL DEFAULT 0.0,
                         fiber_per_unit_g REAL DEFAULT 0.0,
                         photo_url TEXT,
+                        recipe_items_json TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
@@ -780,6 +787,11 @@ class Database:
                         cursor.execute(f"ALTER TABLE user_devices ADD COLUMN {col} {def_val}")
                     except Exception:
                         pass
+
+                try:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN recipe_items_json TEXT")
+                except Exception:
+                    pass
 
                 # Index uniques pour SQLite garantissant ON CONFLICT(user_id, date)
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_weights_user_date ON weights(user_id, date);")
@@ -1556,16 +1568,17 @@ class Database:
                     INSERT INTO food_items (
                         user_id, name, item_type, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, created_at, updated_at
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     RETURNING id, created_at, updated_at;
                 """, (
                     user_id, item.name, item.item_type, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
-                    item.photo_url, now_str, now_str
+                    item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
+                    now_str, now_str
                 ))
                 row = cursor.fetchone()
                 item_id = row["id"]
@@ -1576,15 +1589,16 @@ class Database:
                     INSERT INTO food_items (
                         user_id, name, item_type, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, created_at, updated_at
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user_id, item.name, item.item_type, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
-                    item.photo_url, now_str, now_str
+                    item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
+                    now_str, now_str
                 ))
                 item_id = cursor.lastrowid
                 created_at = now_str
@@ -1643,6 +1657,7 @@ class Database:
                 fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
                 fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
                 photo_url=r.get("photo_url"),
+                recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=self.get_food_item_benefits(r["id"]),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
@@ -1671,6 +1686,7 @@ class Database:
                 fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
                 fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
                 photo_url=r.get("photo_url"),
+                recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=self.get_food_item_benefits(r["id"]),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
@@ -1693,6 +1709,8 @@ class Database:
         fat_per_unit_g = data.get("fat_per_unit_g", existing.fat_per_unit_g)
         fiber_per_unit_g = data.get("fiber_per_unit_g", existing.fiber_per_unit_g)
         photo_url = data.get("photo_url", existing.photo_url)
+        recipe_items = data.get("recipe_items", existing.recipe_items)
+        recipe_items_json = json.dumps(recipe_items) if recipe_items is not None else None
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1700,12 +1718,12 @@ class Database:
                 UPDATE food_items
                 SET name = ?, item_type = ?, default_unit = ?, default_quantity = ?,
                     calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
-                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, updated_at = ?
+                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?, updated_at = ?
                 WHERE id = ? AND user_id = ?
             """, (
                 name, item_type, default_unit, default_quantity,
                 calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                fat_per_unit_g, fiber_per_unit_g, photo_url, now_str,
+                fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, now_str,
                 item_id, user_id
             ))
             conn.commit()
@@ -1713,6 +1731,7 @@ class Database:
         updated = existing.model_copy()
         updated.name = name
         updated.item_type = item_type
+        updated.recipe_items = recipe_items or []
         updated.default_unit = default_unit
         updated.default_quantity = default_quantity
         updated.calories_per_unit = calories_per_unit

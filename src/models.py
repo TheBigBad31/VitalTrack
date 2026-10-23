@@ -144,6 +144,7 @@ class CatalogItem(BaseModel):
     fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides en grammes")
     fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres en grammes")
     photo_url: Optional[str] = Field(None, description="Photo ou image de référence")
+    recipe_items: List[Dict[str, Any]] = Field(default_factory=list, description="Ingrédients composant le plat avec quantités et macros")
     benefits: List[AssociatedBenefit] = Field(default_factory=list, description="Bienfaits associés")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

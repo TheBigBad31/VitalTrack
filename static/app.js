@@ -11,7 +11,27 @@ let catalogItemPhotoBase64 = null;
 let currentNutritionLayoutMode = 'split'; // 'split' (desktop côte à côte), 'journal', 'catalog'
 
 // Bienfaits actifs dans la modale d'édition/création de plat (Stage 13)
-let modalSelectedBenefits = []; // Array of { benefit_id, source, explanation, icon, title }
+let modalSelectedBenefits = [];
+
+// Composition d'ingrédients pour la création/édition de plat (Stage 14 / BALI-35)
+let modalDishIngredients = [];
+
+const RECOMMENDED_STAPLE_INGREDIENTS = [
+  { name: "Pain complet", default_unit: "g", default_quantity: 40.0, calories_per_unit: 99.0, protein_per_unit_g: 3.6, carbs_per_unit_g: 18.0, fat_per_unit_g: 0.8, fiber_per_unit_g: 2.8, emoji: "🍞", label: "Pain complet (1 tranche = 40g)" },
+  { name: "Pain blanc / Baguette", default_unit: "g", default_quantity: 40.0, calories_per_unit: 110.0, protein_per_unit_g: 3.4, carbs_per_unit_g: 22.0, fat_per_unit_g: 0.8, fiber_per_unit_g: 1.2, emoji: "🥖", label: "Pain blanc / Baguette (40g)" },
+  { name: "Beurre doux", default_unit: "g", default_quantity: 10.0, calories_per_unit: 72.0, protein_per_unit_g: 0.1, carbs_per_unit_g: 0.1, fat_per_unit_g: 8.2, fiber_per_unit_g: 0.0, emoji: "🧈", label: "Beurre doux (1 cuillère = 10g)" },
+  { name: "Beurre demi-sel", default_unit: "g", default_quantity: 10.0, calories_per_unit: 72.0, protein_per_unit_g: 0.1, carbs_per_unit_g: 0.1, fat_per_unit_g: 8.2, fiber_per_unit_g: 0.0, emoji: "🧈", label: "Beurre demi-sel (1 cuillère = 10g)" },
+  { name: "Huile d'olive vierge", default_unit: "g", default_quantity: 10.0, calories_per_unit: 88.0, protein_per_unit_g: 0.0, carbs_per_unit_g: 0.0, fat_per_unit_g: 10.0, fiber_per_unit_g: 0.0, emoji: "🫒", label: "Huile d'olive (1 cuillère à soupe = 10g)" },
+  { name: "Œuf entier plein air", default_unit: "pièce", default_quantity: 1.0, calories_per_unit: 78.0, protein_per_unit_g: 6.9, carbs_per_unit_g: 0.4, fat_per_unit_g: 5.2, fiber_per_unit_g: 0.0, emoji: "🥚", label: "Œuf entier (1 pièce ~ 55g)" },
+  { name: "Avocat frais", default_unit: "g", default_quantity: 75.0, calories_per_unit: 120.0, protein_per_unit_g: 1.5, carbs_per_unit_g: 6.8, fat_per_unit_g: 11.3, fiber_per_unit_g: 5.2, emoji: "🥑", label: "Avocat (1/2 pièce = 75g)" },
+  { name: "Jambon blanc découenné", default_unit: "g", default_quantity: 40.0, calories_per_unit: 44.0, protein_per_unit_g: 8.4, carbs_per_unit_g: 0.4, fat_per_unit_g: 1.0, fiber_per_unit_g: 0.0, emoji: "🍖", label: "Jambon blanc (1 tranche = 40g)" },
+  { name: "Fromage emmental râpé", default_unit: "g", default_quantity: 30.0, calories_per_unit: 115.0, protein_per_unit_g: 8.2, carbs_per_unit_g: 0.1, fat_per_unit_g: 9.3, fiber_per_unit_g: 0.0, emoji: "🧀", label: "Fromage emmental (30g)" },
+  { name: "Tomate fraîche", default_unit: "g", default_quantity: 100.0, calories_per_unit: 18.0, protein_per_unit_g: 0.9, carbs_per_unit_g: 3.9, fat_per_unit_g: 0.2, fiber_per_unit_g: 1.2, emoji: "🍅", label: "Tomate fraîche (100g)" },
+  { name: "Riz blanc ou basmati cuit", default_unit: "g", default_quantity: 150.0, calories_per_unit: 195.0, protein_per_unit_g: 4.0, carbs_per_unit_g: 42.0, fat_per_unit_g: 0.5, fiber_per_unit_g: 1.5, emoji: "🍚", label: "Riz cuit (150g)" },
+  { name: "Pâtes complètes cuites", default_unit: "g", default_quantity: 150.0, calories_per_unit: 210.0, protein_per_unit_g: 8.2, carbs_per_unit_g: 40.5, fat_per_unit_g: 1.2, fiber_per_unit_g: 5.2, emoji: "🍝", label: "Pâtes complètes cuites (150g)" },
+  { name: "Flocons d'avoine", default_unit: "g", default_quantity: 50.0, calories_per_unit: 185.0, protein_per_unit_g: 6.8, carbs_per_unit_g: 30.0, fat_per_unit_g: 3.5, fiber_per_unit_g: 5.0, emoji: "🥣", label: "Flocons d'avoine (50g)" },
+  { name: "Miel d'acacia", default_unit: "g", default_quantity: 15.0, calories_per_unit: 46.0, protein_per_unit_g: 0.0, carbs_per_unit_g: 12.3, fat_per_unit_g: 0.0, fiber_per_unit_g: 0.0, emoji: "🍯", label: "Miel (1 cuillère à soupe = 15g)" }
+]; // Array of { benefit_id, source, explanation, icon, title }
 
 // Variables Drag & Drop Desktop
 let draggedCatalogItem = null;
@@ -337,6 +357,18 @@ function renderCatalogItems() {
           <div><span class="text-slate-500 font-medium">L:</span> <strong class="text-amber-400">${l}g</strong></div>
         </div>
 
+        ${isDish && item.recipe_items && item.recipe_items.length > 0 ? `
+          <div class="px-2.5 py-1.5 bg-[#151D2A]/80 rounded-xl border border-indigo-500/20 text-[10px] text-slate-400 space-y-0.5">
+            <div class="text-indigo-300 font-bold flex items-center space-x-1">
+              <span>🥗</span>
+              <span>Ingrédients (${item.recipe_items.length}) :</span>
+            </div>
+            <div class="text-slate-300 font-medium truncate" title="${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}">
+              ${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}
+            </div>
+          </div>
+        ` : ''}
+
         ${benefitsHtml}
 
         <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70">
@@ -631,9 +663,326 @@ async function confirmDropPortionModal() {
 // 4. GESTION DES MODALES DU CATALOGUE (CRÉATION / ÉDITION)
 // ============================================================================
 
+
+// ============================================================================
+// GESTION DE LA COMPOSITION D'INGRÉDIENTS DU PLAT & PRÉCALCUL (STAGE 14)
+// ============================================================================
+
+function toggleDishCompositionSection(isDish) {
+  const sec = document.getElementById('dish-composition-section');
+  if (sec) {
+    if (isDish) {
+      sec.classList.remove('hidden');
+      populateDishIngredientSelect();
+    } else {
+      sec.classList.add('hidden');
+    }
+  }
+}
+
+function handleCatItemTypeChange(event) {
+  const isDish = event.target.value === 'dish';
+  toggleDishCompositionSection(isDish);
+  const unitSelect = document.getElementById('cat-item-unit');
+  const qtyInput = document.getElementById('cat-item-qty');
+  if (isDish) {
+    if (unitSelect) unitSelect.value = 'portion';
+    if (qtyInput) qtyInput.value = '1';
+  } else {
+    if (unitSelect) unitSelect.value = 'g';
+    if (qtyInput) qtyInput.value = '100';
+  }
+}
+
+function populateDishIngredientSelect() {
+  const sel = document.getElementById('dish-ingredient-select');
+  if (!sel) return;
+
+  let html = '<option value="">-- Choisir un aliment existant à ajouter --</option>';
+
+  const catalogFoods = currentCatalogItems.filter(it => it.item_type === 'food');
+  if (catalogFoods.length > 0) {
+    html += '<optgroup label="📋 Aliments de mon catalogue">';
+    catalogFoods.forEach(f => {
+      html += `<option value="cat_${f.id}">${f.name} (${f.default_quantity}${f.default_unit} = ${Math.round(f.calories_per_unit)} kcal)</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  html += '<optgroup label="🥖 Ingrédients essentiels recommandés">';
+  RECOMMENDED_STAPLE_INGREDIENTS.forEach((s, idx) => {
+    html += `<option value="staple_${idx}">${s.emoji || '🥗'} ${s.label}</option>`;
+  });
+  html += '</optgroup>';
+
+  sel.innerHTML = html;
+  handleDishIngredientSelectChange();
+}
+
+function handleDishIngredientSelectChange() {
+  const sel = document.getElementById('dish-ingredient-select');
+  const qtyInput = document.getElementById('dish-ingredient-add-qty');
+  const unitLabel = document.getElementById('dish-ingredient-add-unit');
+  if (!sel || !qtyInput) return;
+
+  const val = sel.value;
+  if (!val) {
+    qtyInput.value = '100';
+    if (unitLabel) unitLabel.textContent = 'g';
+    return;
+  }
+
+  if (val.startsWith('cat_')) {
+    const id = parseInt(val.replace('cat_', ''), 10);
+    const item = currentCatalogItems.find(it => it.id === id);
+    if (item) {
+      qtyInput.value = item.default_quantity || 100;
+      if (unitLabel) unitLabel.textContent = item.default_unit || 'g';
+    }
+  } else if (val.startsWith('staple_')) {
+    const idx = parseInt(val.replace('staple_', ''), 10);
+    const s = RECOMMENDED_STAPLE_INGREDIENTS[idx];
+    if (s) {
+      qtyInput.value = s.default_quantity || 100;
+      if (unitLabel) unitLabel.textContent = s.default_unit || 'g';
+    }
+  }
+}
+
+function addIngredientToDish() {
+  const sel = document.getElementById('dish-ingredient-select');
+  const qtyInput = document.getElementById('dish-ingredient-add-qty');
+  if (!sel || !qtyInput) return;
+
+  const val = sel.value;
+  if (!val) {
+    alert("Veuillez sélectionner un aliment dans la liste.");
+    return;
+  }
+
+  const qty = parseFloat(qtyInput.value);
+  if (isNaN(qty) || qty <= 0) {
+    alert("Veuillez saisir une quantité valide supérieure à 0.");
+    return;
+  }
+
+  let ingredientData = null;
+  if (val.startsWith('cat_')) {
+    const id = parseInt(val.replace('cat_', ''), 10);
+    const item = currentCatalogItems.find(it => it.id === id);
+    if (item) {
+      ingredientData = {
+        food_item_id: item.id,
+        name: item.name,
+        quantity: qty,
+        unit: item.default_unit || 'g',
+        default_quantity: item.default_quantity || 100.0,
+        calories_per_unit: item.calories_per_unit || 0.0,
+        protein_per_unit_g: item.protein_per_unit_g || 0.0,
+        carbs_per_unit_g: item.carbs_per_unit_g || 0.0,
+        fat_per_unit_g: item.fat_per_unit_g || 0.0,
+        fiber_per_unit_g: item.fiber_per_unit_g || 0.0
+      };
+    }
+  } else if (val.startsWith('staple_')) {
+    const idx = parseInt(val.replace('staple_', ''), 10);
+    const s = RECOMMENDED_STAPLE_INGREDIENTS[idx];
+    if (s) {
+      ingredientData = {
+        food_item_id: null,
+        name: s.name,
+        quantity: qty,
+        unit: s.default_unit || 'g',
+        default_quantity: s.default_quantity || 100.0,
+        calories_per_unit: s.calories_per_unit || 0.0,
+        protein_per_unit_g: s.protein_per_unit_g || 0.0,
+        carbs_per_unit_g: s.carbs_per_unit_g || 0.0,
+        fat_per_unit_g: s.fat_per_unit_g || 0.0,
+        fiber_per_unit_g: s.fiber_per_unit_g || 0.0
+      };
+    }
+  }
+
+  if (ingredientData) {
+    modalDishIngredients.push(ingredientData);
+    renderDishIngredientsList();
+    recalculateDishFromIngredients();
+    if (typeof showToast === 'function') {
+      showToast(`'${ingredientData.name}' (${qty}${ingredientData.unit}) ajouté au plat !`, 'info');
+    }
+  }
+}
+
+function removeDishIngredient(index) {
+  if (index >= 0 && index < modalDishIngredients.length) {
+    modalDishIngredients.splice(index, 1);
+    renderDishIngredientsList();
+    recalculateDishFromIngredients();
+  }
+}
+
+function updateDishIngredientQuantity(index, newQtyStr) {
+  const newQty = parseFloat(newQtyStr);
+  if (isNaN(newQty) || newQty <= 0) return;
+  if (modalDishIngredients[index]) {
+    modalDishIngredients[index].quantity = newQty;
+    recalculateDishFromIngredients();
+  }
+}
+
+function recalculateDishFromIngredients() {
+  const countEl = document.getElementById('dish-ingredients-count');
+  if (countEl) countEl.textContent = modalDishIngredients.length;
+
+  if (modalDishIngredients.length === 0) {
+    updateDishPrecalcDisplay(0, 0, 0, 0, 0, 0);
+    return;
+  }
+
+  let totalCals = 0;
+  let totalProt = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+  let totalFiber = 0;
+  let totalWeight = 0;
+
+  modalDishIngredients.forEach(ing => {
+    const ratio = (parseFloat(ing.quantity) || 0) / (parseFloat(ing.default_quantity) || 100.0);
+    const cals = (parseFloat(ing.calories_per_unit) || 0) * ratio;
+    const prot = (parseFloat(ing.protein_per_unit_g) || 0) * ratio;
+    const carbs = (parseFloat(ing.carbs_per_unit_g) || 0) * ratio;
+    const fat = (parseFloat(ing.fat_per_unit_g) || 0) * ratio;
+    const fiber = (parseFloat(ing.fiber_per_unit_g) || 0) * ratio;
+
+    ing.calories = Math.round(cals * 10) / 10;
+    ing.protein_g = Math.round(prot * 10) / 10;
+    ing.carbs_g = Math.round(carbs * 10) / 10;
+    ing.fat_g = Math.round(fat * 10) / 10;
+    ing.fiber_g = Math.round(fiber * 10) / 10;
+
+    totalCals += cals;
+    totalProt += prot;
+    totalCarbs += carbs;
+    totalFat += fat;
+    totalFiber += fiber;
+    if (ing.unit === 'g') totalWeight += parseFloat(ing.quantity) || 0;
+  });
+
+  const calsRounded = Math.round(totalCals);
+  const protRounded = Math.round(totalProt * 10) / 10;
+  const carbsRounded = Math.round(totalCarbs * 10) / 10;
+  const fatRounded = Math.round(totalFat * 10) / 10;
+  const fiberRounded = Math.round(totalFiber * 10) / 10;
+
+  const calsInput = document.getElementById('cat-item-cals');
+  const protInput = document.getElementById('cat-item-prot');
+  const carbsInput = document.getElementById('cat-item-carbs');
+  const fatInput = document.getElementById('cat-item-fat');
+  const fiberInput = document.getElementById('cat-item-fiber');
+
+  if (calsInput) calsInput.value = calsRounded;
+  if (protInput) protInput.value = protRounded;
+  if (carbsInput) carbsInput.value = carbsRounded;
+  if (fatInput) fatInput.value = fatRounded;
+  if (fiberInput) fiberInput.value = fiberRounded;
+
+  updateDishPrecalcDisplay(calsRounded, protRounded, carbsRounded, fatRounded, fiberRounded, totalWeight);
+
+  if (typeof triggerModalNutritionEvaluation === 'function') {
+    triggerModalNutritionEvaluation();
+  }
+}
+
+function updateDishPrecalcDisplay(cals, prot, carbs, fat, fiber, weight) {
+  const elCals = document.getElementById('dish-precalc-total-cals');
+  const elWeight = document.getElementById('dish-precalc-total-weight');
+  const elProt = document.getElementById('dish-precalc-prot');
+  const elCarbs = document.getElementById('dish-precalc-carbs');
+  const elFat = document.getElementById('dish-precalc-fat');
+  const elFiber = document.getElementById('dish-precalc-fiber');
+
+  if (elCals) elCals.textContent = `${cals} kcal`;
+  if (elWeight) elWeight.textContent = weight > 0 ? `Poids total: ${Math.round(weight)}g` : '';
+  if (elProt) elProt.textContent = `P: ${prot}g`;
+  if (elCarbs) elCarbs.textContent = `G: ${carbs}g`;
+  if (elFat) elFat.textContent = `L: ${fat}g`;
+  if (elFiber) elFiber.textContent = `Fibres: ${fiber}g`;
+}
+
+function renderDishIngredientsList() {
+  const container = document.getElementById('dish-ingredients-list');
+  const countEl = document.getElementById('dish-ingredients-count');
+  if (countEl) countEl.textContent = modalDishIngredients.length;
+  if (!container) return;
+
+  if (modalDishIngredients.length === 0) {
+    container.innerHTML = `
+      <div class="py-4 text-center text-xs text-slate-500 italic bg-[#151D2A]/50 rounded-xl border border-dashed border-[#1F2A3C] p-3">
+        Aucun ingrédient ajouté pour l'instant. Choisissez un aliment ci-dessus pour composer votre plat.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = modalDishIngredients.map((ing, idx) => {
+    const ratio = (parseFloat(ing.quantity) || 0) / (parseFloat(ing.default_quantity) || 100.0);
+    const cals = Math.round((parseFloat(ing.calories_per_unit) || 0) * ratio);
+    const p = Math.round((parseFloat(ing.protein_per_unit_g) || 0) * ratio * 10) / 10;
+    const g = Math.round((parseFloat(ing.carbs_per_unit_g) || 0) * ratio * 10) / 10;
+    const l = Math.round((parseFloat(ing.fat_per_unit_g) || 0) * ratio * 10) / 10;
+
+    return `
+      <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#151D2A] border border-[#1F2A3C] hover:border-indigo-500/40 transition-colors">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-xs font-bold text-white truncate">${ing.name}</span>
+            <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 font-mono">Ingrédient</span>
+          </div>
+          <div class="text-[10px] text-slate-400">
+            <strong class="text-emerald-400 font-bold">${cals} kcal</strong>
+            <span class="mx-1">&bull;</span>
+            <span>P: ${p}g</span>
+            <span class="mx-1">&bull;</span>
+            <span>G: ${g}g</span>
+            <span class="mx-1">&bull;</span>
+            <span>L: ${l}g</span>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-1.5 shrink-0">
+          <div class="flex items-center space-x-1">
+            <input 
+              type="number" 
+              step="any" 
+              min="0.1" 
+              value="${ing.quantity}" 
+              oninput="updateDishIngredientQuantity(${idx}, this.value)"
+              class="w-16 bg-[#0B0F17] border border-[#1F2A3C] rounded-lg px-2 py-1 text-xs font-bold text-white text-center focus:outline-none focus:border-indigo-500 shadow-inner"
+              title="Ajuster la quantité de cet ingrédient"
+            >
+            <span class="text-[11px] font-bold text-slate-400">${ing.unit || 'g'}</span>
+          </div>
+          <button 
+            type="button" 
+            onclick="removeDishIngredient(${idx})" 
+            title="Retirer cet ingrédient" 
+            class="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors"
+          >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+
 function openCreateCatalogItemModal(type = 'food') {
   catalogItemPhotoBase64 = null;
   modalSelectedBenefits = [];
+  modalDishIngredients = [];
   document.getElementById('form-catalog-item').reset();
   document.getElementById('cat-item-id').value = '';
   document.getElementById('cat-item-type').value = type;
@@ -647,6 +996,8 @@ function openCreateCatalogItemModal(type = 'food') {
     document.getElementById('cat-item-qty').value = '100';
   }
 
+  toggleDishCompositionSection(type === 'dish');
+  renderDishIngredientsList();
   renderModalSelectedBenefits();
   renderModalAutoBenefits([]);
 
@@ -680,6 +1031,13 @@ function openEditCatalogItemModal(itemId) {
   document.getElementById('cat-item-photo-url').value = item.photo_url || '';
 
   document.getElementById('cat-modal-title').textContent = `Modifier ${item.item_type === 'dish' ? 'le Plat' : "l'Aliment"}`;
+
+  modalDishIngredients = Array.isArray(item.recipe_items) ? JSON.parse(JSON.stringify(item.recipe_items)) : [];
+  toggleDishCompositionSection(item.item_type === 'dish');
+  renderDishIngredientsList();
+  if (modalDishIngredients.length > 0) {
+    recalculateDishFromIngredients();
+  }
 
   renderModalSelectedBenefits();
   triggerModalNutritionEvaluation();
@@ -864,7 +1222,8 @@ async function handleCatalogItemFormSubmit(event) {
     carbs_per_unit_g: parseFloat(document.getElementById('cat-item-carbs').value) || 0.0,
     fat_per_unit_g: parseFloat(document.getElementById('cat-item-fat').value) || 0.0,
     fiber_per_unit_g: parseFloat(document.getElementById('cat-item-fiber').value) || 0.0,
-    photo_url: photoUrl
+    photo_url: photoUrl,
+    recipe_items: modalDishIngredients
   };
 
   try {
@@ -1376,3 +1735,9 @@ if (document.readyState === 'loading') {
   loadCatalogItems();
   loadMealsJournal();
 }
+
+window.handleCatItemTypeChange = handleCatItemTypeChange;
+window.handleDishIngredientSelectChange = handleDishIngredientSelectChange;
+window.addIngredientToDish = addIngredientToDish;
+window.removeDishIngredient = removeDishIngredient;
+window.updateDishIngredientQuantity = updateDishIngredientQuantity;

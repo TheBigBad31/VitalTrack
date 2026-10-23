@@ -192,3 +192,106 @@ def test_catalog_multi_user_isolation(catalog_setup):
     # Bob ne peut pas supprimer l'aliment d'Alice
     res_bad_del = client.delete(f"/api/catalog/items/{alice_item_id}", headers=headers2)
     assert res_bad_del.status_code == 404
+
+
+def test_dish_with_recipe_items_composition(catalog_setup):
+    """Teste la création d'un plat composé d'ingrédients existants avec ajustement des quantités et précalcul."""
+    client = catalog_setup["client"]
+    token1 = catalog_setup["token1"]
+    headers1 = {"Authorization": f"Bearer {token1}"}
+
+    # 1. Alice ajoute deux ingrédients au catalogue : Pain complet et Beurre doux
+    res_pain = client.post("/api/catalog/items", json={
+        "name": "Pain complet",
+        "item_type": "food",
+        "default_unit": "g",
+        "default_quantity": 100.0,
+        "calories_per_unit": 247.0,
+        "protein_per_unit_g": 9.0,
+        "carbs_per_unit_g": 45.0,
+        "fat_per_unit_g": 2.0,
+        "fiber_per_unit_g": 7.0
+    }, headers=headers1)
+    assert res_pain.status_code == 200
+    pain_id = res_pain.json()["id"]
+
+    res_beurre = client.post("/api/catalog/items", json={
+        "name": "Beurre doux",
+        "item_type": "food",
+        "default_unit": "g",
+        "default_quantity": 100.0,
+        "calories_per_unit": 720.0,
+        "protein_per_unit_g": 0.7,
+        "carbs_per_unit_g": 0.7,
+        "fat_per_unit_g": 82.0,
+        "fiber_per_unit_g": 0.0
+    }, headers=headers1)
+    assert res_beurre.status_code == 200
+    beurre_id = res_beurre.json()["id"]
+
+    # 2. Composition du plat : Tartine beurrée (40g pain + 10g beurre)
+    recipe_items = [
+        {
+            "food_item_id": pain_id,
+            "name": "Pain complet",
+            "quantity": 40.0,
+            "unit": "g",
+            "default_quantity": 100.0,
+            "calories_per_unit": 247.0,
+            "protein_per_unit_g": 9.0,
+            "carbs_per_unit_g": 45.0,
+            "fat_per_unit_g": 2.0,
+            "fiber_per_unit_g": 7.0,
+            "calories": 98.8,
+            "protein_g": 3.6,
+            "carbs_g": 18.0,
+            "fat_g": 0.8,
+            "fiber_g": 2.8
+        },
+        {
+            "food_item_id": beurre_id,
+            "name": "Beurre doux",
+            "quantity": 10.0,
+            "unit": "g",
+            "default_quantity": 100.0,
+            "calories_per_unit": 720.0,
+            "protein_per_unit_g": 0.7,
+            "carbs_per_unit_g": 0.7,
+            "fat_per_unit_g": 82.0,
+            "fiber_per_unit_g": 0.0,
+            "calories": 72.0,
+            "protein_g": 0.1,
+            "carbs_g": 0.1,
+            "fat_g": 8.2,
+            "fiber_g": 0.0
+        }
+    ]
+
+    res_dish = client.post("/api/catalog/items", json={
+        "name": "Tartine beurrée",
+        "item_type": "dish",
+        "default_unit": "portion",
+        "default_quantity": 1.0,
+        "calories_per_unit": 171.0,
+        "protein_per_unit_g": 3.7,
+        "carbs_per_unit_g": 18.1,
+        "fat_per_unit_g": 9.0,
+        "fiber_per_unit_g": 2.8,
+        "recipe_items": recipe_items
+    }, headers=headers1)
+
+    assert res_dish.status_code == 200
+    dish_data = res_dish.json()
+    assert dish_data["name"] == "Tartine beurrée"
+    assert dish_data["item_type"] == "dish"
+    assert len(dish_data["recipe_items"]) == 2
+    assert dish_data["recipe_items"][0]["name"] == "Pain complet"
+    assert dish_data["recipe_items"][0]["quantity"] == 40.0
+    assert dish_data["recipe_items"][1]["name"] == "Beurre doux"
+    assert dish_data["recipe_items"][1]["quantity"] == 10.0
+
+    dish_id = dish_data["id"]
+    list_res = client.get("/api/catalog/items?type=dish", headers=headers1).json()
+    my_dish = next(d for d in list_res if d["id"] == dish_id)
+    assert len(my_dish["recipe_items"]) == 2
+    assert my_dish["recipe_items"][0]["quantity"] == 40.0
