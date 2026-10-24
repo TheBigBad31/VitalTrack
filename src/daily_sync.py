@@ -47,6 +47,9 @@ def run_daily_sync():
     weights = withings_connector.sync_weights(start_date=start_date, end_date=today)
     print(f"Pesees recuperees : {len(weights)}")
     for entry in weights:
+        if entry.source in ("simulation", "demo") and withings_connector.is_production:
+            print(f"  -> Ignore (simulation non autorisee en production) : {entry.date}")
+            continue
         db.insert_weight(entry)
         print(f"  -> Enregistre : {entry.date} - {entry.weight_kg} kg (MG: {entry.body_fat_pct}%, MM: {entry.muscle_mass_kg} kg)")
 
@@ -58,6 +61,10 @@ def run_daily_sync():
     activities = oura_connector.sync_activities(start_date=start_date, end_date=today)
     print(f"Activites recuperees : {len(activities)}")
     for act in activities:
+        if act.source in ("simulation", "demo") and oura_connector.is_production:
+            print(f"  -> Ignore (simulation non autorisee en production) : {act.date}")
+            continue
+        db.insert_activity(act)
         db.insert_activity(act)
         print(f"  -> Enregistre : {act.date} - {act.steps} pas, {act.active_calories_kcal} kcal actives, HRV: {act.hrv_ms} ms, Sommeil: {act.sleep_score}/100")
 

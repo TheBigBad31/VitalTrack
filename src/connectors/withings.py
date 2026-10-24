@@ -74,6 +74,7 @@ class WithingsScaleConnector(BaseHealthConnector):
     def sync_weights(self, start_date: date, end_date: date) -> List[WeightEntry]:
         """Récupère les pesées depuis l'API Withings ou génère une simulation réaliste."""
         if not self.is_configured:
+            self.assert_simulation_allowed()
             return self._generate_simulated_weights(start_date, end_date)
 
         # En production, exécute la requête HTTP vers https://wbsapi.withings.net/measure?action=getmeas
@@ -112,7 +113,8 @@ class WithingsScaleConnector(BaseHealthConnector):
                 muscle_mass_kg=muscle,
                 water_pct=water,
                 bmi=bmi,
-                source="withings",
+                source="simulation",
+                is_simulated=True,
                 notes="Mode Démo Withings (API en attente de configuration)"
             ))
         return entries

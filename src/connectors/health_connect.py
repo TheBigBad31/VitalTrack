@@ -260,6 +260,7 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
     def sync_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Synchronise les activités via API Google ou génère une simulation 30j."""
         if not self.is_configured:
+            self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
         # Si mock_payloads injecté
@@ -294,7 +295,8 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
                 resting_hr_bpm=resting_hr,
                 hrv_ms=hrv,
                 sleep_score=sleep_score,
-                source="health_connect"
+                source="simulation",
+                is_simulated=True
             ))
         return entries
 

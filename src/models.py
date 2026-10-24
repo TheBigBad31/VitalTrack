@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-WeightSource = Literal["withings", "garmin", "manual", "apple_health", "demo"]
-ActivitySource = Literal["oura", "ringconn", "health_connect", "apple_health", "strava", "demo"]
+WeightSource = Literal["withings", "garmin", "manual", "apple_health", "demo", "simulation"]
+ActivitySource = Literal["oura", "ringconn", "health_connect", "apple_health", "strava", "demo", "simulation"]
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
@@ -21,6 +21,7 @@ class WeightEntry(BaseModel):
     bmi: Optional[float] = Field(None, description="Indice de Masse Corporelle (IMC)")
     trend_7d_kg: Optional[float] = Field(None, description="Tendance lissée sur 7 jours")
     source: WeightSource = "manual"
+    is_simulated: bool = Field(False, description="Indique si la mesure provient d'une simulation/démo")
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
 
@@ -39,6 +40,7 @@ class ActivityEntry(BaseModel):
     hrv_ms: Optional[float] = Field(None, description="Variabilité de fréquence cardiaque (RMSSD en ms)")
     sleep_score: Optional[int] = Field(None, description="Score de sommeil global (0-100)")
     source: ActivitySource = "demo"
+    is_simulated: bool = Field(False, description="Indique si l'activité provient d'une simulation/démo")
     created_at: Optional[datetime] = None
 
 

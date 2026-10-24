@@ -81,6 +81,7 @@ class OuraRingConnector(BaseHealthConnector):
     def sync_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Récupère les activités ou génère la simulation réaliste Oura."""
         if not self.is_configured:
+            self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
         # En production : appels GET /daily_activity, /daily_readiness, /daily_sleep
@@ -126,7 +127,8 @@ class OuraRingConnector(BaseHealthConnector):
                 resting_hr_bpm=resting_hr,
                 hrv_ms=hrv,
                 sleep_score=sleep_score,
-                source="oura"
+                source="simulation",
+                is_simulated=True
             ))
         return entries
 
