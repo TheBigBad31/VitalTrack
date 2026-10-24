@@ -332,30 +332,39 @@
 
       </div>
 
-      <!-- Bandeau Données en Direct : Google Santé Connect (Android) -->
-      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div class="flex items-center space-x-3.5">
-          <div class="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-            <i data-lucide="smartphone" class="w-6 h-6"></i>
+      <!-- Bandeau Données en Direct & Synchronisation Appareils (Santé Connect, Bagues, Balances) -->
+      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300">
+        <div class="flex items-center space-x-3.5 w-full md:w-auto">
+          <div id="live-hc-icon-container" class="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <i id="live-hc-icon" data-lucide="smartphone" class="w-6 h-6"></i>
           </div>
-          <div class="space-y-1">
-            <div class="flex items-center space-x-2">
-              <span class="text-xs font-bold text-white">Données reçues en direct : Google Santé Connect (Android)</span>
-              <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Synchronisé ✓</span>
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="flex items-center flex-wrap gap-2">
+              <span id="live-hc-title" class="text-xs font-bold text-white">Données reçues en direct : Google Santé Connect (Android)</span>
+              <span id="live-hc-status-badge" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold flex items-center gap-1">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                <span id="live-hc-status-text">En attente de première synchronisation</span>
+              </span>
             </div>
-            <div class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
-              <span>Pas du jour : <strong class="text-emerald-400 font-bold" id="live-hc-steps">12 100 pas</strong></span>
-              <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">530 kcal</strong></span>
-              <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">57 BPM</strong></span>
-              <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">59 ms</strong></span>
-              <span>Sommeil : <strong class="text-indigo-400 font-bold" id="live-hc-sleep">85 / 100</strong></span>
+            <div id="live-hc-metrics-container" class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+              <span>Pas du jour : <strong class="text-emerald-400 font-bold" id="live-hc-steps">-- pas</strong></span>
+              <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">-- kcal</strong></span>
+              <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">--</strong></span>
+              <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">--</strong></span>
+              <span>Sommeil : <strong class="text-indigo-400 font-bold" id="live-hc-sleep">--</strong></span>
             </div>
           </div>
         </div>
-        <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition-colors">
-          <span>Voir détails d'activité</span>
-          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-        </button>
+        <div class="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
+          <button id="live-hc-sync-btn" type="button" onclick="triggerSyncFromBanner()" class="px-3.5 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700/60 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <i id="live-hc-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span id="live-hc-sync-txt">Synchroniser</span>
+          </button>
+          <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <span>Détails d'activité</span>
+            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
       </div>
 
       <!-- Graphique combiné Poids & Tendance + Macros du Jour -->
@@ -1997,25 +2006,8 @@
 
       document.getElementById('summary-recommendation').innerText = s.recommendation || "Poursuivez sur cette trajectoire régulière pour atteindre votre objectif de composition corporelle.";
 
-      // Données en direct du bandeau Santé Connect
-      const latestAct = (currentData.activities_history && currentData.activities_history.length > 0)
-        ? currentData.activities_history[currentData.activities_history.length - 1]
-        : null;
-      const hcStepsEl = document.getElementById('live-hc-steps');
-      const hcCalsEl = document.getElementById('live-hc-cals');
-      const hcHrEl = document.getElementById('live-hc-hr');
-      const hcHrvEl = document.getElementById('live-hc-hrv');
-      const hcSleepEl = document.getElementById('live-hc-sleep');
-      if (hcStepsEl && latestAct) {
-        hcStepsEl.innerText = `${(latestAct.steps || s.steps || 0).toLocaleString()} pas`;
-        if (hcCalsEl) hcCalsEl.innerText = `${latestAct.active_calories_kcal || 0} kcal`;
-        const hrVal = latestAct.resting_hr_bpm || s.resting_hr_bpm;
-        if (hcHrEl) hcHrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
-        const hrvVal = latestAct.hrv_ms || s.hrv_ms;
-        if (hcHrvEl) hcHrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
-        const scVal = latestAct.sleep_score || s.sleep_score;
-        if (hcSleepEl) hcSleepEl.innerText = scVal ? `${scVal} / 100` : '--';
-      }
+      // Rendu dynamique temps réel du bandeau Santé Connect & Appareils
+      renderLiveSyncBanner();
 
       // Donut Macros
       const m = s.macros || {};
@@ -2430,7 +2422,169 @@
       }
     }
 
-    // 5. Rendu Vue Hub Objets Connectés (Uniquement les appareils ajoutés/connectés par l'utilisateur)
+
+    // ============================================================================
+    // DYNAMISATION TEMPS RÉEL DU BANDEAU SANTÉ CONNECT & SYNCHRONISATION APPAREILS
+    // ============================================================================
+
+    function formatRelativeTime(isoString) {
+      if (!isoString) return null;
+      try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return null;
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 1) return "À l'instant";
+        if (diffMins === 1) return "Il y a 1 minute";
+        if (diffMins < 60) return `Il y a ${diffMins} minutes`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours === 1) return "Il y a 1 heure";
+        if (diffHours < 24) return `Il y a ${diffHours} heures`;
+        const diffDays = Math.floor(diffHours / 24);
+        if (diffDays === 1) return "Hier";
+        return `Il y a ${diffDays} jours`;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function renderLiveSyncBanner() {
+      const banner = document.getElementById('banner-health-connect-live');
+      if (!banner) return;
+
+      const titleEl = document.getElementById('live-hc-title');
+      const badgeEl = document.getElementById('live-hc-status-badge');
+      const statusTextEl = document.getElementById('live-hc-status-text');
+      const iconEl = document.getElementById('live-hc-icon');
+      const iconContainerEl = document.getElementById('live-hc-icon-container');
+      const stepsEl = document.getElementById('live-hc-steps');
+      const calsEl = document.getElementById('live-hc-cals');
+      const hrEl = document.getElementById('live-hc-hr');
+      const hrvEl = document.getElementById('live-hc-hrv');
+      const sleepEl = document.getElementById('live-hc-sleep');
+      const syncBtn = document.getElementById('live-hc-sync-btn');
+      const syncTxt = document.getElementById('live-hc-sync-txt');
+
+      const s = currentData.summary || {};
+      const allDevices = currentData.devices || [];
+      const connectedDevices = allDevices.filter(d => Boolean(d.connected || d.status === 'connected'));
+
+      // Trouver l'appareil prioritaire pour l'activité (Health Connect > Oura/RingConn > premier connecté)
+      let activeDevice = connectedDevices.find(d => (d.id || d.device_id) === 'health_connect')
+        || connectedDevices.find(d => ['ringconn', 'oura'].includes(d.id || d.device_id))
+        || connectedDevices[0]
+        || null;
+
+      // Activité la plus récente
+      const latestAct = (currentData.activities_history && currentData.activities_history.length > 0)
+        ? currentData.activities_history[currentData.activities_history.length - 1]
+        : null;
+
+      // Métriques réelles
+      const stepsVal = latestAct ? (latestAct.steps || s.steps) : s.steps;
+      const calsVal = latestAct ? (latestAct.active_calories_kcal || 0) : null;
+      const hrVal = latestAct ? (latestAct.resting_hr_bpm || s.resting_hr_bpm) : s.resting_hr_bpm;
+      const hrvVal = latestAct ? (latestAct.hrv_ms || s.hrv_ms) : s.hrv_ms;
+      const sleepVal = latestAct ? (latestAct.sleep_score || s.sleep_score) : s.sleep_score;
+
+      if (stepsEl) stepsEl.innerText = stepsVal !== null && stepsVal !== undefined ? `${stepsVal.toLocaleString()} pas` : '-- pas';
+      if (calsEl) calsEl.innerText = calsVal !== null && calsVal !== undefined ? `${calsVal} kcal` : '-- kcal';
+      if (hrEl) hrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
+      if (hrvEl) hrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
+      if (sleepEl) sleepEl.innerText = sleepVal ? `${sleepVal} / 100` : '--';
+
+      // 1. Cas : Aucun appareil connecté
+      if (!activeDevice && connectedDevices.length === 0) {
+        if (titleEl) titleEl.innerText = "Synchronisation appareils : Aucune passerelle connectée";
+        if (statusTextEl) statusTextEl.innerText = "En attente de connexion";
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span><span id="live-hc-status-text">Non connecté</span>';
+        }
+        if (iconEl) iconEl.setAttribute('data-lucide', 'link-2');
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-slate-800/60 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0";
+        if (syncTxt) syncTxt.innerText = "Connecter";
+        if (syncBtn) {
+          syncBtn.onclick = () => openConnectWizardModal('health_connect');
+          syncBtn.title = "Ouvrir l'assistant de connexion d'appareils";
+        }
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-slate-900/60 via-[#151D2A] to-[#151D2A] border border-slate-700/50 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+        return;
+      }
+
+      // 2. Cas : Appareil connecté
+      const devId = activeDevice.id || activeDevice.device_id;
+      const devName = activeDevice.name || (devId === 'health_connect' ? 'Google Santé Connect (Android)' : (devId === 'withings' ? 'Withings' : devId));
+      if (titleEl) titleEl.innerText = `Données en direct : ${devName}`;
+
+      // Configurer icône
+      let iconName = 'smartphone';
+      if (activeDevice.device_type === 'ring' || devId === 'ringconn' || devId === 'oura') iconName = 'circle-dot';
+      else if (activeDevice.device_type === 'scale' || devId === 'withings') iconName = 'scale';
+      if (iconEl) iconEl.setAttribute('data-lucide', iconName);
+
+      // Bouton de synchronisation branché sur l'appareil actif
+      if (syncBtn) {
+        syncBtn.onclick = () => triggerSyncFromBanner(devId);
+        syncBtn.title = `Lancer la synchronisation immédiate de ${devName}`;
+      }
+      if (syncTxt) syncTxt.innerText = "Synchroniser";
+
+      const lastSyncRaw = activeDevice.last_sync_at || activeDevice.last_sync;
+      const syncStatus = (activeDevice.sync_status || activeDevice.status || 'connected').toLowerCase();
+      const relativeTime = formatRelativeTime(lastSyncRaw);
+
+      if (syncStatus === 'error' || syncStatus === 'failed') {
+        // État : Erreur de synchronisation
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span><span id="live-hc-status-text">Erreur de synchronisation ⚠</span>';
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-rose-950/30 via-[#151D2A] to-[#151D2A] border border-rose-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      } else if (!lastSyncRaw) {
+        // État : Connecté mais en attente de première synchronisation
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span id="live-hc-status-text">En attente de première synchronisation</span>';
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 via-[#151D2A] to-[#151D2A] border border-amber-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      } else {
+        // État : Synchronisé avec succès
+        const syncLabel = relativeTime ? `Synchronisé ${relativeTime.toLowerCase()} ✓` : 'Synchronisé ✓';
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span id="live-hc-status-text">${syncLabel}</span>`;
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      }
+
+      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+    }
+
+    async function triggerSyncFromBanner(deviceId) {
+      const syncIcon = document.getElementById('live-hc-sync-icon');
+      const syncTxt = document.getElementById('live-hc-sync-txt');
+      if (syncIcon) syncIcon.classList.add('animate-spin');
+      if (syncTxt) syncTxt.innerText = "Synchronisation...";
+
+      const targetId = deviceId || 'health_connect';
+      try {
+        await triggerDeviceSync(targetId);
+      } finally {
+        if (syncIcon) syncIcon.classList.remove('animate-spin');
+        if (syncTxt) syncTxt.innerText = "Synchroniser";
+      }
+    }
+
+    window.renderLiveSyncBanner = renderLiveSyncBanner;
+    window.triggerSyncFromBanner = triggerSyncFromBanner;
+
+        // 5. Rendu Vue Hub Objets Connectés (Uniquement les appareils ajoutés/connectés par l'utilisateur)
     function renderDevicesView() {
       const grid = document.getElementById('devices-grid');
       if (!grid) return;
