@@ -45,6 +45,23 @@ except ImportError:
     HAS_PSYCOPG = False
 
 
+class DatabaseServiceUnavailableError(RuntimeError):
+    """Exception levée lorsque PostgreSQL/Neon est inaccessible en environnement de production."""
+    pass
+
+
+def is_production_environment() -> bool:
+    """Détermine si l'application s'exécute en environnement hébergé / production."""
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return True
+    env_name = os.getenv("ENVIRONMENT") or os.getenv("ENV") or os.getenv("NODE_ENV") or ""
+    if env_name.lower() in ("production", "prod", "staging"):
+        return True
+    if os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("NEON_DATABASE_URL"):
+        return True
+    return False
+
+
 def get_database_url() -> Optional[str]:
     """Récupère l'URL de connexion PostgreSQL si configurée."""
     url = (
@@ -175,8 +192,18 @@ class Database:
                 conn = psycopg.connect(self.database_url, connect_timeout=10)
                 return DatabaseConnectionWrapper(conn, is_postgres=True)
             except Exception as e:
-                # Si la connexion Neon échoue, fallback d'urgence sur SQLite
-                print(f"[VitalTrack DB Warning] Échec connexion PostgreSQL Neon: {e}. Bascule sur SQLite.")
+                # Si nous sommes en environnement hébergé/production ou si DATABASE_URL a été expressément configuré :
+                # Pas de bascule silencieuse sur SQLite (/tmp est éphémère et entraîne des pertes de données).
+                if is_production_environment() or self.database_url:
+                    err_msg = (
+                        f"[VitalTrack DB Error] Connexion PostgreSQL Neon impossible en environnement de production: {e}. "
+                        "Fallback SQLite interdit pour prévenir toute perte de données orphelines dans /tmp."
+                    )
+                    print(err_msg)
+                    raise DatabaseServiceUnavailableError(err_msg) from e
+
+                # Hors production (développement local ou sans DATABASE_URL), fallback sur SQLite local
+                print(f"[VitalTrack DB Warning] Échec connexion PostgreSQL Neon: {e}. Bascule sur SQLite local.")
                 self.is_postgres = False
 
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
