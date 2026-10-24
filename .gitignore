@@ -6,3 +6,7 @@ __pycache__/
 data/vitaltrack.db
 data/*.db
 /tmp/vitaltrack.db
+
+# Node.js
+node_modules/
+.npm

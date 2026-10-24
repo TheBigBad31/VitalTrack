@@ -12,35 +12,14 @@
   <meta name="apple-mobile-web-app-title" content="VitalTrack">
   <link rel="manifest" href="/static/manifest.json">
   
-  <!-- Tailwind CSS & Lucide Icons & Chart.js -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Precompiled Tailwind CSS -->
+  <link rel="stylesheet" href="/static/css/tailwind.css">
+  
+  <!-- Versioned Vendor Scripts (Lucide Icons & Chart.js) -->
+  <script src="https://unpkg.com/lucide@1.61.0/dist/umd/lucide.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" defer></script>
   <!-- Google Identity Services (GIS) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#ecfdf5',
-              100: '#d1fae5',
-              400: '#34d399',
-              500: '#10b981',
-              600: '#059669',
-              700: '#047857'
-            },
-            darkbg: '#0B0F17',
-            darkcard: '#151D2A',
-            darkborder: '#1F2A3C'
-          }
-        }
-      }
-    }
-  </script>
 
   <style>
     /* Safe-area for mobile notch and bottom navigation bar */
