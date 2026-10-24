@@ -605,3 +605,85 @@ def test_vercel_path_resolver():
     res_direct = vercel_client.get("/api/index.py")
     assert res_direct.status_code == 200
     assert res_direct.json()["status"] == "ok"
+
+
+def test_dashboard_metabolic_calendar_and_profile_alert(client):
+    """Vérifie le calcul calendaire 7j du poids, l'activité stricte du jour et l'alerte profil incomplet."""
+    today = date.today()
+
+    # 1. Base vierge : profil par défaut sans personnalisation
+    dash = client.get("/api/dashboard").json()
+    summary = dash["summary"]
+    profile = dash["profile"]
+
+    assert summary["is_profile_incomplete"] is True
+    assert profile["is_incomplete"] is True
+    assert summary["has_today_activity"] is False
+    assert summary["steps"] == 0
+    assert summary["weight_7d_status"] == "none"
+
+    # 2. Insertion d'activités antérieures (hier et avant-hier), mais AUCUNE activité aujourd'hui
+    yesterday = today - timedelta(days=1)
+    client.post("/api/activities", json={
+        "date": yesterday.isoformat(),
+        "steps": 12000,
+        "active_calories_kcal": 500.0,
+        "workout_minutes": 45,
+        "source": "health_connect"
+    })
+
+    dash2 = client.get("/api/dashboard").json()
+    # Hier ne doit PAS masquer l'absence d'activité aujourd'hui
+    assert dash2["summary"]["has_today_activity"] is False
+    assert dash2["summary"]["steps"] == 0
+
+    # 3. Ajout d'une activité pour AUJOURD'HUI
+    client.post("/api/activities", json={
+        "date": today.isoformat(),
+        "steps": 8500,
+        "active_calories_kcal": 350.0,
+        "workout_minutes": 30,
+        "source": "health_connect"
+    })
+    dash3 = client.get("/api/dashboard").json()
+    assert dash3["summary"]["has_today_activity"] is True
+    assert dash3["summary"]["steps"] == 8500
+
+    # 4. Tendance et variation calendaire 7j du poids
+    # Cas 4a : Exactement à J-7 calendaire
+    seven_days_ago = today - timedelta(days=7)
+    client.post("/api/weights", json={
+        "date": seven_days_ago.isoformat(),
+        "weight_kg": 80.0,
+        "source": "withings"
+    })
+    client.post("/api/weights", json={
+        "date": today.isoformat(),
+        "weight_kg": 79.2,
+        "source": "withings"
+    })
+
+    dash4 = client.get("/api/dashboard").json()
+    assert dash4["summary"]["weight_7d_variation_kg"] == -0.8
+    assert dash4["summary"]["weight_7d_status"] == "exact"
+    assert dash4["summary"]["weight_7d_baseline_date"] == seven_days_ago.isoformat()
+
+    # 5. Personnalisation du profil utilisateur
+    prof_payload = {
+        "name": "Sébastien Test",
+        "gender": "male",
+        "age": 36,
+        "height_cm": 180.0,
+        "target_weight_kg": 75.0,
+        "target_steps": 11000,
+        "target_calories_intake": 2100.0,
+        "protein_target_per_kg": 2.0
+    }
+    update_res = client.post("/api/profile", json=prof_payload)
+    assert update_res.status_code == 200
+
+    dash5 = client.get("/api/dashboard").json()
+    assert dash5["summary"]["is_profile_incomplete"] is False
+    assert dash5["profile"]["is_incomplete"] is False
+    assert dash5["profile"]["name"] == "Sébastien Test"
+

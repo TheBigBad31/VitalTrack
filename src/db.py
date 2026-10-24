@@ -238,6 +238,7 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        is_customized INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL,
                         CONSTRAINT uq_user_profile_user UNIQUE (user_id)
                     );
@@ -473,6 +474,7 @@ class Database:
                     ("birth_date", "TEXT"),
                     ("current_weight_kg", "REAL"),
                     ("meal_distribution", "TEXT"),
+                    ("is_customized", "INTEGER NOT NULL DEFAULT 0"),
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS {col} {def_val};")
@@ -550,6 +552,7 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        is_customized INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
                 """)
@@ -770,6 +773,7 @@ class Database:
                     ("birth_date", "TEXT"),
                     ("current_weight_kg", "REAL"),
                     ("meal_distribution", "TEXT"),
+                    ("is_customized", "INTEGER NOT NULL DEFAULT 0"),
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {def_val}")
@@ -2233,6 +2237,7 @@ class Database:
         meal_distribution = _val("meal_distribution", None)
         if isinstance(meal_distribution, (dict, list)):
             meal_distribution = json.dumps(meal_distribution)
+        is_customized = int(data.get("is_customized", 1))
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2245,13 +2250,13 @@ class Database:
                     daily_protein_target_g = ?, daily_carbs_target_g = ?, daily_fat_target_g = ?,
                     daily_water_target_ml = ?, goal_type = ?, activity_level = ?,
                     birth_date = ?, current_weight_kg = ?, meal_distribution = ?,
-                    updated_at = ?
+                    is_customized = ?, updated_at = ?
                 WHERE user_id = ?
             """, (
                 name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake,
                 prot, ring, scale, google_email, google_name, google_picture, google_sub,
                 daily_protein, daily_carbs, daily_fat, daily_water, goal_type, activity_level,
-                birth_date, current_weight, meal_distribution, now_str, user_id
+                birth_date, current_weight, meal_distribution, is_customized, now_str, user_id
             ))
             conn.commit()
 
@@ -2501,7 +2506,8 @@ class Database:
             "google_email": email,
             "google_name": name,
             "google_picture": picture,
-            "google_sub": google_sub
+            "google_sub": google_sub,
+            "is_customized": self.get_user_profile(user_id=user["id"]).get("is_customized", 0)
         }, user_id=user["id"])
 
         sess = self.get_google_session()

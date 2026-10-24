@@ -182,6 +182,23 @@
     <!-- VUE 1 : SYNTHÈSE QUOTIDIENNE & BALANCE ÉNERGÉTIQUE -->
     <!-- =================================================================== -->
     <section id="view-summary" class="view-content space-y-6">
+
+      <!-- Alerte Profil Incomplet / Valeurs par Défaut -->
+      <div id="banner-profile-incomplete" class="hidden p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+        <div class="flex items-center space-x-3 w-full sm:w-auto">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-bold text-amber-300">Profil nutritionnel incomplet (valeurs estimées par défaut)</h4>
+            <p class="text-[11px] text-slate-300">Renseignez votre taille, poids cible, âge et niveau d'activité pour fiabiliser vos calculs de BMR et besoins caloriques.</p>
+          </div>
+        </div>
+        <button type="button" onclick="openProfileModal()" class="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center space-x-1.5 transition-transform active:scale-95 shrink-0 shadow-md">
+          <i data-lucide="user-cog" class="w-4 h-4"></i>
+          <span>Compléter mon profil</span>
+        </button>
+      </div>
       
       <!-- Profils d'Objectifs Métaboliques 1-Clic -->
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 shadow-lg">
@@ -1968,7 +1985,16 @@
       document.getElementById('val-weight').innerHTML = `${s.current_weight_kg || '--'} <span class="text-xs font-normal text-slate-400">kg</span>`;
       document.getElementById('val-weight-trend').innerHTML = `<span class="text-emerald-400">Tendance 7j: ${s.weight_trend_7d_kg || '--'} kg</span>`;
       const diff = s.weight_7d_variation_kg;
-      const diffTxt = diff !== undefined ? (diff > 0 ? `+${diff} kg (7j)` : `${diff} kg (7j)`) : '--';
+      let diffTxt = '--';
+      if (s.weight_7d_status === 'none') {
+        diffTxt = 'Aucune pesée antérieure';
+      } else if (s.weight_7d_status === 'insufficient') {
+        diffTxt = diff !== undefined && diff !== null ? (diff > 0 ? `+${diff} kg (historique court)` : `${diff} kg (historique court)`) : '--';
+      } else if (s.weight_7d_status === 'closest') {
+        diffTxt = diff !== undefined && diff !== null ? (diff > 0 ? `+${diff} kg (~7j calendaire)` : `${diff} kg (~7j calendaire)`) : '--';
+      } else if (diff !== undefined && diff !== null) {
+        diffTxt = diff > 0 ? `+${diff} kg (7j calendaire)` : `${diff} kg (7j calendaire)`;
+      }
       document.getElementById('val-weight-diff').innerText = `Variation 7j: ${diffTxt}`;
 
       document.getElementById('val-cals-in').innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
@@ -1990,10 +2016,28 @@
       const projChange = s.weekly_projected_weight_change_kg || ((net * 7) / 7700).toFixed(2);
       document.getElementById('val-projected-loss').innerText = `Impact 7j: ~${projChange} kg`;
 
-      document.getElementById('val-steps').innerHTML = `${(s.steps || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400">/ 10k</span>`;
-      const stepsPct = Math.min(100, Math.round(((s.steps || 0) / (s.steps_target || 10000)) * 100));
-      document.getElementById('val-steps-pct').innerText = `Progression: ${stepsPct}%`;
-      document.getElementById('bar-steps').style.width = `${stepsPct}%`;
+      const hasTodayAct = Boolean(s.has_today_activity);
+      if (hasTodayAct) {
+        document.getElementById('val-steps').innerHTML = `${(s.steps || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400">/ 10k</span>`;
+        const stepsPct = Math.min(100, Math.round(((s.steps || 0) / (s.steps_target || 10000)) * 100));
+        document.getElementById('val-steps-pct').innerText = `Progression: ${stepsPct}%`;
+        document.getElementById('bar-steps').style.width = `${stepsPct}%`;
+      } else {
+        document.getElementById('val-steps').innerHTML = `0 <span class="text-xs font-normal text-slate-400">pas</span>`;
+        document.getElementById('val-steps-pct').innerText = `Aucune mesure aujourd'hui`;
+        document.getElementById('bar-steps').style.width = `0%`;
+      }
+
+      // Alerte Profil Incomplet
+      const bannerProfileInc = document.getElementById('banner-profile-incomplete');
+      if (bannerProfileInc) {
+        const isIncomplete = Boolean(s.is_profile_incomplete || (currentData.profile && currentData.profile.is_incomplete));
+        if (isIncomplete) {
+          bannerProfileInc.classList.remove('hidden');
+        } else {
+          bannerProfileInc.classList.add('hidden');
+        }
+      }
 
       document.getElementById('summary-recommendation').innerText = s.recommendation || "Poursuivez sur cette trajectoire régulière pour atteindre votre objectif de composition corporelle.";
 
@@ -2006,15 +2050,21 @@
       const hcHrEl = document.getElementById('live-hc-hr');
       const hcHrvEl = document.getElementById('live-hc-hrv');
       const hcSleepEl = document.getElementById('live-hc-sleep');
-      if (hcStepsEl && latestAct) {
-        hcStepsEl.innerText = `${(latestAct.steps || s.steps || 0).toLocaleString()} pas`;
+      if (hasTodayAct && latestAct) {
+        if (hcStepsEl) hcStepsEl.innerText = `${(latestAct.steps || 0).toLocaleString()} pas`;
         if (hcCalsEl) hcCalsEl.innerText = `${latestAct.active_calories_kcal || 0} kcal`;
-        const hrVal = latestAct.resting_hr_bpm || s.resting_hr_bpm;
+        const hrVal = latestAct.resting_hr_bpm;
         if (hcHrEl) hcHrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
-        const hrvVal = latestAct.hrv_ms || s.hrv_ms;
+        const hrvVal = latestAct.hrv_ms;
         if (hcHrvEl) hcHrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
-        const scVal = latestAct.sleep_score || s.sleep_score;
+        const scVal = latestAct.sleep_score;
         if (hcSleepEl) hcSleepEl.innerText = scVal ? `${scVal} / 100` : '--';
+      } else {
+        if (hcStepsEl) hcStepsEl.innerText = `0 pas (en attente de synchro)`;
+        if (hcCalsEl) hcCalsEl.innerText = `-- kcal`;
+        if (hcHrEl) hcHrEl.innerText = `-- BPM`;
+        if (hcHrvEl) hcHrvEl.innerText = `-- ms`;
+        if (hcSleepEl) hcSleepEl.innerText = `-- / 100`;
       }
 
       // Donut Macros

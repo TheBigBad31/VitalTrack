@@ -352,29 +352,56 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
     activities = db.get_activities(limit=30, user_id=user_id)
     meals = db.get_meals(limit=60, user_id=user_id)
 
-    # Date du jour (ou dernière pesée)
+    # Date du jour et dernière pesée
     today = date.today()
     latest_weight = weights[-1] if weights else None
-    
-    # Évolution 7j
+
+    # Évolution 7j réelle basée sur le calendrier (target = date de la dernière pesée - 7 jours)
     weight_7d_change = 0.0
-    if len(weights) >= 7:
-        weight_7d_change = round(weights[-1].weight_kg - weights[-7].weight_kg, 2)
-    elif len(weights) >= 2:
-        weight_7d_change = round(weights[-1].weight_kg - weights[0].weight_kg, 2)
+    weight_7d_status = "none"  # "exact", "closest", "insufficient", "none"
+    weight_7d_baseline_date = None
 
-    # Synthèse du jour
+    if latest_weight and len(weights) >= 2:
+        target_7d_date = latest_weight.date - timedelta(days=7)
+        # 1. Pesée exacte à J-7
+        exact_prev = next((w for w in weights if w.date == target_7d_date), None)
+        if exact_prev:
+            weight_7d_change = round(latest_weight.weight_kg - exact_prev.weight_kg, 2)
+            weight_7d_status = "exact"
+            weight_7d_baseline_date = exact_prev.date.isoformat()
+        else:
+            # 2. Chercher la pesée la plus proche dans une fenêtre de ±3 jours (4 à 10 jours avant)
+            candidates = [w for w in weights if w.date != latest_weight.date and 4 <= (latest_weight.date - w.date).days <= 10]
+            if candidates:
+                closest_w = min(candidates, key=lambda w: abs((latest_weight.date - w.date).days - 7))
+                weight_7d_change = round(latest_weight.weight_kg - closest_w.weight_kg, 2)
+                weight_7d_status = "closest"
+                weight_7d_baseline_date = closest_w.date.isoformat()
+            else:
+                earlier = [w for w in weights if w.date < latest_weight.date]
+                if earlier:
+                    weight_7d_change = round(latest_weight.weight_kg - earlier[0].weight_kg, 2)
+                    weight_7d_status = "insufficient"
+                    weight_7d_baseline_date = earlier[0].date.isoformat()
+    elif latest_weight:
+        weight_7d_status = "none"
+
+    # Activité exacte du jour (sans masquer l'absence par hier)
     today_activity = next((a for a in reversed(activities) if a.date == today), None)
-    if not today_activity and activities:
-        today_activity = activities[-1]
+    has_today_activity = today_activity is not None
 
-    # Profil utilisateur personnalisé
+    # Profil utilisateur personnalisé & détection profil incomplet/défaut
     profile = db.get_user_profile(user_id=user_id)
     saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
 
-    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today, user_id=user_id)
+    is_profile_customized = bool(profile.get("is_customized", 0))
+    is_profile_incomplete = not is_profile_customized
+    profile["is_incomplete"] = is_profile_incomplete
+    profile["is_customized"] = 1 if is_profile_customized else 0
+
+    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today, user_id=user_id)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
-        target_date=today_activity.date if today_activity else today,
+        target_date=today,
         user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5,
         user_height_cm=profile.get("height_cm", 178.0),
         user_age=profile.get("age", 35),
@@ -425,6 +452,10 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
             "current_weight_kg": latest_weight.weight_kg if latest_weight else None,
             "weight_trend_7d_kg": latest_weight.trend_7d_kg if latest_weight else None,
             "weight_7d_variation_kg": weight_7d_change if latest_weight else None,
+            "weight_7d_status": weight_7d_status,
+            "weight_7d_baseline_date": weight_7d_baseline_date,
+            "has_today_activity": has_today_activity,
+            "is_profile_incomplete": is_profile_incomplete,
             "body_fat_pct": latest_weight.body_fat_pct if latest_weight else None,
             "muscle_mass_kg": latest_weight.muscle_mass_kg if latest_weight else None,
             "water_pct": latest_weight.water_pct if latest_weight else None,
