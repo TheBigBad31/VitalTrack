@@ -15,7 +15,9 @@ Endpoints :
 - GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
 """
 
+import logging
 import os
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -23,6 +25,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+# Configuration du logging structuré pour les latences et l'observabilité
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("vitaltrack.observability")
 
 from src.db import Database, get_db_path
 from src.models import (
@@ -69,6 +75,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def performance_and_latency_middleware(request: Request, call_next):
+    """Mesure la latence par route backend, émet les logs de latence et injecte le Server-Timing header."""
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start_time) * 1000.0
+        logger.error(
+            f"HTTP {request.method} {request.url.path} failed in {duration_ms:.2f}ms - Exception: {exc}"
+        )
+        raise exc
+
+    duration_ms = (time.perf_counter() - start_time) * 1000.0
+    # Header Server-Timing conforme au W3C: app;dur=...
+    timing_value = f"app;dur={duration_ms:.2f};desc=\"App Processing\""
+    existing_timing = response.headers.get("Server-Timing")
+    if existing_timing:
+        response.headers["Server-Timing"] = f"{existing_timing}, {timing_value}"
+    else:
+        response.headers["Server-Timing"] = timing_value
+
+    logger.info(
+        f"HTTP {request.method} {request.url.path} {response.status_code} in {duration_ms:.2f}ms"
+    )
+    return response
 
 
 @app.middleware("http")
@@ -323,14 +357,56 @@ class DeviceConnectInput(BaseModel):
 @app.get("/health")
 @app.get("/api/health")
 def health_check():
-    """Vérification de l'état du backend et de la base de données."""
+    """Vérification de l'état du backend, de la base de données et des connecteurs IoT."""
+    db_status = "ok"
+    db_engine = "postgresql" if db.is_postgres else "sqlite"
+    db_target = "Neon PostgreSQL" if db.is_postgres else db.db_path
+    
+    # Test actif de connectivité à la base de données
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1;")
+            cursor.fetchone()
+    except Exception as db_err:
+        db_status = f"degraded: {str(db_err)}"
+
+    # Évaluation de l'état des connecteurs enregistrés
+    connectors_summary = {}
+    total_connectors = 0
+    configured_connectors = 0
+    try:
+        all_devs = device_registry.list_all()
+        total_connectors = len(all_devs)
+        for dev in all_devs:
+            is_cfg = dev.is_configured() if callable(getattr(dev, "is_configured", None)) else bool(getattr(dev, "is_configured", False))
+            if is_cfg:
+                configured_connectors += 1
+            connectors_summary[dev.id] = {
+                "name": dev.name,
+                "type": dev.device_type,
+                "is_configured": is_cfg,
+                "status": "ready" if is_cfg else "unconfigured"
+            }
+    except Exception as conn_err:
+        connectors_summary["error"] = str(conn_err)
+
+    overall_status = "ok" if db_status == "ok" else "degraded"
+
     return {
-        "status": "ok",
+        "status": overall_status,
         "service": "VitalTrack API",
         "database": {
-            "type": "postgresql" if db.is_postgres else "sqlite",
+            "status": db_status,
+            "engine": db_engine,
+            "type": db_engine,
             "is_postgres": db.is_postgres,
-            "target": "Neon PostgreSQL" if db.is_postgres else db.db_path
+            "target": db_target
+        },
+        "connectors": {
+            "total": total_connectors,
+            "configured": configured_connectors,
+            "items": connectors_summary
         },
         "db_path": db.db_path,
         "is_vercel": os.getenv("VERCEL") == "1",

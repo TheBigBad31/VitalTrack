@@ -30,3 +30,23 @@ jobs:
       - name: Run tests with pytest
         run: |
           uv run pytest -v
+
+  lighthouse-audit:
+    name: Lighthouse Performance Budget
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Lighthouse CI CLI
+        run: |
+          npm install -g @lhci/cli@0.14.x
+
+      - name: Run Lighthouse CI (Audit & Budget Assertions)
+        run: |
+          lhci autorun --config=./lighthouserc.json

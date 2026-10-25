@@ -48,13 +48,36 @@ def client():
 
 
 def test_api_health(client):
-    """Vérifie le point de terminaison de santé."""
+    """Vérifie le point de terminaison de santé enrichi et l'en-tête Server-Timing."""
     res = client.get("/api/health")
     assert res.status_code == 200
+    assert "Server-Timing" in res.headers
+    assert "dur=" in res.headers["Server-Timing"]
+
     data = res.json()
     assert data["status"] == "ok"
     assert "VitalTrack API" in data["service"]
     assert "db_path" in data
+    # Vérification observabilité base de données
+    assert "database" in data
+    assert data["database"]["engine"] in ("sqlite", "postgresql")
+    assert data["database"]["status"] == "ok"
+    assert "target" in data["database"]
+    # Vérification connecteurs IoT
+    assert "connectors" in data
+    assert "total" in data["connectors"]
+    assert "items" in data["connectors"]
+    assert "ringconn" in data["connectors"]["items"]
+
+
+def test_server_timing_and_latency_headers(client):
+    """Vérifie l'injection de l'en-tête Server-Timing sur les différentes routes de l'API."""
+    for path in ["/api/health", "/api/dashboard"]:
+        res = client.get(path)
+        assert res.status_code == 200
+        assert "Server-Timing" in res.headers
+        timing = res.headers["Server-Timing"]
+        assert "app;dur=" in timing
 
 
 def test_api_dashboard_structure(client):
