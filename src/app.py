@@ -46,7 +46,7 @@ from src.analytics import BiometricsAnalyticsService
 from src.biometrics_math import DailyBiometrics
 import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
-from src.connectors.registry import DeviceConnectorRegistry
+from src.connectors.registry import DeviceConnectorRegistry, get_connector
 from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
@@ -1912,12 +1912,16 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_cu
         raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
     
     today_val = dt_module.date.today()
-    start_val = today_val - dt_module.timedelta(days=1)
+    start_val = today_val - dt_module.timedelta(days=7)
     
     weights = []
     activities = []
     if getattr(connector, "is_configured", False):
         if hasattr(connector, "sync_weights"):
+            # Si le connecteur Withings a une DB associée, lui lier l'instance actuelle
+            if hasattr(connector, "db") and not connector.db:
+                connector.db = db
+                connector.user_id = current_user.id
             raw_weights = [
                 w for w in connector.sync_weights(start_val, today_val)
                 if w.source not in ("demo", "simulation") and "Démo" not in (w.notes or "")
