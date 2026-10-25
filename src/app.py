@@ -15,7 +15,9 @@ Endpoints :
 - GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
 """
 
+import csv
 import hmac
+import io
 import logging
 import os
 import time
@@ -23,7 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,7 +36,9 @@ logger = logging.getLogger("vitaltrack.observability")
 from src.db import Database, DatabaseServiceUnavailableError, get_db_path
 from src.models import (
     ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
-    MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry
+    MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry,
+    DailyMetricsEntry, WorkoutEntry, SleepSessionEntry, SleepStageEntry,
+    IntradaySampleEntry, HydrationLogEntry, RawIngestEntry, UserConsentItem
 )
 from src.nutrition_engine import NutritionEngine
 from src.nutrition_rules import evaluate_dish_benefits
@@ -45,6 +49,7 @@ from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
+from src.routers.webhooks import router as webhooks_router
 from src.auth import (
     AuthUser,
     GoogleAuthPayload,
@@ -1543,6 +1548,31 @@ def disconnect_device(device_id: str, current_user: AuthUser = Depends(get_curre
     }
 
 
+@app.post("/api/devices/{device_id}/token")
+def create_device_token_endpoint(
+    device_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Génère ou renouvelle un token secret individuel sécurisé pour un appareil/passerelle mobile."""
+    req_payload = payload or {}
+    name = req_payload.get("name")
+    dev_type = req_payload.get("device_type")
+    device_token_info = db.generate_device_token(
+        device_id=device_id,
+        name=name,
+        device_type=dev_type,
+        user_id=current_user.id
+    )
+    return {
+        "status": "success",
+        "message": f"Jeton individuel d'appareil généré avec succès pour '{device_id}'",
+        "device_id": device_id,
+        "token": device_token_info["token"],
+        "device": device_token_info
+    }
+
+
 @app.post("/api/devices/{device_id}/sync")
 def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_current_user)):
     """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
@@ -1843,10 +1873,138 @@ class BackupRestoreInput(BaseModel):
 
 
 @app.get("/api/backup/export")
+@app.get("/api/export/json")
 def export_backup(current_user: AuthUser = Depends(get_current_user)):
-    """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique."""
+    """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique en JSON (RGPD)."""
     backup_data = db.export_full_backup(user_id=current_user.id)
     return backup_data
+
+
+@app.get("/api/export/csv")
+def export_data_csv(limit: Optional[int] = Query(None, description="Limite optionnelle pour pagination ou export complet"), current_user: AuthUser = Depends(get_current_user)):
+    """Exporte l'intégralité des données biométriques (pesées et activités) au format CSV standard sans troncature (RGPD)."""
+    fetch_limit = limit if limit and limit > 0 else 1000000
+    weights = db.get_weights(limit=fetch_limit, user_id=current_user.id)
+    activities = db.get_activities(limit=fetch_limit, user_id=current_user.id)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # 1. Section Pesées
+    writer.writerow(["### SECTION: WEIGHTS ###"])
+    writer.writerow(["date", "weight_kg", "body_fat_pct", "muscle_mass_kg", "water_pct", "bmi", "trend_7d_kg", "source", "external_id", "notes"])
+    for w in weights:
+        writer.writerow([
+            w.date.isoformat(),
+            w.weight_kg,
+            w.body_fat_pct if w.body_fat_pct is not None else "",
+            w.muscle_mass_kg if w.muscle_mass_kg is not None else "",
+            w.water_pct if w.water_pct is not None else "",
+            w.bmi if w.bmi is not None else "",
+            w.trend_7d_kg if w.trend_7d_kg is not None else "",
+            w.source,
+            w.external_id or "",
+            w.notes or ""
+        ])
+
+    writer.writerow([])
+    # 2. Section Activités
+    writer.writerow(["### SECTION: ACTIVITIES ###"])
+    writer.writerow(["date", "steps", "active_calories_kcal", "bmr_kcal", "total_burned_kcal", "workout_minutes", "workout_type", "resting_hr_bpm", "hrv_ms", "sleep_score", "source", "external_id"])
+    for a in activities:
+        writer.writerow([
+            a.date.isoformat(),
+            a.steps,
+            a.active_calories_kcal,
+            a.bmr_kcal,
+            a.total_burned_kcal,
+            a.workout_minutes,
+            a.workout_type or "",
+            a.resting_hr_bpm if a.resting_hr_bpm is not None else "",
+            a.hrv_ms if a.hrv_ms is not None else "",
+            a.sleep_score if a.sleep_score is not None else "",
+            a.source,
+            a.external_id or ""
+        ])
+
+    csv_content = output.getvalue()
+    filename = f"vitaltrack_export_{current_user.id}_{date.today().isoformat()}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+class ConfirmDeletionPayload(BaseModel):
+    confirm: bool = Field(True, description="Confirmation explicite de la suppression")
+    password: Optional[str] = Field(None, description="Mot de passe optionnel pour confirmation")
+
+
+@app.delete("/api/user/data")
+def delete_user_data_only_endpoint(
+    confirm: bool = Query(True, description="Confirmation de purge des données"),
+    payload: Optional[ConfirmDeletionPayload] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Efface l'intégralité des données et de l'historique biométrique tout en conservant le compte et les accès de l'utilisateur."""
+    is_confirmed = confirm and (payload.confirm if payload else True)
+    if not is_confirmed:
+        raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression des données (confirm=true)")
+    success = db.delete_user_data_only(user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return {
+        "status": "success",
+        "message": f"Toutes les données de santé pour {current_user.email} ont été purgées avec succès. Le compte utilisateur reste actif."
+    }
+
+
+@app.delete("/api/user/account")
+def delete_user_account_endpoint(
+    confirm: bool = Query(True, description="Confirmation de suppression du compte"),
+    payload: Optional[ConfirmDeletionPayload] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Supprime définitivement le compte utilisateur et l'ensemble de ses données associées (Droit à l'oubli RGPD)."""
+    is_confirmed = confirm and (payload.confirm if payload else True)
+    if not is_confirmed:
+        raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression définitive du compte (confirm=true)")
+    success = db.delete_user_account_and_data(user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable ou déjà supprimé")
+    return {
+        "status": "success",
+        "message": f"Compte et toutes les données associées pour {current_user.email} ont été définitivement supprimés."
+    }
+
+
+@app.get("/api/user/consents")
+def get_user_consents_endpoint(current_user: AuthUser = Depends(get_current_user)):
+    """Retourne les préférences de consentement RGPD par catégorie pour l'utilisateur."""
+    consents = db.get_user_consents(user_id=current_user.id)
+    return {
+        "user_id": current_user.id,
+        "consents": consents
+    }
+
+
+class ConsentUpdatePayload(BaseModel):
+    category: str = Field(..., description="biometrics, nutrition, analytics, devices")
+    consented: bool = Field(..., description="true ou false")
+
+
+@app.post("/api/user/consents")
+def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: AuthUser = Depends(get_current_user)):
+    """Met à jour le consentement pour une catégorie spécifique."""
+    allowed_categories = {"biometrics", "nutrition", "analytics", "devices"}
+    if payload.category not in allowed_categories:
+        raise HTTPException(status_code=400, detail=f"Catégorie invalide. Choix possibles: {allowed_categories}")
+    res = db.set_user_consent(category=payload.category, consented=payload.consented, user_id=current_user.id)
+    return {
+        "status": "success",
+        "consent": res.model_dump()
+    }
 
 
 @app.post("/api/backup/import")
@@ -1883,132 +2041,7 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 # =====================================================================
 # Endpoints Webhooks Universels (Health Connect, RingConn, Apple Santé)
 # =====================================================================
-
-@app.post("/api/webhook/health")
-@app.post("/api/webhooks/health-connect")
-@app.post("/api/webhooks/ringconn")
-def handle_health_webhook(
-    payload: Dict[str, Any],
-    token: Optional[str] = Query(None),
-    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
-    authorization: Optional[str] = Header(None)
-):
-    """Point d'entrée universel et sécurisé pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn).
-    
-    Exige obligatoirement un token d'authentification valide fourni via :
-    - Header 'X-Webhook-Token'
-    - Header 'Authorization' (Bearer <token> ou token direct)
-    - Query parameter '?token=...'
-    - Payload JSON champ 'token', 'webhook_token' ou 'api_key'
-    """
-    # 1. Extraction du jeton (Headers prioritaires, puis Query, puis Payload)
-    auth_token = None
-    if x_webhook_token and str(x_webhook_token).strip():
-        auth_token = str(x_webhook_token).strip()
-    elif authorization and str(authorization).strip():
-        auth_str = str(authorization).strip()
-        if auth_str.lower().startswith("bearer "):
-            auth_token = auth_str[7:].strip()
-        else:
-            auth_token = auth_str
-    elif token and str(token).strip():
-        auth_token = str(token).strip()
-    elif isinstance(payload, dict):
-        for candidate_key in ("token", "webhook_token", "api_key"):
-            cand = payload.get(candidate_key)
-            if cand and str(cand).strip():
-                auth_token = str(cand).strip()
-                break
-
-    # Rendre le jeton obligatoire
-    if not auth_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Jeton d'authentification manquant. Fournissez un token via header 'X-Webhook-Token', 'Authorization' ou query param 'token'."
-        )
-
-    # 2. Validation du token et résolution dynamique device / user
-    user_match = db.find_user_by_device_token(auth_token)
-    resolved_user_id = None
-    matched_device = None
-
-    if user_match:
-        resolved_user_id = user_match.get("user_id")
-        matched_device = user_match.get("device")
-    else:
-        # Fallback de validation via connecteur universel configuré ou WEBHOOK_SECRET global
-        # Comportement fail-closed strict :
-        # - En environnement de production (VERCEL=1 ou ENV=production), si WEBHOOK_SECRET est absent -> HTTP 503
-        is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
-        global_secret = os.getenv("WEBHOOK_SECRET")
-
-        if not global_secret:
-            if is_production:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Service Webhook non configuré en production (secret absent)"
-                )
-        else:
-            if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
-                # Si le payload spécifie explicitement un user_id valide, on l'utilise, sinon vérification du compte 1
-                target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
-                if target_user_id:
-                    user_obj = db.get_user_by_id(int(target_user_id))
-                    if user_obj:
-                        resolved_user_id = int(target_user_id)
-                else:
-                    default_user = db.get_user_by_id(1)
-                    if default_user:
-                        resolved_user_id = 1
-
-    if not resolved_user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Token webhook invalide ou non autorisé : aucun compte utilisateur ou appareil associé"
-        )
-
-    # 3. Extraction et validation des données de pesée / activité
-    connector = MobileHealthWebhookConnector()
-    weight_entry, act_entry = connector.process_webhook_payload(payload)
-    saved_weight = None
-    saved_act = None
-
-    if weight_entry:
-        saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
-    if act_entry:
-        saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
-
-    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu
-    source_name = payload.get("source", "health_connect")
-    dev_id = matched_device.get("device_id") if matched_device else (
-        "ringconn" if "ring" in source_name.lower() else (
-            "withings" if "withings" in source_name.lower() else "health_connect"
-        )
-    )
-    dev_name = matched_device.get("name") if matched_device else dev_id.replace("_", " ").title()
-    dev_type = matched_device.get("device_type") if matched_device else (
-        "ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator")
-    )
-
-    db.update_user_device(
-        device_id=dev_id,
-        name=dev_name,
-        device_type=dev_type,
-        connected=True,
-        auth_type="webhook",
-        user_id=resolved_user_id
-    )
-
-    return {
-        "status": "success",
-        "message": f"Données de santé webhook ingérées avec succès pour l'utilisateur {resolved_user_id}",
-        "device_id": dev_id,
-        "user_id": resolved_user_id,
-        "ingested": {
-            "weight": saved_weight,
-            "activity": saved_act
-        }
-    }
+app.include_router(webhooks_router)
 
 
 

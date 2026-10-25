@@ -32,7 +32,9 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from src.models import (
     ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
-    MealLog, MealLogItem, NutritionBenefitItem, SavedMeal, WeightEntry
+    MealLog, MealLogItem, NutritionBenefitItem, SavedMeal, WeightEntry,
+    DailyMetricsEntry, WorkoutEntry, SleepSessionEntry, SleepStageEntry,
+    IntradaySampleEntry, HydrationLogEntry, RawIngestEntry, UserConsentItem
 )
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
@@ -562,6 +564,133 @@ class Database:
                     );
                 """)
 
+                # Palier 3 : Nouvelles tables biométriques et d'ingestion enrichie (PostgreSQL)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_metrics (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        steps INTEGER NOT NULL DEFAULT 0,
+                        active_calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        total_calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        resting_hr_bpm INTEGER,
+                        hrv_rmssd_ms REAL,
+                        hrv_sdnn_ms REAL,
+                        spo2_pct REAL,
+                        skin_temperature_c REAL,
+                        sleep_score INTEGER,
+                        recovery_score INTEGER,
+                        external_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        CONSTRAINT uq_daily_metrics_user_date_source UNIQUE (user_id, date, source)
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS workouts (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        external_id TEXT,
+                        workout_type TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_minutes INTEGER NOT NULL DEFAULT 0,
+                        calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        avg_hr_bpm INTEGER,
+                        max_hr_bpm INTEGER,
+                        distance_meters REAL,
+                        notes TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sleep_sessions (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        external_id TEXT,
+                        date TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_minutes INTEGER NOT NULL DEFAULT 0,
+                        efficiency_pct REAL,
+                        sleep_debt_minutes INTEGER,
+                        sleep_score INTEGER,
+                        deep_minutes INTEGER DEFAULT 0,
+                        light_minutes INTEGER DEFAULT 0,
+                        rem_minutes INTEGER DEFAULT 0,
+                        awake_minutes INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sleep_stages (
+                        id SERIAL PRIMARY KEY,
+                        sleep_session_id INTEGER NOT NULL REFERENCES sleep_sessions(id) ON DELETE CASCADE,
+                        stage TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_seconds INTEGER NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS intraday_samples (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        metric_type TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        value REAL NOT NULL,
+                        unit TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS hydration_logs (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        volume_ml REAL NOT NULL,
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        external_id TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS raw_ingest (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        endpoint TEXT,
+                        idempotency_key TEXT,
+                        payload_json TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'received',
+                        received_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_consents (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        category TEXT NOT NULL,
+                        consented INTEGER NOT NULL DEFAULT 1,
+                        updated_at TEXT NOT NULL,
+                        CONSTRAINT uq_user_consents_user_cat UNIQUE (user_id, category)
+                    );
+                """)
+
                 # Migrations douces colonnes users pour PostgreSQL
                 for col, def_val in [
                     ("uuid", "TEXT"),
@@ -573,6 +702,19 @@ class Database:
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {def_val};")
+                    except Exception:
+                        pass
+
+                # Migrations douces colonnes weights et activities pour idempotence PostgreSQL
+                for table, col, def_val in [
+                    ("weights", "external_id", "TEXT"),
+                    ("weights", "measured_at", "TEXT"),
+                    ("weights", "idempotency_key", "TEXT"),
+                    ("activities", "external_id", "TEXT"),
+                    ("activities", "idempotency_key", "TEXT"),
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {def_val};")
                     except Exception:
                         pass
 
@@ -621,11 +763,25 @@ class Database:
                 # Index optimisés PostgreSQL
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_source_external ON weights(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_source_external ON activities(source, external_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date ON daily_metrics(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_source_ext ON daily_metrics(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_user_time ON workouts(user_id, start_time DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_source_ext ON workouts(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_user_date ON sleep_sessions(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_source_ext ON sleep_sessions(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_stages_session ON sleep_stages(sleep_session_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_intraday_samples_user_metric_time ON intraday_samples(user_id, metric_type, timestamp DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -875,6 +1031,146 @@ class Database:
                     );
                 """)
 
+                # Palier 3 : Nouvelles tables biométriques et d'ingestion enrichie (SQLite)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS daily_metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        steps INTEGER NOT NULL DEFAULT 0,
+                        active_calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        total_calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        resting_hr_bpm INTEGER,
+                        hrv_rmssd_ms REAL,
+                        hrv_sdnn_ms REAL,
+                        spo2_pct REAL,
+                        skin_temperature_c REAL,
+                        sleep_score INTEGER,
+                        recovery_score INTEGER,
+                        external_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (user_id, date, source)
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS workouts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        external_id TEXT,
+                        workout_type TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_minutes INTEGER NOT NULL DEFAULT 0,
+                        calories_kcal REAL NOT NULL DEFAULT 0.0,
+                        avg_hr_bpm INTEGER,
+                        max_hr_bpm INTEGER,
+                        distance_meters REAL,
+                        notes TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sleep_sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        external_id TEXT,
+                        date TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_minutes INTEGER NOT NULL DEFAULT 0,
+                        efficiency_pct REAL,
+                        sleep_debt_minutes INTEGER,
+                        sleep_score INTEGER,
+                        deep_minutes INTEGER DEFAULT 0,
+                        light_minutes INTEGER DEFAULT 0,
+                        rem_minutes INTEGER DEFAULT 0,
+                        awake_minutes INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sleep_stages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sleep_session_id INTEGER NOT NULL REFERENCES sleep_sessions(id) ON DELETE CASCADE,
+                        stage TEXT NOT NULL,
+                        start_time TEXT NOT NULL,
+                        end_time TEXT NOT NULL,
+                        duration_seconds INTEGER NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS intraday_samples (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        metric_type TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        value REAL NOT NULL,
+                        unit TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS hydration_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        date TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        volume_ml REAL NOT NULL,
+                        source TEXT NOT NULL DEFAULT 'manual',
+                        external_id TEXT,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS raw_ingest (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        source TEXT NOT NULL,
+                        endpoint TEXT,
+                        idempotency_key TEXT,
+                        payload_json TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'received',
+                        received_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_consents (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        category TEXT NOT NULL,
+                        consented INTEGER NOT NULL DEFAULT 1,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (user_id, category)
+                    );
+                """)
+
+                # Migrations douces colonnes weights et activities pour idempotence SQLite
+                for table, col, def_val in [
+                    ("weights", "external_id", "TEXT"),
+                    ("weights", "measured_at", "TEXT"),
+                    ("weights", "idempotency_key", "TEXT"),
+                    ("activities", "external_id", "TEXT"),
+                    ("activities", "idempotency_key", "TEXT"),
+                ]:
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
+                    except Exception:
+                        pass
+
                 # Migrations douces pour ajouter user_id si les tables SQLite existaient déjà sans user_id
                 for table in ["weights", "activities", "meals", "user_devices", "user_profile", "saved_meals"]:
                     try:
@@ -932,8 +1228,22 @@ class Database:
                 # Index SQLite
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_source_external ON weights(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_source_external ON activities(source, external_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date ON daily_metrics(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_source_ext ON daily_metrics(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_user_time ON workouts(user_id, start_time DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_source_ext ON workouts(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_user_date ON sleep_sessions(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_source_ext ON sleep_sessions(source, external_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_stages_session ON sleep_stages(sleep_session_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_intraday_samples_user_metric_time ON intraday_samples(user_id, metric_type, timestamp DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
 
             conn.commit()
 
@@ -1094,20 +1404,53 @@ class Database:
         return round(sum(all_weights) / len(all_weights), 2)
 
     def insert_weight(self, entry: WeightEntry, user_id: int = 1) -> WeightEntry:
-        """Insère ou met à jour une pesée en recalculant la tendance 7j pour user_id."""
+        """Insère ou met à jour une pesée en recalculant la tendance 7j pour user_id (avec support d'idempotence)."""
+        # Vérification d'idempotence si external_id est fourni
+        if entry.external_id:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM weights WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
+                    (user_id, entry.source, entry.external_id)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    return WeightEntry(
+                        id=existing["id"],
+                        date=date.fromisoformat(existing["date"][:10]),
+                        weight_kg=existing["weight_kg"],
+                        body_fat_pct=existing["body_fat_pct"],
+                        muscle_mass_kg=existing["muscle_mass_kg"],
+                        water_pct=existing["water_pct"],
+                        bmi=existing["bmi"],
+                        trend_7d_kg=existing["trend_7d_kg"],
+                        source=existing["source"],
+                        is_simulated=(existing["source"] in ("simulation", "demo")),
+                        notes=existing["notes"],
+                        external_id=existing.get("external_id"),
+                        measured_at=existing.get("measured_at"),
+                        idempotency_key=existing.get("idempotency_key"),
+                        created_at=datetime.fromisoformat(existing["created_at"]) if existing["created_at"] else None
+                    )
+
         trend = entry.trend_7d_kg
         if trend is None:
             trend = self.calculate_7d_trend(entry.date, entry.weight_kg, user_id=user_id)
 
         now_str = datetime.now(timezone.utc).isoformat()
         date_str = entry.date.isoformat()
+        measured_at_str = entry.measured_at or now_str
+        idemp_key = entry.idempotency_key or (f"{entry.source}:{entry.external_id}" if entry.external_id else None)
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
-                    INSERT INTO weights (user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO weights (
+                        user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct,
+                        bmi, trend_7d_kg, source, notes, external_id, measured_at, idempotency_key, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, date) DO UPDATE SET
                         weight_kg = EXCLUDED.weight_kg,
                         body_fat_pct = EXCLUDED.body_fat_pct,
@@ -1116,19 +1459,25 @@ class Database:
                         bmi = EXCLUDED.bmi,
                         trend_7d_kg = EXCLUDED.trend_7d_kg,
                         source = EXCLUDED.source,
-                        notes = EXCLUDED.notes
+                        notes = EXCLUDED.notes,
+                        external_id = COALESCE(EXCLUDED.external_id, weights.external_id),
+                        measured_at = COALESCE(EXCLUDED.measured_at, weights.measured_at),
+                        idempotency_key = COALESCE(EXCLUDED.idempotency_key, weights.idempotency_key)
                     RETURNING id;
                 """, (
                     user_id, date_str, entry.weight_kg, entry.body_fat_pct,
                     entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
-                    entry.source, entry.notes, now_str
+                    entry.source, entry.notes, entry.external_id, measured_at_str, idemp_key, now_str
                 ))
                 res = cursor.fetchone()
                 entry_id = res["id"] if res else None
             else:
                 cursor.execute("""
-                    INSERT INTO weights (user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO weights (
+                        user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct,
+                        bmi, trend_7d_kg, source, notes, external_id, measured_at, idempotency_key, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, date) DO UPDATE SET
                         weight_kg = excluded.weight_kg,
                         body_fat_pct = excluded.body_fat_pct,
@@ -1137,11 +1486,14 @@ class Database:
                         bmi = excluded.bmi,
                         trend_7d_kg = excluded.trend_7d_kg,
                         source = excluded.source,
-                        notes = excluded.notes
+                        notes = excluded.notes,
+                        external_id = COALESCE(excluded.external_id, weights.external_id),
+                        measured_at = COALESCE(excluded.measured_at, weights.measured_at),
+                        idempotency_key = COALESCE(excluded.idempotency_key, weights.idempotency_key)
                 """, (
                     user_id, date_str, entry.weight_kg, entry.body_fat_pct,
                     entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
-                    entry.source, entry.notes, now_str
+                    entry.source, entry.notes, entry.external_id, measured_at_str, idemp_key, now_str
                 ))
                 entry_id = cursor.lastrowid
             conn.commit()
@@ -1149,6 +1501,8 @@ class Database:
         entry_dict = entry.model_dump()
         entry_dict["id"] = entry_id
         entry_dict["trend_7d_kg"] = trend
+        entry_dict["measured_at"] = measured_at_str
+        entry_dict["idempotency_key"] = idemp_key
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
         return WeightEntry(**entry_dict)
 
@@ -1184,6 +1538,9 @@ class Database:
                 source=r["source"],
                 is_simulated=(r["source"] in ("simulation", "demo") or "Démo" in (r.get("notes") or "")),
                 notes=r["notes"],
+                external_id=r.get("external_id"),
+                measured_at=r.get("measured_at"),
+                idempotency_key=r.get("idempotency_key"),
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
@@ -1208,7 +1565,11 @@ class Database:
             bmi=r["bmi"],
             trend_7d_kg=r["trend_7d_kg"],
             source=r["source"],
+            is_simulated=(r["source"] in ("simulation", "demo") or "Démo" in (r.get("notes") or "")),
             notes=r["notes"],
+            external_id=r.get("external_id"),
+            measured_at=r.get("measured_at"),
+            idempotency_key=r.get("idempotency_key"),
             created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
         )
 
@@ -1258,9 +1619,39 @@ class Database:
     # ---------------------------------------------------------
 
     def insert_activity(self, entry: ActivityEntry, user_id: int = 1) -> ActivityEntry:
-        """Insère ou met à jour une entrée d'activité pour user_id."""
+        """Insère ou met à jour une entrée d'activité pour user_id (avec support d'idempotence)."""
+        # Vérification d'idempotence si external_id est fourni
+        if entry.external_id:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM activities WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
+                    (user_id, entry.source, entry.external_id)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    return ActivityEntry(
+                        id=existing["id"],
+                        date=date.fromisoformat(existing["date"][:10]),
+                        steps=existing["steps"],
+                        active_calories_kcal=existing["active_calories_kcal"],
+                        bmr_kcal=existing["bmr_kcal"],
+                        total_burned_kcal=existing["total_burned_kcal"],
+                        workout_minutes=existing["workout_minutes"],
+                        workout_type=existing["workout_type"],
+                        resting_hr_bpm=existing["resting_hr_bpm"],
+                        hrv_ms=existing["hrv_ms"],
+                        sleep_score=existing["sleep_score"],
+                        source=existing["source"],
+                        is_simulated=(existing["source"] in ("simulation", "demo")),
+                        external_id=existing.get("external_id"),
+                        idempotency_key=existing.get("idempotency_key"),
+                        created_at=datetime.fromisoformat(existing["created_at"]) if existing["created_at"] else None
+                    )
+
         now_str = datetime.now(timezone.utc).isoformat()
         date_str = entry.date.isoformat()
+        idemp_key = entry.idempotency_key or (f"{entry.source}:{entry.external_id}" if entry.external_id else None)
 
         total_burned = entry.total_burned_kcal
         if total_burned <= 0 and (entry.bmr_kcal > 0 or entry.active_calories_kcal > 0):
@@ -1270,8 +1661,12 @@ class Database:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
-                    INSERT INTO activities (user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO activities (
+                        user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal,
+                        workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score,
+                        source, external_id, idempotency_key, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, date) DO UPDATE SET
                         steps = EXCLUDED.steps,
                         active_calories_kcal = EXCLUDED.active_calories_kcal,
@@ -1282,20 +1677,26 @@ class Database:
                         resting_hr_bpm = EXCLUDED.resting_hr_bpm,
                         hrv_ms = EXCLUDED.hrv_ms,
                         sleep_score = EXCLUDED.sleep_score,
-                        source = EXCLUDED.source
+                        source = EXCLUDED.source,
+                        external_id = COALESCE(EXCLUDED.external_id, activities.external_id),
+                        idempotency_key = COALESCE(EXCLUDED.idempotency_key, activities.idempotency_key)
                     RETURNING id;
                 """, (
                     user_id, date_str, entry.steps, entry.active_calories_kcal,
                     entry.bmr_kcal, total_burned, entry.workout_minutes,
                     entry.workout_type, entry.resting_hr_bpm, entry.hrv_ms,
-                    entry.sleep_score, entry.source, now_str
+                    entry.sleep_score, entry.source, entry.external_id, idemp_key, now_str
                 ))
                 res = cursor.fetchone()
                 entry_id = res["id"] if res else None
             else:
                 cursor.execute("""
-                    INSERT INTO activities (user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO activities (
+                        user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal,
+                        workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score,
+                        source, external_id, idempotency_key, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, date) DO UPDATE SET
                         steps = excluded.steps,
                         active_calories_kcal = excluded.active_calories_kcal,
@@ -1306,12 +1707,14 @@ class Database:
                         resting_hr_bpm = excluded.resting_hr_bpm,
                         hrv_ms = excluded.hrv_ms,
                         sleep_score = excluded.sleep_score,
-                        source = excluded.source
+                        source = excluded.source,
+                        external_id = COALESCE(excluded.external_id, activities.external_id),
+                        idempotency_key = COALESCE(excluded.idempotency_key, activities.idempotency_key)
                 """, (
                     user_id, date_str, entry.steps, entry.active_calories_kcal,
                     entry.bmr_kcal, total_burned, entry.workout_minutes,
                     entry.workout_type, entry.resting_hr_bpm, entry.hrv_ms,
-                    entry.sleep_score, entry.source, now_str
+                    entry.sleep_score, entry.source, entry.external_id, idemp_key, now_str
                 ))
                 entry_id = cursor.lastrowid
             conn.commit()
@@ -1319,6 +1722,7 @@ class Database:
         entry_dict = entry.model_dump()
         entry_dict["id"] = entry_id
         entry_dict["total_burned_kcal"] = total_burned
+        entry_dict["idempotency_key"] = idemp_key
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
         return ActivityEntry(**entry_dict)
 
@@ -1356,6 +1760,8 @@ class Database:
                 sleep_score=r["sleep_score"],
                 source=r["source"],
                 is_simulated=(r["source"] in ("simulation", "demo")),
+                external_id=r.get("external_id"),
+                idempotency_key=r.get("idempotency_key"),
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
@@ -2528,7 +2934,39 @@ class Database:
             return dev
         return None
 
-        return None
+    def generate_device_token(
+        self,
+        device_id: str,
+        name: Optional[str] = None,
+        device_type: Optional[str] = None,
+        user_id: int = 1
+    ) -> Dict[str, Any]:
+        """Génère un token secret individuel sécurisé pour un appareil/pont mobile et l'enregistre chiffré."""
+        import secrets
+        raw_token = f"vt_{device_id}_{secrets.token_urlsafe(24)}"
+        dev_name = name or device_id.replace("_", " ").title()
+        dev_type = device_type or ("ring" if "ring" in device_id else ("scale" if "scale" in device_id or "withings" in device_id else "mobile_aggregator"))
+
+        existing = self.get_user_device(device_id, user_id=user_id, reveal_secrets=True)
+        creds = dict(existing.get("credentials", {})) if existing and existing.get("credentials") else {}
+        creds["api_key"] = raw_token
+        creds["webhook_token"] = raw_token
+
+        updated = self.update_user_device(
+            device_id=device_id,
+            name=dev_name,
+            device_type=dev_type,
+            connected=True,
+            auth_type="webhook",
+            api_key=raw_token,
+            credentials=creds,
+            user_id=user_id
+        )
+
+        res = dict(updated)
+        res["token"] = raw_token
+        res["device_token"] = raw_token
+        return res
 
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
@@ -2977,8 +3415,29 @@ class Database:
                     sm["items"] = []
                 saved_meals_list.append(sm)
 
+            # Palier 3 : Nouvelles tables biométriques et RGPD
+            cursor.execute("SELECT * FROM daily_metrics WHERE user_id = ? ORDER BY date ASC", (user_id,))
+            daily_metrics_list = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute("SELECT * FROM workouts WHERE user_id = ? ORDER BY start_time ASC", (user_id,))
+            workouts_list = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute("SELECT * FROM sleep_sessions WHERE user_id = ? ORDER BY date ASC", (user_id,))
+            sleep_sessions_list = []
+            for s_row in cursor.fetchall():
+                sess_dict = dict(s_row)
+                cursor.execute("SELECT * FROM sleep_stages WHERE sleep_session_id = ? ORDER BY start_time ASC", (sess_dict["id"],))
+                sess_dict["stages"] = [dict(st) for st in cursor.fetchall()]
+                sleep_sessions_list.append(sess_dict)
+
+            cursor.execute("SELECT * FROM hydration_logs WHERE user_id = ? ORDER BY timestamp ASC", (user_id,))
+            hydration_logs_list = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute("SELECT * FROM user_consents WHERE user_id = ?", (user_id,))
+            consents_list = [dict(r) for r in cursor.fetchall()]
+
         return {
-            "version": "2.0",
+            "version": "3.0",
             "user_id": user_id,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "profile": profile_dict,
@@ -2986,7 +3445,12 @@ class Database:
             "weights": weights_list,
             "activities": activities_list,
             "meals": meals_list,
-            "saved_meals": saved_meals_list
+            "saved_meals": saved_meals_list,
+            "daily_metrics": daily_metrics_list,
+            "workouts": workouts_list,
+            "sleep_sessions": sleep_sessions_list,
+            "hydration_logs": hydration_logs_list,
+            "consents": consents_list
         }
 
     def import_full_backup(self, data: Dict[str, Any], overwrite: bool = False, user_id: int = 1) -> Dict[str, Any]:
@@ -3101,7 +3565,15 @@ class Database:
             cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
             cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM daily_metrics WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM workouts WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM sleep_stages WHERE sleep_session_id IN (SELECT id FROM sleep_sessions WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM sleep_sessions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM intraday_samples WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (user_id,))
             if not keep_profile:
+                cursor.execute("DELETE FROM user_consents WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
@@ -3112,3 +3584,621 @@ class Database:
         """Réinitialise et recharge le jeu complet de démonstration sur 30 jours pour user_id."""
         self.clear_all_history(keep_profile=True, user_id=user_id)
         self._seed_demo_data_if_empty(user_id=user_id)
+
+    # ---------------------------------------------------------
+    # Palier 3 : Moteur d'Ingestion Enrichi & Biométrie Haute Fréquence
+    # ---------------------------------------------------------
+
+    def insert_daily_metric(self, metric: DailyMetricsEntry, user_id: int = 1) -> DailyMetricsEntry:
+        """Insère ou met à jour une métrique quotidienne multi-sources de façon idempotente."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        date_str = metric.date.isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO daily_metrics (
+                        user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                        resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, spo2_pct, skin_temperature_c,
+                        sleep_score, recovery_score, external_id, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
+                        steps = EXCLUDED.steps,
+                        active_calories_kcal = EXCLUDED.active_calories_kcal,
+                        total_calories_kcal = EXCLUDED.total_calories_kcal,
+                        resting_hr_bpm = COALESCE(EXCLUDED.resting_hr_bpm, daily_metrics.resting_hr_bpm),
+                        hrv_rmssd_ms = COALESCE(EXCLUDED.hrv_rmssd_ms, daily_metrics.hrv_rmssd_ms),
+                        hrv_sdnn_ms = COALESCE(EXCLUDED.hrv_sdnn_ms, daily_metrics.hrv_sdnn_ms),
+                        spo2_pct = COALESCE(EXCLUDED.spo2_pct, daily_metrics.spo2_pct),
+                        skin_temperature_c = COALESCE(EXCLUDED.skin_temperature_c, daily_metrics.skin_temperature_c),
+                        sleep_score = COALESCE(EXCLUDED.sleep_score, daily_metrics.sleep_score),
+                        recovery_score = COALESCE(EXCLUDED.recovery_score, daily_metrics.recovery_score),
+                        external_id = COALESCE(EXCLUDED.external_id, daily_metrics.external_id),
+                        updated_at = EXCLUDED.updated_at
+                    RETURNING id;
+                """, (
+                    user_id, date_str, metric.source, metric.steps, metric.active_calories_kcal,
+                    metric.total_calories_kcal, metric.resting_hr_bpm, metric.hrv_rmssd_ms,
+                    metric.hrv_sdnn_ms, metric.spo2_pct, metric.skin_temperature_c,
+                    metric.sleep_score, metric.recovery_score, metric.external_id, now_str, now_str
+                ))
+                res = cursor.fetchone()
+                m_id = res["id"] if res else None
+            else:
+                cursor.execute("""
+                    INSERT INTO daily_metrics (
+                        user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                        resting_hr_bpm, hrv_rmssd_ms, hrv_sdnn_ms, spo2_pct, skin_temperature_c,
+                        sleep_score, recovery_score, external_id, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
+                        steps = excluded.steps,
+                        active_calories_kcal = excluded.active_calories_kcal,
+                        total_calories_kcal = excluded.total_calories_kcal,
+                        resting_hr_bpm = COALESCE(excluded.resting_hr_bpm, daily_metrics.resting_hr_bpm),
+                        hrv_rmssd_ms = COALESCE(excluded.hrv_rmssd_ms, daily_metrics.hrv_rmssd_ms),
+                        hrv_sdnn_ms = COALESCE(excluded.hrv_sdnn_ms, daily_metrics.hrv_sdnn_ms),
+                        spo2_pct = COALESCE(excluded.spo2_pct, daily_metrics.spo2_pct),
+                        skin_temperature_c = COALESCE(excluded.skin_temperature_c, daily_metrics.skin_temperature_c),
+                        sleep_score = COALESCE(excluded.sleep_score, daily_metrics.sleep_score),
+                        recovery_score = COALESCE(excluded.recovery_score, daily_metrics.recovery_score),
+                        external_id = COALESCE(excluded.external_id, daily_metrics.external_id),
+                        updated_at = excluded.updated_at
+                """, (
+                    user_id, date_str, metric.source, metric.steps, metric.active_calories_kcal,
+                    metric.total_calories_kcal, metric.resting_hr_bpm, metric.hrv_rmssd_ms,
+                    metric.hrv_sdnn_ms, metric.spo2_pct, metric.skin_temperature_c,
+                    metric.sleep_score, metric.recovery_score, metric.external_id, now_str, now_str
+                ))
+                m_id = cursor.lastrowid
+            conn.commit()
+
+        d = metric.model_dump()
+        d["id"] = m_id
+        d["user_id"] = user_id
+        d["created_at"] = datetime.fromisoformat(now_str)
+        d["updated_at"] = datetime.fromisoformat(now_str)
+        return DailyMetricsEntry(**d)
+
+    def get_daily_metrics(self, limit: int = 30, source: Optional[str] = None, user_id: int = 1) -> List[DailyMetricsEntry]:
+        """Récupère l'historique des métriques journalières pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if source:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM daily_metrics WHERE user_id = ? AND source = ? ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, source, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM daily_metrics WHERE user_id = ? ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, limit))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["date"] = date.fromisoformat(d["date"][:10])
+            if d.get("created_at"):
+                d["created_at"] = datetime.fromisoformat(d["created_at"])
+            if d.get("updated_at"):
+                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            results.append(DailyMetricsEntry(**d))
+        return results
+
+    def insert_workout(self, workout: WorkoutEntry, user_id: int = 1) -> WorkoutEntry:
+        """Insère ou déduplique une séance d'entraînement de façon idempotente."""
+        if workout.external_id:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM workouts WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
+                    (user_id, workout.source, workout.external_id)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    d = dict(existing)
+                    if d.get("created_at"):
+                        d["created_at"] = datetime.fromisoformat(d["created_at"])
+                    if d.get("updated_at"):
+                        d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+                    return WorkoutEntry(**d)
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO workouts (
+                        user_id, source, external_id, workout_type, start_time, end_time,
+                        duration_minutes, calories_kcal, avg_hr_bpm, max_hr_bpm, distance_meters,
+                        notes, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id;
+                """, (
+                    user_id, workout.source, workout.external_id, workout.workout_type,
+                    workout.start_time, workout.end_time, workout.duration_minutes,
+                    workout.calories_kcal, workout.avg_hr_bpm, workout.max_hr_bpm,
+                    workout.distance_meters, workout.notes, now_str, now_str
+                ))
+                res = cursor.fetchone()
+                w_id = res["id"] if res else None
+            else:
+                cursor.execute("""
+                    INSERT INTO workouts (
+                        user_id, source, external_id, workout_type, start_time, end_time,
+                        duration_minutes, calories_kcal, avg_hr_bpm, max_hr_bpm, distance_meters,
+                        notes, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, workout.source, workout.external_id, workout.workout_type,
+                    workout.start_time, workout.end_time, workout.duration_minutes,
+                    workout.calories_kcal, workout.avg_hr_bpm, workout.max_hr_bpm,
+                    workout.distance_meters, workout.notes, now_str, now_str
+                ))
+                w_id = cursor.lastrowid
+            conn.commit()
+
+        d = workout.model_dump()
+        d["id"] = w_id
+        d["user_id"] = user_id
+        d["created_at"] = datetime.fromisoformat(now_str)
+        d["updated_at"] = datetime.fromisoformat(now_str)
+        return WorkoutEntry(**d)
+
+    def get_workouts(self, limit: int = 30, user_id: int = 1) -> List[WorkoutEntry]:
+        """Récupère la liste des séances d'entraînement."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM (
+                    SELECT * FROM workouts WHERE user_id = ? ORDER BY start_time DESC LIMIT ?
+                ) sub ORDER BY start_time ASC
+            """, (user_id, limit))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            d = dict(r)
+            if d.get("created_at"):
+                d["created_at"] = datetime.fromisoformat(d["created_at"])
+            if d.get("updated_at"):
+                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            results.append(WorkoutEntry(**d))
+        return results
+
+    def insert_sleep_session(self, session: SleepSessionEntry, user_id: int = 1) -> SleepSessionEntry:
+        """Enregistre une session de sommeil complète et ses phases associées de façon idempotente."""
+        if session.external_id:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id FROM sleep_sessions WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
+                    (user_id, session.source, session.external_id)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    return self.get_sleep_session_by_id(existing["id"], user_id=user_id) or session
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        date_str = session.date.isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO sleep_sessions (
+                        user_id, source, external_id, date, start_time, end_time,
+                        duration_minutes, efficiency_pct, sleep_debt_minutes, sleep_score,
+                        deep_minutes, light_minutes, rem_minutes, awake_minutes,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id;
+                """, (
+                    user_id, session.source, session.external_id, date_str,
+                    session.start_time, session.end_time, session.duration_minutes,
+                    session.efficiency_pct, session.sleep_debt_minutes, session.sleep_score,
+                    session.deep_minutes or 0, session.light_minutes or 0,
+                    session.rem_minutes or 0, session.awake_minutes or 0,
+                    now_str, now_str
+                ))
+                res = cursor.fetchone()
+                s_id = res["id"] if res else None
+            else:
+                cursor.execute("""
+                    INSERT INTO sleep_sessions (
+                        user_id, source, external_id, date, start_time, end_time,
+                        duration_minutes, efficiency_pct, sleep_debt_minutes, sleep_score,
+                        deep_minutes, light_minutes, rem_minutes, awake_minutes,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, session.source, session.external_id, date_str,
+                    session.start_time, session.end_time, session.duration_minutes,
+                    session.efficiency_pct, session.sleep_debt_minutes, session.sleep_score,
+                    session.deep_minutes or 0, session.light_minutes or 0,
+                    session.rem_minutes or 0, session.awake_minutes or 0,
+                    now_str, now_str
+                ))
+                s_id = cursor.lastrowid
+
+            # Insérer les phases de sommeil
+            saved_stages = []
+            for st in session.stages:
+                cursor.execute("""
+                    INSERT INTO sleep_stages (sleep_session_id, stage, start_time, end_time, duration_seconds)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (s_id, st.stage, st.start_time, st.end_time, st.duration_seconds))
+                saved_stages.append(st)
+
+            conn.commit()
+
+        d = session.model_dump()
+        d["id"] = s_id
+        d["user_id"] = user_id
+        d["stages"] = saved_stages
+        d["created_at"] = datetime.fromisoformat(now_str)
+        d["updated_at"] = datetime.fromisoformat(now_str)
+        return SleepSessionEntry(**d)
+
+    def get_sleep_session_by_id(self, session_id: int, user_id: int = 1) -> Optional[SleepSessionEntry]:
+        """Récupère une session de sommeil avec toutes ses phases."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM sleep_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["date"] = date.fromisoformat(d["date"][:10])
+            cursor.execute("SELECT * FROM sleep_stages WHERE sleep_session_id = ? ORDER BY start_time ASC", (session_id,))
+            stages_rows = cursor.fetchall()
+            d["stages"] = [SleepStageEntry(**dict(st)) for st in stages_rows]
+            if d.get("created_at"):
+                d["created_at"] = datetime.fromisoformat(d["created_at"])
+            if d.get("updated_at"):
+                d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+            return SleepSessionEntry(**d)
+
+    def insert_intraday_samples(self, samples: List[IntradaySampleEntry], user_id: int = 1) -> int:
+        """Insère un lot d'échantillons haute fréquence (FC, pas horaires, SpO2)."""
+        if not samples:
+            return 0
+        now_str = datetime.now(timezone.utc).isoformat()
+        count = 0
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for s in samples:
+                cursor.execute("""
+                    INSERT INTO intraday_samples (user_id, source, metric_type, timestamp, value, unit, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, s.source, s.metric_type, s.timestamp, s.value, s.unit, now_str))
+                count += 1
+            conn.commit()
+        return count
+
+    def get_intraday_samples(
+        self,
+        metric_type: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        limit: int = 500,
+        user_id: int = 1
+    ) -> List[IntradaySampleEntry]:
+        """Récupère les échantillons haute fréquence pour une métrique donnée."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM intraday_samples WHERE user_id = ? AND metric_type = ?"
+            params: List[Any] = [user_id, metric_type]
+            if start_time:
+                query += " AND timestamp >= ?"
+                params.append(start_time)
+            if end_time:
+                query += " AND timestamp <= ?"
+                params.append(end_time)
+            query += " ORDER BY timestamp ASC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            d = dict(r)
+            if d.get("created_at"):
+                d["created_at"] = datetime.fromisoformat(d["created_at"])
+            results.append(IntradaySampleEntry(**d))
+        return results
+
+    def purge_and_aggregate_intraday(self, retention_days: int = 60, user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Politique de rétention configurable (30 à 90 jours) : agrège d'abord vers daily_metrics puis purge dans la même transaction."""
+        days = max(30, min(90, int(retention_days)))
+        cutoff_date = (date.today() - timedelta(days=days)).isoformat()
+        cutoff_iso = f"{cutoff_date}T00:00:00"
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 1. Sélectionner et agréger les données à purger par (user_id, date, source)
+            # Groupement par date extraite de timestamp (10 premiers caractères : YYYY-MM-DD)
+            query_agg = """
+                SELECT 
+                    user_id,
+                    SUBSTR(timestamp, 1, 10) AS sample_date,
+                    source,
+                    metric_type,
+                    AVG(value) AS avg_val,
+                    MIN(value) AS min_val,
+                    MAX(value) AS max_val,
+                    SUM(value) AS sum_val,
+                    COUNT(*) AS count_val
+                FROM intraday_samples
+                WHERE timestamp < ?
+            """
+            params: List[Any] = [cutoff_iso]
+            if user_id:
+                query_agg += " AND user_id = ?"
+                params.append(user_id)
+            query_agg += " GROUP BY user_id, SUBSTR(timestamp, 1, 10), source, metric_type"
+            
+            cursor.execute(query_agg, tuple(params))
+            agg_rows = cursor.fetchall()
+            
+            # Organiser les résumés par clé (u_id, s_date, src)
+            summaries: Dict[Tuple[int, str, str], Dict[str, Any]] = {}
+            for r in agg_rows:
+                key = (r["user_id"], r["sample_date"], r["source"])
+                if key not in summaries:
+                    summaries[key] = {
+                        "steps": 0,
+                        "resting_hr": None,
+                        "spo2": None
+                    }
+                m_type = r["metric_type"]
+                if m_type in ("steps", "steps_hourly"):
+                    summaries[key]["steps"] = int(r["sum_val"] or 0)
+                elif m_type in ("hr", "heart_rate"):
+                    summaries[key]["resting_hr"] = round(float(r["avg_val"] or 0))
+                elif m_type in ("spo2", "spo2_pct"):
+                    summaries[key]["spo2"] = round(float(r["avg_val"] or 0), 1)
+
+            # Insérer / fusionner dans daily_metrics pour chaque groupe
+            now_str = datetime.now(timezone.utc).isoformat()
+            aggregated_count = 0
+            for (u_id, s_date, src), data in summaries.items():
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO daily_metrics (
+                            user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                            resting_hr_bpm, spo2_pct, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, date, source) DO UPDATE SET
+                            steps = CASE WHEN daily_metrics.steps = 0 THEN EXCLUDED.steps ELSE daily_metrics.steps END,
+                            resting_hr_bpm = COALESCE(daily_metrics.resting_hr_bpm, EXCLUDED.resting_hr_bpm),
+                            spo2_pct = COALESCE(daily_metrics.spo2_pct, EXCLUDED.spo2_pct),
+                            updated_at = EXCLUDED.updated_at;
+                    """, (u_id, s_date, src, data["steps"], data["resting_hr"], data["spo2"], now_str, now_str))
+                else:
+                    cursor.execute("""
+                        INSERT INTO daily_metrics (
+                            user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                            resting_hr_bpm, spo2_pct, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, date, source) DO UPDATE SET
+                            steps = CASE WHEN daily_metrics.steps = 0 THEN excluded.steps ELSE daily_metrics.steps END,
+                            resting_hr_bpm = COALESCE(daily_metrics.resting_hr_bpm, excluded.resting_hr_bpm),
+                            spo2_pct = COALESCE(daily_metrics.spo2_pct, excluded.spo2_pct),
+                            updated_at = excluded.updated_at;
+                    """, (u_id, s_date, src, data["steps"], data["resting_hr"], data["spo2"], now_str, now_str))
+                aggregated_count += 1
+
+            # 2. Supprimer les anciens échantillons au-delà du seuil de rétention
+            if user_id:
+                cursor.execute(
+                    "DELETE FROM intraday_samples WHERE user_id = ? AND timestamp < ?",
+                    (user_id, cutoff_iso)
+                )
+            else:
+                cursor.execute("DELETE FROM intraday_samples WHERE timestamp < ?", (cutoff_iso,))
+            deleted = cursor.rowcount if hasattr(cursor, "rowcount") else 0
+            
+            # Commit atomique de l'agrégation et de la suppression
+            conn.commit()
+
+        return {
+            "status": "success",
+            "retention_days": days,
+            "cutoff_timestamp": cutoff_iso,
+            "aggregated_days": aggregated_count,
+            "purged_samples": deleted
+        }
+
+    def insert_hydration_log(self, entry: HydrationLogEntry, user_id: int = 1) -> HydrationLogEntry:
+        """Enregistre un apport hydrique."""
+        if entry.external_id:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM hydration_logs WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
+                    (user_id, entry.source, entry.external_id)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    d = dict(existing)
+                    d["date"] = date.fromisoformat(d["date"][:10])
+                    if d.get("created_at"):
+                        d["created_at"] = datetime.fromisoformat(d["created_at"])
+                    return HydrationLogEntry(**d)
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        date_str = entry.date.isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO hydration_logs (user_id, date, timestamp, volume_ml, source, external_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id;
+                """, (user_id, date_str, entry.timestamp, entry.volume_ml, entry.source, entry.external_id, now_str))
+                res = cursor.fetchone()
+                h_id = res["id"] if res else None
+            else:
+                cursor.execute("""
+                    INSERT INTO hydration_logs (user_id, date, timestamp, volume_ml, source, external_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, date_str, entry.timestamp, entry.volume_ml, entry.source, entry.external_id, now_str))
+                h_id = cursor.lastrowid
+            conn.commit()
+
+        d = entry.model_dump()
+        d["id"] = h_id
+        d["user_id"] = user_id
+        d["created_at"] = datetime.fromisoformat(now_str)
+        return HydrationLogEntry(**d)
+
+    def insert_raw_ingest(
+        self,
+        source: str,
+        payload: Union[Dict[str, Any], str],
+        user_id: int = 1,
+        endpoint: Optional[str] = None,
+        idempotency_key: Optional[str] = None
+    ) -> RawIngestEntry:
+        """Stocke le payload JSON brut horodaté pour audit et rejeu."""
+        payload_str = json.dumps(payload) if isinstance(payload, (dict, list)) else str(payload)
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                    VALUES (?, ?, ?, ?, ?, 'received', ?)
+                    RETURNING id;
+                """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                res = cursor.fetchone()
+                r_id = res["id"] if res else None
+            else:
+                cursor.execute("""
+                    INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                    VALUES (?, ?, ?, ?, ?, 'received', ?)
+                """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                r_id = cursor.lastrowid
+            conn.commit()
+
+        return RawIngestEntry(
+            id=r_id,
+            user_id=user_id,
+            source=source,
+            endpoint=endpoint,
+            idempotency_key=idempotency_key,
+            payload_json=payload_str,
+            status="received",
+            received_at=now_str
+        )
+
+    def set_user_consent(self, category: str, consented: bool, user_id: int = 1) -> UserConsentItem:
+        """Enregistre le consentement de l'utilisateur pour une catégorie RGPD (biometrics, nutrition, analytics, devices)."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        val = 1 if consented else 0
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO user_consents (user_id, category, consented, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, category) DO UPDATE SET
+                        consented = EXCLUDED.consented,
+                        updated_at = EXCLUDED.updated_at;
+                """, (user_id, category, val, now_str))
+            else:
+                cursor.execute("""
+                    INSERT INTO user_consents (user_id, category, consented, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, category) DO UPDATE SET
+                        consented = excluded.consented,
+                        updated_at = excluded.updated_at;
+                """, (user_id, category, val, now_str))
+            conn.commit()
+
+        return UserConsentItem(category=category, consented=consented, updated_at=now_str)
+
+    def get_user_consents(self, user_id: int = 1) -> Dict[str, bool]:
+        """Récupère l'ensemble des consentements RGPD pour l'utilisateur."""
+        categories = ["biometrics", "nutrition", "analytics", "devices"]
+        consents = {cat: True for cat in categories}  # Consentement activé par défaut à l'inscription
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT category, consented FROM user_consents WHERE user_id = ?", (user_id,))
+            for r in cursor.fetchall():
+                consents[r["category"]] = bool(r["consented"])
+        return consents
+
+    def delete_user_data_only(self, user_id: int) -> bool:
+        """Supprime l'intégralité des données biométriques et historiques tout en conservant le compte utilisateur et son profil."""
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM daily_metrics WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM workouts WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM sleep_stages WHERE sleep_session_id IN (SELECT id FROM sleep_sessions WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM sleep_sessions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM intraday_samples WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
+            conn.commit()
+        return True
+
+    def delete_user_account_and_data(self, user_id: int) -> bool:
+        """Supprime définitivement un compte utilisateur et l'intégralité de ses données (Droit à l'oubli RGPD)."""
+        # Ne pas permettre la suppression orpheline si le compte n'existe pas
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Nettoyage en cascade des tables dépendantes
+            cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM daily_metrics WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM workouts WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM sleep_stages WHERE sleep_session_id IN (SELECT id FROM sleep_sessions WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM sleep_sessions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM intraday_samples WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM user_consents WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+        return True
