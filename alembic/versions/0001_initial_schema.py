@@ -61,6 +61,8 @@ def upgrade() -> None:
         sa.Column('meal_distribution', sa.Text(), nullable=True),
         sa.Column('preferred_ring', sa.Text(), nullable=True, server_default='ringconn'),
         sa.Column('preferred_scale', sa.Text(), nullable=True, server_default='withings'),
+        sa.Column('is_demo_profile', sa.Integer(), nullable=False, server_default='0'),
+        sa.Column('is_customized', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('google_email', sa.Text(), nullable=True),
         sa.Column('google_name', sa.Text(), nullable=True),
         sa.Column('google_picture', sa.Text(), nullable=True),

@@ -124,6 +124,10 @@ def test_neon_connection_pool_integration():
     """Vérifie l'intégration de ConnectionPool de psycopg_pool pour Neon PostgreSQL."""
     assert HAS_PSYCOPG_POOL, "psycopg_pool doit être installé"
 
+    # Réinitialiser le singleton de pool global
+    import src.db as db_mod
+    db_mod._POSTGRES_POOL = None
+
     # Simuler une URL Postgres Neon
     fake_neon_url = "postgresql://user:pass@ep-cool-sample.eu-central-1.aws.neon.tech/neondb?sslmode=require"
 
@@ -153,3 +157,4 @@ def test_neon_connection_pool_integration():
         # Test context manager exit / close return to pool
         conn_wrapper.close()
         mock_cm.__exit__.assert_called_once()
+        db_mod._POSTGRES_POOL = None
