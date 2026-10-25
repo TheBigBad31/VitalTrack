@@ -36,13 +36,20 @@ from src.models import (
 )
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
-# Essai d'import de psycopg pour le support Neon PostgreSQL
+# Essai d'import de psycopg et psycopg_pool pour le support Neon PostgreSQL
 try:
     import psycopg
     from psycopg.rows import dict_row
     HAS_PSYCOPG = True
 except ImportError:
     HAS_PSYCOPG = False
+
+try:
+    import psycopg_pool
+    from psycopg_pool import ConnectionPool
+    HAS_PSYCOPG_POOL = True
+except ImportError:
+    HAS_PSYCOPG_POOL = False
 
 
 def get_database_url() -> Optional[str]:
@@ -129,9 +136,10 @@ class DatabaseCursorWrapper:
 class DatabaseConnectionWrapper:
     """Wrapper unifié pour connexions SQLite et PostgreSQL."""
 
-    def __init__(self, raw_conn: Any, is_postgres: bool):
+    def __init__(self, raw_conn: Any, is_postgres: bool, pool_conn_cm: Any = None):
         self.conn = raw_conn
         self.is_postgres = is_postgres
+        self.pool_conn_cm = pool_conn_cm
 
     def cursor(self) -> DatabaseCursorWrapper:
         if self.is_postgres:
@@ -146,7 +154,14 @@ class DatabaseConnectionWrapper:
         self.conn.rollback()
 
     def close(self):
-        self.conn.close()
+        if self.pool_conn_cm is not None:
+            try:
+                self.pool_conn_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+            self.pool_conn_cm = None
+        else:
+            self.conn.close()
 
     def __enter__(self):
         return self
@@ -159,18 +174,53 @@ class DatabaseConnectionWrapper:
         self.close()
 
 
+_POSTGRES_POOL: Optional[Any] = None
+_INIT_MIGRATIONS_DONE: bool = False
+
+
 class Database:
     """Gestionnaire de persistance hybride (PostgreSQL Serverless Neon & SQLite Fallback)."""
 
-    def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None, auto_migrate: bool = True):
         self.database_url = database_url or get_database_url()
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
-        self._init_db()
+        if auto_migrate:
+            self.run_migrations()
+
+    def _get_pool(self) -> Optional[Any]:
+        """Initialise ou réutilise le pool de connexions psycopg_pool pour Neon Serverless."""
+        global _POSTGRES_POOL
+        if not self.is_postgres or not HAS_PSYCOPG_POOL:
+            return None
+        if _POSTGRES_POOL is None or getattr(_POSTGRES_POOL, "closed", False):
+            try:
+                _POSTGRES_POOL = ConnectionPool(
+                    self.database_url,
+                    min_size=0,
+                    max_size=10,
+                    timeout=10.0,
+                    max_idle=300.0,
+                    max_lifetime=1800.0,
+                    open=True,
+                    kwargs={"autocommit": False}
+                )
+            except Exception as e:
+                print(f"[VitalTrack DB Warning] Impossible d'initialiser ConnectionPool Neon: {e}")
+                _POSTGRES_POOL = None
+        return _POSTGRES_POOL
 
     def get_connection(self) -> DatabaseConnectionWrapper:
-        """Fournit une connexion unifiée (PostgreSQL ou SQLite)."""
+        """Fournit une connexion unifiée (PostgreSQL avec ConnectionPool ou SQLite)."""
         if self.is_postgres:
+            pool = self._get_pool()
+            if pool is not None:
+                try:
+                    pool_cm = pool.connection(timeout=10.0)
+                    conn = pool_cm.__enter__()
+                    return DatabaseConnectionWrapper(conn, is_postgres=True, pool_conn_cm=pool_cm)
+                except Exception as e:
+                    print(f"[VitalTrack DB Warning] Échec obtention connexion depuis pool Neon: {e}. Essai connexion directe.")
             try:
                 conn = psycopg.connect(self.database_url, connect_timeout=10)
                 return DatabaseConnectionWrapper(conn, is_postgres=True)
@@ -188,8 +238,51 @@ class Database:
             pass
         return DatabaseConnectionWrapper(conn, is_postgres=False)
 
+    def run_migrations(self):
+        """Exécute les migrations de schéma Alembic de façon unique et idempotente."""
+        global _INIT_MIGRATIONS_DONE
+        if _INIT_MIGRATIONS_DONE and self.is_postgres:
+            return
+
+        try:
+            from alembic.config import Config
+            from alembic import command
+
+            ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+            if ini_path.exists():
+                cfg = Config(str(ini_path))
+                if self.is_postgres:
+                    sa_url = self.database_url
+                    if sa_url.startswith("postgres://"):
+                        sa_url = sa_url.replace("postgres://", "postgresql+psycopg://", 1)
+                    elif sa_url.startswith("postgresql://") and not sa_url.startswith("postgresql+"):
+                        sa_url = sa_url.replace("postgresql://", "postgresql+psycopg://", 1)
+                    cfg.set_main_option("sqlalchemy.url", sa_url)
+                else:
+                    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
+
+                command.upgrade(cfg, "head")
+                _INIT_MIGRATIONS_DONE = True
+            else:
+                self._init_db_fallback()
+        except Exception as e:
+            print(f"[VitalTrack DB Warning] Alembic migration warning: {e}. Application du fallback.")
+            self._init_db_fallback()
+
+        # Garantir l'existence de l'utilisateur par défaut et le référentiel des bienfaits
+        try:
+            self._ensure_default_user()
+            self._seed_nutrition_benefits()
+            self.purge_demo_data()
+        except Exception as e:
+            print(f"[VitalTrack DB Warning] Initialisation post-migration: {e}")
+
     def _init_db(self):
-        """Initialise le schéma multi-utilisateurs et effectue les migrations idempotentes."""
+        """Alias pour rétrocompatibilité : exécute run_migrations."""
+        self.run_migrations()
+
+    def _init_db_fallback(self):
+        """Initialisation de secours si Alembic n'est pas disponible."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
