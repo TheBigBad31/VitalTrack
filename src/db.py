@@ -2075,6 +2075,7 @@ class Database:
             conn.commit()
 
         self._recalculate_meal_log_totals(meal_log.id, user_id=user_id)
+        self._sync_meal_log_to_meals(meal_log.id, user_id=user_id)
         return self._get_meal_log_by_id(meal_log.id, user_id=user_id)
 
     def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
@@ -2096,6 +2097,7 @@ class Database:
             conn.commit()
 
         self._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
+        self._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
         return self._get_meal_log_by_id(meal_log_id, user_id=user_id)
 
     def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):

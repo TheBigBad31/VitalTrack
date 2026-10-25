@@ -374,7 +374,6 @@ def get_dashboard_data(
 ):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
     user_id = current_user.id
-    db.sync_all_meal_logs_to_meals(user_id=user_id)
     profile = db.get_user_profile(user_id=user_id)
     
     # Exclure par défaut les données simulées sauf si confirmation explicite d'un profil de démo ou requête include_simulation=True
