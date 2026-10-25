@@ -24,6 +24,8 @@ import json
 import math
 import os
 import sqlite3
+import threading
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -166,7 +168,36 @@ class Database:
         self.database_url = database_url or get_database_url()
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
+        self._cache_lock = threading.Lock()
+        self._dashboard_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+        self._cache_ttl_seconds = 30.0
         self._init_db()
+
+    def invalidate_user_cache(self, user_id: Optional[int] = None):
+        """Invalide immédiatement le cache court pour un utilisateur spécifique ou tous les utilisateurs."""
+        with self._cache_lock:
+            if user_id is not None:
+                self._dashboard_cache.pop(user_id, None)
+            else:
+                self._dashboard_cache.clear()
+
+    def get_cached_dashboard(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Récupère les données du dashboard depuis le cache en mémoire si le TTL de 30s n'est pas expiré."""
+        with self._cache_lock:
+            cached = self._dashboard_cache.get(user_id)
+            if not cached:
+                return None
+            cached_time, data = cached
+            if time.time() - cached_time < self._cache_ttl_seconds:
+                return data
+            # Expiré
+            self._dashboard_cache.pop(user_id, None)
+            return None
+
+    def set_cached_dashboard(self, user_id: int, data: Dict[str, Any]):
+        """Met en cache les données du dashboard pour un utilisateur donné."""
+        with self._cache_lock:
+            self._dashboard_cache[user_id] = (time.time(), data)
 
     def get_connection(self) -> DatabaseConnectionWrapper:
         """Fournit une connexion unifiée (PostgreSQL ou SQLite)."""
@@ -500,6 +531,7 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date_type ON meals(user_id, date, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
@@ -809,6 +841,7 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date_type ON meals(user_id, date, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
 
             conn.commit()
@@ -1007,6 +1040,7 @@ class Database:
                 entry_id = cursor.lastrowid
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         entry_dict = entry.model_dump()
         entry_dict["id"] = entry_id
         entry_dict["trend_7d_kg"] = trend
@@ -1090,6 +1124,7 @@ class Database:
             ))
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         entry_dict = entry.model_dump()
         entry_dict["id"] = weight_id
         entry_dict["trend_7d_kg"] = trend
@@ -1105,6 +1140,7 @@ class Database:
                 return False
             cursor.execute("DELETE FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
             conn.commit()
+            self.invalidate_user_cache(user_id)
             return True
 
     # Activités Multi-Utilisateurs
@@ -1169,6 +1205,7 @@ class Database:
                 entry_id = cursor.lastrowid
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         entry_dict = entry.model_dump()
         entry_dict["id"] = entry_id
         entry_dict["total_burned_kcal"] = total_burned
@@ -1241,6 +1278,7 @@ class Database:
                 entry_id = cursor.lastrowid
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         entry_dict = entry.model_dump()
         entry_dict["id"] = entry_id
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
@@ -1354,6 +1392,7 @@ class Database:
             ))
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         entry_dict = entry.model_dump()
         entry_dict["id"] = meal_id
         entry_dict["created_at"] = existing.created_at
@@ -1368,7 +1407,74 @@ class Database:
                 return False
             cursor.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
             conn.commit()
+            self.invalidate_user_cache(user_id)
             return True
+
+    def get_meals_aggregated_7d(self, start_date: date, end_date: date, user_id: int = 1) -> Dict[str, Dict[str, float]]:
+        """Calcule en une seule requête SQL agrégée (GROUP BY date, meal_type) les totaux caloriques par repas.
+
+        Remplace les boucles multiples en Python par une requête indexée ultra-rapide.
+        """
+        start_str = start_date.isoformat()
+        end_str = end_date.isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT date, meal_type, COALESCE(SUM(total_calories_kcal), 0.0) AS calories
+                FROM meals
+                WHERE user_id = ? AND date >= ? AND date <= ?
+                GROUP BY date, meal_type
+            """, (user_id, start_str, end_str))
+            rows = cursor.fetchall()
+
+        # Construction du dictionnaire complet pour chaque jour de la plage
+        curr = start_date
+        result: Dict[str, Dict[str, float]] = {}
+        while curr <= end_date:
+            result[curr.isoformat()] = {"breakfast": 0.0, "lunch": 0.0, "dinner": 0.0, "snack": 0.0, "total": 0.0}
+            curr += timedelta(days=1)
+
+        for r in rows:
+            d = r["date"][:10]
+            m_type = r["meal_type"]
+            cals = round(float(r["calories"] or 0.0), 1)
+            if d in result:
+                if m_type in result[d]:
+                    result[d][m_type] = round(result[d][m_type] + cals, 1)
+                result[d]["total"] = round(result[d]["total"] + cals, 1)
+
+        return result
+
+    def get_dashboard_aggregates(self, user_id: int = 1) -> Dict[str, Any]:
+        """Récupère l'ensemble des données agrégées pour le dashboard en requêtes SQL directes et optimisées.
+
+        Remplace la séquence de requêtes et boucles manuelles par :
+        1. Requête pesées (limit 30)
+        2. Requête activités (limit 30)
+        3. Requête repas récents (limit 60)
+        4. Requête SQL agrégée pour la répartition des repas sur 7 jours (GROUP BY date, meal_type)
+        5. Profil utilisateur & Devices
+        """
+        weights = self.get_weights(limit=30, user_id=user_id)
+        activities = self.get_activities(limit=30, user_id=user_id)
+        meals = self.get_meals(limit=60, user_id=user_id)
+        profile = self.get_user_profile(user_id=user_id)
+        devices = self.get_user_devices(user_id=user_id)
+
+        today = date.today()
+        seven_days_ago = today - timedelta(days=6)
+        meals_by_day_7d = self.get_meals_aggregated_7d(seven_days_ago, today, user_id=user_id)
+
+        return {
+            "weights": weights,
+            "activities": activities,
+            "meals": meals,
+            "profile": profile,
+            "devices": devices,
+            "meals_by_day_7d": meals_by_day_7d,
+            "today": today
+        }
 
     # ---------------------------------------------------------
     # Plats Sauvegardés / Bibliothèque de Repas Réutilisables
@@ -2013,6 +2119,8 @@ class Database:
             conn.commit()
 
         self._recalculate_meal_log_totals(meal_log.id, user_id=user_id)
+        self._sync_meal_log_to_meals(meal_log.id, user_id=user_id)
+        self.invalidate_user_cache(user_id)
         return self._get_meal_log_by_id(meal_log.id, user_id=user_id)
 
     def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
@@ -2034,6 +2142,8 @@ class Database:
             conn.commit()
 
         self._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
+        self._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
+        self.invalidate_user_cache(user_id)
         return self._get_meal_log_by_id(meal_log_id, user_id=user_id)
 
     def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
@@ -2255,6 +2365,7 @@ class Database:
             ))
             conn.commit()
 
+        self.invalidate_user_cache(user_id)
         return self.get_user_profile(user_id=user_id)
 
     def _format_device_row(self, row: Optional[Dict[str, Any]], reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
@@ -2312,6 +2423,8 @@ class Database:
             cursor.execute("DELETE FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
             deleted = cursor.rowcount > 0
             conn.commit()
+        if deleted:
+            self.invalidate_user_cache(user_id)
         return deleted
 
     def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
@@ -2327,6 +2440,7 @@ class Database:
             conn.commit()
             cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
             row = cursor.fetchone()
+        self.invalidate_user_cache(user_id)
         return self._format_device_row(row, reveal_secrets=False)
 
     def update_user_device(
@@ -2415,6 +2529,7 @@ class Database:
                 cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
                 row = cursor.fetchone()
             conn.commit()
+        self.invalidate_user_cache(user_id)
         return self._format_device_row(row, reveal_secrets=False)
 
     # ---------------------------------------------------------
@@ -2880,8 +2995,10 @@ class Database:
                 cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))
             conn.commit()
+        self.invalidate_user_cache(user_id)
 
     def reset_demo_data(self, user_id: int = 1):
         """Réinitialise et recharge le jeu complet de démonstration sur 30 jours pour user_id."""
         self.clear_all_history(keep_profile=True, user_id=user_id)
         self._seed_demo_data_if_empty(user_id=user_id)
+        self.invalidate_user_cache(user_id)

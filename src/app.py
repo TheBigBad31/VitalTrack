@@ -347,13 +347,26 @@ def health_check():
 def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
     user_id = current_user.id
+
+    # 1. Vérification du cache court (TTL 30s)
+    cached_data = db.get_cached_dashboard(user_id)
+    if cached_data is not None:
+        return cached_data
+
+    # Synchronisation paresseuse des repas si nécessaire
     db.sync_all_meal_logs_to_meals(user_id=user_id)
-    weights = db.get_weights(limit=30, user_id=user_id)
-    activities = db.get_activities(limit=30, user_id=user_id)
-    meals = db.get_meals(limit=60, user_id=user_id)
+
+    # 2. Requête agrégée optimisée BDD
+    aggregates = db.get_dashboard_aggregates(user_id=user_id)
+    weights = aggregates["weights"]
+    activities = aggregates["activities"]
+    meals = aggregates["meals"]
+    profile = aggregates["profile"]
+    saved_devices = {dev["device_id"]: dev for dev in aggregates["devices"]}
+    meals_by_day = aggregates["meals_by_day_7d"]
+    today = aggregates["today"]
 
     # Date du jour (ou dernière pesée)
-    today = date.today()
     latest_weight = weights[-1] if weights else None
     
     # Évolution 7j
@@ -368,10 +381,6 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
     if not today_activity and activities:
         today_activity = activities[-1]
 
-    # Profil utilisateur personnalisé
-    profile = db.get_user_profile(user_id=user_id)
-    saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
-
     daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today, user_id=user_id)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
         target_date=today_activity.date if today_activity else today,
@@ -381,18 +390,6 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
         gender=profile.get("gender", "male"),
         user_id=user_id
     )
-
-    # Répartition des repas par jour pour les graphiques empilés (7 derniers jours)
-    seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
-    meals_by_day = {}
-    for d_str in seven_days:
-        d_date = date.fromisoformat(d_str)
-        day_meals = [m for m in meals if m.date == d_date]
-        day_dict = {"breakfast": 0.0, "lunch": 0.0, "dinner": 0.0, "snack": 0.0, "total": 0.0}
-        for m in day_meals:
-            day_dict[m.meal_type] = round(day_dict[m.meal_type] + m.total_calories_kcal, 1)
-            day_dict["total"] = round(day_dict["total"] + m.total_calories_kcal, 1)
-        meals_by_day[d_str] = day_dict
 
     # État des objets connectés avec statut de connexion de l'utilisateur
     device_statuses = []
@@ -418,7 +415,7 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
             "api_key_masked": saved_d.get("api_key_masked")
         })
 
-    return {
+    result = {
         "profile": profile,
         "current_user": current_user.model_dump(),
         "summary": {
@@ -451,6 +448,10 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
         "devices": device_statuses,
         "generated_at": datetime.now(timezone.utc).isoformat()
     }
+
+    # Mise en cache pour 30s
+    db.set_cached_dashboard(user_id, result)
+    return result
 
 
 # =====================================================================
