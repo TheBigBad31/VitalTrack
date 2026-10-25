@@ -654,3 +654,46 @@ def test_vercel_path_resolver():
     res_direct = vercel_client.get("/api/index.py")
     assert res_direct.status_code == 200
     assert res_direct.json()["status"] == "ok"
+
+
+def test_production_neon_failure_returns_503(monkeypatch):
+    """Vérifie qu'en cas d'échec de connexion PostgreSQL Neon en production,
+    l'application ne bascule pas silencieusement sur SQLite et renvoie une HTTP 503 explicite."""
+    from unittest.mock import patch
+    from src.db import DatabaseServiceUnavailableError, is_production_environment
+
+    # Simuler les variables d'environnement de production
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@ep-fake-123.eu-central-1.aws.neon.tech/neondb?sslmode=require")
+    assert is_production_environment() is True
+
+    # Simuler l'échec de psycopg.connect
+    with patch("psycopg.connect", side_effect=Exception("could not connect to server: Connection refused")):
+        # Création d'une instance Database en environnement Neon défaillant
+        # Sans exécuter _init_db pour tester directement get_connection
+        broken_db = Database.__new__(Database)
+        broken_db.database_url = "postgresql://user:pass@ep-fake-123.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+        broken_db.is_postgres = True
+        broken_db.db_path = "/tmp/vitaltrack.db"
+
+        # Vérifier que get_connection lève bien DatabaseServiceUnavailableError
+        with pytest.raises(DatabaseServiceUnavailableError) as exc_info:
+            broken_db.get_connection()
+        assert "Connexion PostgreSQL Neon impossible en environnement de production" in str(exc_info.value)
+        assert broken_db.is_postgres is True  # Ne doit pas avoir basculé à False
+
+        # Vérifier que l'API FastAPI renvoie bien HTTP 503 sans écriture orpheline
+        old_db = app_module.db
+        app_module.db = broken_db
+        try:
+            prod_client = TestClient(app, raise_server_exceptions=False)
+            res = prod_client.get("/api/dashboard")
+            assert res.status_code == 503
+            err_data = res.json()
+            assert err_data["status"] == "error"
+            assert err_data["error"] == "Service Unavailable"
+            assert "Base de données Neon PostgreSQL temporairement inaccessible en production" in err_data["detail"]
+            assert "Connection refused" in err_data["technical_error"]
+        finally:
+            app_module.db = old_db
+

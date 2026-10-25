@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from src.db import Database, get_db_path
+from src.db import Database, DatabaseServiceUnavailableError, get_db_path
 from src.models import (
     ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
     MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry
@@ -91,8 +91,31 @@ async def vercel_path_resolver_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(DatabaseServiceUnavailableError)
+async def database_service_unavailable_handler(request: Request, exc: DatabaseServiceUnavailableError):
+    """Intercepte les pannes de connexion Neon PostgreSQL en environnement de production et renvoie une 503."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "error",
+            "error": "Service Unavailable",
+            "detail": "Base de données Neon PostgreSQL temporairement inaccessible en production. Sauvegarde sur SQLite désactivée pour éviter toute perte de données.",
+            "technical_error": str(exc),
+        }
+    )
+
+
 # Instances partagées
-db = Database()
+try:
+    db = Database()
+except DatabaseServiceUnavailableError as db_err:
+    print(f"[VitalTrack Startup Warning] Base Neon Postgres inaccessible au demarrage: {db_err}")
+    # En environnement de production, créer l'instance sans exécuter de requêtes SQLite fallback
+    db = Database.__new__(Database)
+    db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("NEON_DATABASE_URL")
+    db.is_postgres = True
+    db.db_path = get_db_path()
+
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
 
