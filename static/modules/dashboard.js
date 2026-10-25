@@ -62,15 +62,15 @@
         const btn = document.getElementById(`btn-goal-${id}`);
         if (!btn) return;
         if (id === profileId) {
-          btn.className = "goal-btn text-left p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 transition-all flex flex-col justify-between space-y-2";
-          const statusSpan = btn.querySelector('.text-emerald-400, .text-slate-500');
+          btn.className = "goal-btn text-left p-3.5 rounded-xl border-2 border-brand-500 bg-brand-500/10 transition-all flex flex-col justify-between space-y-2";
+          const statusSpan = btn.querySelector('.text-brand-400, .text-slate-500');
           if (statusSpan) {
-            statusSpan.className = "text-emerald-400 font-medium";
+            statusSpan.className = "text-brand-400 font-medium";
             statusSpan.innerText = "Actif ✓";
           }
         } else {
           btn.className = "goal-btn text-left p-3.5 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2";
-          const statusSpan = btn.querySelector('.text-emerald-400, .text-slate-500');
+          const statusSpan = btn.querySelector('.text-brand-400, .text-slate-500');
           if (statusSpan) {
             statusSpan.className = "text-slate-500";
             statusSpan.innerText = "Choisir";
@@ -151,7 +151,7 @@
       
       // Jauges
       document.getElementById('val-weight').innerHTML = `${s.current_weight_kg || '--'} <span class="text-xs font-normal text-slate-400">kg</span>`;
-      document.getElementById('val-weight-trend').innerHTML = `<span class="text-emerald-400">Tendance 7j: ${s.weight_trend_7d_kg || '--'} kg</span>`;
+      document.getElementById('val-weight-trend').innerHTML = `<span class="text-brand-400">Tendance 7j: ${s.weight_trend_7d_kg || '--'} kg</span>`;
       const diff = s.weight_7d_variation_kg;
       const diffTxt = diff !== undefined ? (diff > 0 ? `+${diff} kg (7j)` : `${diff} kg (7j)`) : '--';
       document.getElementById('val-weight-diff').innerText = `Variation 7j: ${diffTxt}`;
@@ -371,7 +371,7 @@
         tbody.innerHTML = history.slice(0, 10).map(w => `
           <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
             <td class="py-2.5 px-3 font-medium text-white">${w.date}</td>
-            <td class="py-2.5 px-3 font-bold text-emerald-400">${w.weight_kg} kg</td>
+            <td class="py-2.5 px-3 font-bold text-white">${w.weight_kg} kg</td>
             <td class="py-2.5 px-3 text-slate-300">${w.trend_7d_kg ? w.trend_7d_kg + ' kg' : '--'}</td>
             <td class="py-2.5 px-3 text-slate-400">${w.body_fat_pct ? w.body_fat_pct + '%' : '--'}</td>
             <td class="py-2.5 px-3 text-slate-400">${w.muscle_mass_kg ? w.muscle_mass_kg + ' kg' : '--'}</td>
@@ -496,7 +496,7 @@
                 </div>
               </td>
               <td class="py-2.5 px-3 text-amber-400 font-semibold">${b > 0 ? Math.round(b) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
-              <td class="py-2.5 px-3 text-emerald-400 font-semibold">${l > 0 ? Math.round(l) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
+              <td class="py-2.5 px-3 text-brand-300 font-semibold">${l > 0 ? Math.round(l) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
               <td class="py-2.5 px-3 text-pink-400 font-semibold">${s > 0 ? Math.round(s) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
               <td class="py-2.5 px-3 text-indigo-400 font-semibold">${d > 0 ? Math.round(d) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
               <td class="py-2.5 px-3">
@@ -520,7 +520,7 @@
           if (todayTotal > 2000) {
             todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 self-start sm:self-auto";
           } else {
-            todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto";
+            todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto";
           }
         }
       }
@@ -530,7 +530,7 @@
       if (container) {
         const mealTypeLabels = {
           breakfast: { label: "Petit-déjeuner", color: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
-          lunch: { label: "Déjeuner", color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+          lunch: { label: "Déjeuner", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
           dinner: { label: "Dîner", color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/20" },
           snack: { label: "Collation", color: "text-pink-400 bg-pink-400/10 border-pink-400/20" }
         };
@@ -568,7 +568,7 @@
 
               <!-- Macros -->
               <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[#1F2A3C]/70">
-                <span class="text-emerald-400 font-medium">P: ${Math.round(m.protein_g)}g</span>
+                <span class="text-brand-400 font-medium">P: ${Math.round(m.protein_g)}g</span>
                 <span class="text-sky-400 font-medium">G: ${Math.round(m.carbs_g)}g</span>
                 <span class="text-amber-400 font-medium">L: ${Math.round(m.fat_g)}g</span>
                 <span class="text-slate-400">Fibres: ${m.fiber_g ? Math.round(m.fiber_g) + 'g' : '--'}</span>
@@ -663,14 +663,14 @@
           tbody.innerHTML = history.slice(0, 15).map(a => {
             const isHealthConnect = (a.source === 'health_connect');
             const sourceBadge = isHealthConnect
-              ? '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">Google Santé Connect</span>'
+              ? '<span class="px-2 py-0.5 rounded text-[10px] bg-brand-500/10 text-brand-400 border border-brand-500/20 font-semibold">Google Santé Connect</span>'
               : (a.source === 'ringconn' || a.source === 'ringconn_gen3'
                 ? '<span class="px-2 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold">RingConn Gen 3</span>'
                 : `<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">${a.source || 'manuel'}</span>`);
             return `
               <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
                 <td class="py-2.5 px-3 font-medium text-white">${a.date}</td>
-                <td class="py-2.5 px-3 font-bold text-emerald-400">${(a.steps || 0).toLocaleString()} pas</td>
+                <td class="py-2.5 px-3 font-bold text-cyan-400">${(a.steps || 0).toLocaleString()} pas</td>
                 <td class="py-2.5 px-3 text-orange-400 font-semibold">${a.active_calories_kcal || 0} kcal</td>
                 <td class="py-2.5 px-3 text-slate-300">${a.total_burned_kcal || '--'} kcal</td>
                 <td class="py-2.5 px-3 text-rose-400 font-medium">${a.resting_hr_bpm ? a.resting_hr_bpm + ' BPM' : '--'}</td>
@@ -758,15 +758,15 @@
         }
 
         return `
-          <div class="bg-[#0B0F17] hover:bg-[#111826] border border-[#1F2A3C] hover:border-emerald-500/50 rounded-2xl p-4 flex flex-col justify-between space-y-4 transition-all group">
+          <div class="bg-[#0B0F17] hover:bg-[#111826] border border-[#1F2A3C] hover:border-brand-500/50 rounded-2xl p-4 flex flex-col justify-between space-y-4 transition-all group">
             <div class="flex items-start justify-between">
               <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+                <div class="w-10 h-10 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 flex items-center justify-center">
                   <i data-lucide="${d.device_type === 'ring' ? 'circle-dot' : (d.device_type === 'scale' ? 'scale' : 'smartphone')}" class="w-5 h-5"></i>
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">${d.name}</h4>
-                  <span class="text-[10px] text-emerald-400 font-medium">${devId === 'health_connect' ? 'Passerelle Android Santé Connect' : (devId === 'withings' ? 'Balance Wi-Fi & Impédancemètre' : d.device_type)}</span>
+                  <span class="text-[10px] text-brand-400 font-medium">${devId === 'health_connect' ? 'Passerelle Android Santé Connect' : (devId === 'withings' ? 'Balance Wi-Fi & Impédancemètre' : d.device_type)}</span>
                 </div>
               </div>
               <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté 🔒</span>
@@ -791,7 +791,7 @@
                 <span>Configurer</span>
               </button>
               <button type="button" onclick="triggerDeviceSync('${devId}')" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
                 <span>Synchroniser</span>
               </button>
               <button type="button" onclick="disconnectDevice('${devId}')" title="Déconnecter et retirer du profil" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
@@ -979,7 +979,7 @@
             <span class="text-[10px] text-slate-400 block">${Math.round(item.portion_g)}g • ${Math.round(item.calories_kcal)} kcal</span>
           </div>
           <div class="text-[10px] text-slate-300">
-            P: <b class="text-emerald-400">${Math.round(item.protein_g)}g</b> | 
+            P: <b class="text-brand-400">${Math.round(item.protein_g)}g</b> | 
             G: <b class="text-sky-400">${Math.round(item.carbs_g)}g</b> | 
             L: <b class="text-amber-400">${Math.round(item.fat_g)}g</b>
           </div>
@@ -1094,7 +1094,7 @@
           <div class="col-span-full py-8 text-center space-y-3 bg-[#0B0F17]/50 border border-dashed border-[#1F2A3C] rounded-xl p-4">
             <span class="text-3xl block">🍽️</span>
             <p class="text-xs text-slate-400">Aucun plat réutilisable enregistré pour ce repas.</p>
-            <button onclick="openCreateSavedMealModal(currentSavedMealsFilter)" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center space-x-1">
+            <button onclick="openCreateSavedMealModal(currentSavedMealsFilter)" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold inline-flex items-center space-x-1">
               <i data-lucide="plus" class="w-3.5 h-3.5"></i>
               <span>Créer un premier plat</span>
             </button>
@@ -1106,7 +1106,7 @@
 
       const mealLabels = {
         breakfast: { label: "Petit-déjeuner 🥐", color: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
-        lunch: { label: "Déjeuner 🥗", color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+        lunch: { label: "Déjeuner 🥗", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
         snack: { label: "Goûter 🍎", color: "text-pink-400 bg-pink-400/10 border-pink-400/20" },
         dinner: { label: "Dîner 🍲", color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/20" }
       };
@@ -1142,7 +1142,7 @@
               <!-- Macros -->
               <div class="flex items-center justify-between text-[10px] pt-1 border-t border-[#1F2A3C]/70">
                 <span class="font-bold text-white">${Math.round(m.calories)} kcal</span>
-                <span class="text-emerald-400">P:${Math.round(m.protein_g)}g</span>
+                <span class="text-brand-400">P:${Math.round(m.protein_g)}g</span>
                 <span class="text-sky-400">G:${Math.round(m.carbs_g)}g</span>
                 <span class="text-amber-400">L:${Math.round(m.fat_g)}g</span>
               </div>
@@ -1150,7 +1150,7 @@
 
             <!-- Bouton Ajouter au Journal 1-clic -->
             <div class="pt-2">
-              <button onclick="logSavedMealDirectly(${m.id}, '${m.meal_type}')" class="w-full py-1.5 px-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 text-[11px] font-bold flex items-center justify-center space-x-1.5 transition-all active:scale-95">
+              <button onclick="logSavedMealDirectly(${m.id}, '${m.meal_type}')" class="w-full py-1.5 px-2 rounded-lg bg-brand-600/20 hover:bg-brand-600 text-brand-300 hover:text-white border border-brand-500/30 text-[11px] font-bold flex items-center justify-center space-x-1.5 transition-all active:scale-95">
                 <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
                 <span>+ Ajouter au Journal</span>
               </button>
@@ -1546,14 +1546,14 @@
     function selectWizardDevice(deviceId) {
       currentSelectedWizardDevice = deviceId;
       document.querySelectorAll('.wizard-device-card').forEach(c => {
-        c.classList.remove('border-2', 'border-emerald-500', 'bg-emerald-500/10');
+        c.classList.remove('border-2', 'border-brand-500', 'bg-brand-500/10');
         c.classList.add('border', 'border-[#1F2A3C]', 'bg-[#0B0F17]');
       });
 
       const selCard = document.getElementById(`wiz-opt-${deviceId}`);
       if (selCard) {
         selCard.classList.remove('border-[#1F2A3C]', 'bg-[#0B0F17]');
-        selCard.classList.add('border-2', 'border-emerald-500', 'bg-emerald-500/10');
+        selCard.classList.add('border-2', 'border-brand-500', 'bg-brand-500/10');
       }
 
       const container = document.getElementById('wizard-config-container');
@@ -1563,7 +1563,7 @@
         actionText.innerText = "Connecter ma bague RingConn Gen 3";
         container.innerHTML = `
           <div class="space-y-2.5">
-            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+            <div class="flex items-center space-x-2 text-brand-400 font-bold text-xs">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
               <span>Connexion Optimale : Bague RingConn Gen 3</span>
             </div>
@@ -1573,25 +1573,25 @@
             <div class="bg-[#151D2A] p-2.5 rounded-lg border border-[#1F2A3C] text-[11px] space-y-2">
               <span class="text-slate-400 block font-semibold">Modes d'interconnexion au choix :</span>
               <div class="text-slate-200">
-                <span class="text-emerald-400 font-bold">1. Passerelle Google Health Connect (Android)</span> : Synchronisation automatique native.
+                <span class="text-brand-400 font-bold">1. Passerelle Google Health Connect (Android)</span> : Synchronisation automatique native.
               </div>
               <div class="text-slate-200">
-                <span class="text-emerald-400 font-bold">2. Webhook RingConn / MacroDroid</span> :
-                <div class="mt-1 p-1.5 rounded bg-[#0B0F17] font-mono text-[10px] text-emerald-400 flex items-center justify-between">
+                <span class="text-brand-400 font-bold">2. Webhook RingConn / MacroDroid</span> :
+                <div class="mt-1 p-1.5 rounded bg-[#0B0F17] font-mono text-[10px] text-brand-400 flex items-center justify-between">
                   <span>POST /api/webhooks/ringconn</span>
                   <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/ringconn'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white ml-2 text-[10px] underline">Copier</button>
                 </div>
               </div>
               <div class="text-slate-200">
-                <span class="text-emerald-400 font-bold">3. OpenAPI Cloud Directe</span> : Token d'accès OpenAPI RingConn.
+                <span class="text-brand-400 font-bold">3. OpenAPI Cloud Directe</span> : Token d'accès OpenAPI RingConn.
               </div>
             </div>
             <div>
               <label class="block text-[11px] text-slate-400 mb-1">Clé API / Token RingConn (Facultatif si synchronisé via Google Health) :</label>
-              <input type="text" id="wiz-input-ringconn-key" placeholder="rc_live_... ou laisser vide pour passerelle Google Health" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <input type="text" id="wiz-input-ringconn-key" placeholder="rc_live_... ou laisser vide pour passerelle Google Health" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
             </div>
             <div class="pt-2">
-              <button type="button" onclick="testRingConnIngestion()" class="w-full py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+              <button type="button" onclick="testRingConnIngestion()" class="w-full py-2 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
                 <span>Tester la réception / Synchroniser métriques RingConn</span>
               </button>
@@ -1612,7 +1612,7 @@
             <div class="p-2.5 rounded-lg bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-1.5">
               <div class="flex justify-between items-center">
                 <span class="text-slate-400">Endpoint Webhook :</span>
-                <div class="flex items-center space-x-1 font-mono text-emerald-400 text-[10px]">
+                <div class="flex items-center space-x-1 font-mono text-brand-400 text-[10px]">
                   <span>/api/webhooks/health-connect</span>
                   <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white underline text-[10px]">Copier</button>
                 </div>
@@ -1634,7 +1634,7 @@
         actionText.innerText = "Connecter ma Balance Withings";
         container.innerHTML = `
           <div class="space-y-2.5">
-            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+            <div class="flex items-center space-x-2 text-brand-400 font-bold text-xs">
               <i data-lucide="scale" class="w-4 h-4"></i>
               <span>Balance Withings Body Smart / Comp (Wi-Fi Direct)</span>
             </div>
@@ -1643,10 +1643,10 @@
             </p>
             <div>
               <label class="block text-[11px] text-slate-400 mb-1">Identifiant Compte Withings (Email) :</label>
-              <input type="email" id="wiz-input-withings-email" placeholder="sebastienlamoliate@gmail.com" value="sebastienlamoliate@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+              <input type="email" id="wiz-input-withings-email" placeholder="sebastienlamoliate@gmail.com" value="sebastienlamoliate@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
             </div>
             <div class="pt-1">
-              <button type="button" onclick="testScaleIngestion('withings')" class="w-full py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+              <button type="button" onclick="testScaleIngestion('withings')" class="w-full py-2 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
                 <span>Tester la réception d'une pesée Withings</span>
               </button>
@@ -1983,7 +1983,7 @@
         if (panelGoogle) panelGoogle.classList.remove('hidden');
         if (panelEmail) panelEmail.classList.add('hidden');
         if (tabGoogle) {
-          tabGoogle.className = "py-2 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center space-x-1.5 transition-all";
+          tabGoogle.className = "py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all";
         }
         if (tabEmail) {
           tabEmail.className = "py-2 rounded-lg text-slate-400 hover:text-white flex items-center justify-center space-x-1.5 transition-all";
@@ -1992,7 +1992,7 @@
         if (panelGoogle) panelGoogle.classList.add('hidden');
         if (panelEmail) panelEmail.classList.remove('hidden');
         if (tabEmail) {
-          tabEmail.className = "py-2 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center space-x-1.5 transition-all";
+          tabEmail.className = "py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all";
         }
         if (tabGoogle) {
           tabGoogle.className = "py-2 rounded-lg text-slate-400 hover:text-white flex items-center justify-center space-x-1.5 transition-all";
@@ -2016,7 +2016,7 @@
         if (passHint) passHint.classList.remove('hidden');
         if (submitLabel) submitLabel.innerText = "Créer mon compte VitalTrack";
         if (btnRegister) {
-          btnRegister.className = "font-bold text-emerald-400 pb-1 border-b-2 border-emerald-400 transition-all";
+          btnRegister.className = "font-bold text-brand-400 pb-1 border-b-2 border-brand-400 transition-all";
         }
         if (btnLogin) {
           btnLogin.className = "text-slate-400 hover:text-slate-200 pb-1 border-b-2 border-transparent transition-all";
@@ -2026,7 +2026,7 @@
         if (passHint) passHint.classList.add('hidden');
         if (submitLabel) submitLabel.innerText = "Se connecter";
         if (btnLogin) {
-          btnLogin.className = "font-bold text-emerald-400 pb-1 border-b-2 border-emerald-400 transition-all";
+          btnLogin.className = "font-bold text-brand-400 pb-1 border-b-2 border-brand-400 transition-all";
         }
         if (btnRegister) {
           btnRegister.className = "text-slate-400 hover:text-slate-200 pb-1 border-b-2 border-transparent transition-all";
@@ -2399,12 +2399,12 @@
         // Header : Avatar utilisateur connecté avec menu déroulant
         if (headerContainer) {
           headerContainer.innerHTML = `
-            <button type="button" onclick="toggleUserDropdown()" id="btn-header-avatar" class="flex items-center space-x-1.5 p-1 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-emerald-500/40 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${name} (${email})">
-              <div class="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-emerald-400 text-white font-bold text-xs shrink-0">
+            <button type="button" onclick="toggleUserDropdown()" id="btn-header-avatar" class="flex items-center space-x-1.5 p-1 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-brand-500/40 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${name} (${email})">
+              <div class="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-xs shrink-0">
                 ${picture ? `<img src="${picture}" class="w-full h-full object-cover" alt="Avatar">` : `<span>${initials}</span>`}
               </div>
-              <span class="hidden sm:inline font-semibold px-1 text-emerald-300">${name.split(' ')[0]}</span>
-              <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1"></span>
+              <span class="hidden sm:inline font-semibold px-1 text-brand-300">${name.split(' ')[0]}</span>
+              <span class="w-2 h-2 rounded-full bg-brand-400 mr-1"></span>
               <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 hidden sm:inline"></i>
             </button>
 
@@ -2412,11 +2412,11 @@
             <div id="header-user-dropdown" class="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#151D2A] border border-[#1F2A3C] shadow-2xl p-2 space-y-1 z-50 hidden">
               <div class="px-3 py-2 border-b border-[#1F2A3C] mb-1">
                 <div class="text-xs font-bold text-white truncate">${name}</div>
-                <div class="text-[10px] text-emerald-400 truncate">${email}</div>
-                <span class="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">${isGoogle ? 'Compte Google' : 'Compte Email'}</span>
+                <div class="text-[10px] text-brand-400 truncate">${email}</div>
+                <span class="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">${isGoogle ? 'Compte Google' : 'Compte Email'}</span>
               </div>
               <button onclick="toggleUserDropdown(); openProfileModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
-                <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
+                <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
                 <span>Mon Profil</span>
               </button>
               <button onclick="toggleUserDropdown(); openConnectWizardModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
@@ -2442,11 +2442,11 @@
         if (profAvatar) {
           profAvatar.innerHTML = picture
             ? `<img src="${picture}" class="w-full h-full object-cover">`
-            : `<div class="w-full h-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs">${initials}</div>`;
+            : `<div class="w-full h-full bg-brand-600 flex items-center justify-center text-white font-bold text-xs">${initials}</div>`;
         }
         if (profActionBtn) {
           profActionBtn.innerText = "Gérer Compte";
-          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold transition-all";
+          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-[11px] font-semibold transition-all";
         }
 
         // Modale Auth
@@ -2474,7 +2474,7 @@
         if (headerContainer) {
           headerContainer.innerHTML = `
             <button type="button" onclick="openAuthModal()" id="btn-header-auth" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter / S'inscrire">
-              <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
+              <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
               <span class="hidden sm:inline">Connexion</span>
             </button>
           `;

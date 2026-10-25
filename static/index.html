@@ -54,13 +54,13 @@
   <header class="sticky top-0 z-30 bg-[#0B0F17]/90 backdrop-blur-md border-b border-[#1F2A3C] px-4 py-3">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-electric-cyan flex items-center justify-center shadow-lg shadow-brand-500/20">
           <i data-lucide="activity" class="w-6 h-6 text-white"></i>
         </div>
         <div>
           <div class="flex items-center space-x-2">
             <h1 class="font-bold text-lg leading-tight tracking-tight text-white">VitalTrack</h1>
-            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">PWA v1.0</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium">PWA v1.0</span>
           </div>
           <p class="text-xs text-slate-400">Santé, Nutrition Photo & Objets Connectés</p>
         </div>
@@ -71,25 +71,25 @@
         <!-- Container Authentification Header & Menu Profil Déroulant -->
         <div id="header-auth-container" class="relative flex items-center">
           <button type="button" onclick="openAuthModal()" id="btn-header-auth" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter / S'inscrire">
-            <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
+            <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
             <span class="hidden sm:inline">Connexion</span>
           </button>
         </div>
 
         <button type="button" onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95 cursor-pointer" title="Mon Profil Métabolique">
-          <i data-lucide="user" class="w-4 h-4 text-emerald-400"></i>
+          <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
           <span class="hidden sm:inline">Mon Profil</span>
         </button>
         <button type="button" onclick="openConnectWizardModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold transition-all active:scale-95 cursor-pointer" title="Assistant de Connexion">
           <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>
           <span class="hidden sm:inline">Connexion Appareils</span>
         </button>
-        <button onclick="openMealModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 transition-all active:scale-95">
+        <button onclick="openMealModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md shadow-brand-600/20 transition-all active:scale-95">
           <i data-lucide="camera" class="w-4 h-4"></i>
           <span class="hidden sm:inline">Photo Repas</span>
         </button>
         <button onclick="openWeightModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95">
-          <i data-lucide="scale" class="w-4 h-4 text-emerald-400"></i>
+          <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
           <span class="hidden sm:inline">Pesée</span>
         </button>
         <button onclick="refreshData()" title="Actualiser" class="p-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] text-slate-300">
@@ -131,10 +131,10 @@
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-6">
 
     <!-- Banderole d'Action Rapide Mobile (Toujours en tête) -->
-    <section class="bg-gradient-to-r from-emerald-950/60 via-[#151D2A] to-[#151D2A] border border-emerald-500/20 rounded-2xl p-4 shadow-xl">
+    <section class="bg-gradient-to-r from-brand-950/40 via-[#151D2A] to-[#151D2A] border border-brand-500/20 rounded-2xl p-4 shadow-xl">
       <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center space-x-3 w-full sm:w-auto">
-          <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+          <div class="w-12 h-12 rounded-2xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
             <i data-lucide="sparkles" class="w-6 h-6"></i>
           </div>
           <div>
@@ -143,12 +143,12 @@
           </div>
         </div>
         <div class="flex items-center gap-2 w-full sm:w-auto">
-          <button onclick="openMealModal()" class="flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-lg shadow-emerald-500/25 transition-transform active:scale-95">
+          <button onclick="openMealModal()" class="flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-black font-bold text-xs shadow-lg shadow-brand-500/25 transition-transform active:scale-95">
             <i data-lucide="camera" class="w-4 h-4"></i>
             <span>📸 Analyser mon repas</span>
           </button>
           <button onclick="openWeightModal()" class="flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
-            <i data-lucide="plus" class="w-4 h-4 text-emerald-400"></i>
+            <i data-lucide="plus" class="w-4 h-4 text-brand-400"></i>
             <span>Poids (kg)</span>
           </button>
           <button onclick="openActivityModal()" class="flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
@@ -196,23 +196,23 @@
         <div class="col-span-2 lg:col-span-1 bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Pas Quotidiens</span>
-            <i data-lucide="footprints" class="w-4 h-4 text-emerald-400"></i>
+            <i data-lucide="footprints" class="w-4 h-4 text-brand-400"></i>
           </div>
           <div class="my-2">
             <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-steps">-- <span class="text-xs font-normal text-slate-400">/ 10k</span></div>
             <div class="text-[11px] text-slate-400" id="val-steps-pct">Progression: --%</div>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-            <div id="bar-steps" class="bg-emerald-400 h-1.5 rounded-full" style="width: 0%"></div>
+            <div id="bar-steps" class="bg-brand-400 h-1.5 rounded-full" style="width: 0%"></div>
           </div>
         </div>
 
       </div>
 
       <!-- Bandeau Données en Direct : Google Santé Connect (Android) -->
-      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-brand-950/30 via-[#151D2A] to-[#151D2A] border border-brand-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center space-x-3.5">
-          <div class="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+          <div class="w-11 h-11 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
             <i data-lucide="smartphone" class="w-6 h-6"></i>
           </div>
           <div class="space-y-1">
@@ -221,7 +221,7 @@
               <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Synchronisé ✓</span>
             </div>
             <div class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
-              <span>Pas du jour : <strong class="text-emerald-400 font-bold" id="live-hc-steps">12 100 pas</strong></span>
+              <span>Pas du jour : <strong class="text-brand-400 font-bold" id="live-hc-steps">12 100 pas</strong></span>
               <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">530 kcal</strong></span>
               <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">57 BPM</strong></span>
               <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">59 ms</strong></span>
@@ -229,7 +229,7 @@
             </div>
           </div>
         </div>
-        <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition-colors">
+        <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition-colors">
           <span>Voir détails d'activité</span>
           <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
         </button>
@@ -244,7 +244,7 @@
               <h3 class="font-bold text-white text-base">Évolution du Poids & Tendance Glissante 7j</h3>
               <p class="text-xs text-slate-400">Pesées quotidiennes avec moyenne mobile de lissage</p>
             </div>
-            <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-emerald-400 rounded-lg font-medium">30 derniers jours</span>
+            <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-brand-400 rounded-lg font-medium">30 derniers jours</span>
           </div>
           <div class="h-64">
             <canvas id="chart-weight-summary"></canvas>
@@ -265,7 +265,7 @@
             <div class="space-y-2 mt-4 text-xs">
               <div class="flex justify-between items-center">
                 <span class="flex items-center space-x-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-brand-500"></span>
                   <span class="text-slate-300">Protéines (4 kcal/g)</span>
                 </span>
                 <span class="font-bold text-white" id="macro-prot-txt">-- g (--%)</span>
@@ -289,7 +289,7 @@
 
           <!-- Recommandation nutritionnelle / coach -->
           <div class="mt-4 p-3 rounded-xl bg-[#1F2A3C]/70 border border-slate-700/40 text-xs text-slate-300 flex items-start space-x-2">
-            <i data-lucide="info" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+            <i data-lucide="info" class="w-4 h-4 text-brand-400 shrink-0 mt-0.5"></i>
             <p id="summary-recommendation">Chargement des recommandations personnalisées...</p>
           </div>
         </div>
@@ -334,7 +334,7 @@
         <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4">
           <div class="text-xs text-slate-400 flex justify-between items-center">
             <span>IMC (Indice de Masse)</span>
-            <i data-lucide="heart" class="w-4 h-4 text-emerald-400"></i>
+            <i data-lucide="heart" class="w-4 h-4 text-brand-400"></i>
           </div>
           <div class="text-2xl font-black text-white mt-2" id="val-bmi">--</div>
           <div class="text-[10px] text-emerald-400 mt-1">Normopondéré (18.5 - 25)</div>
@@ -348,7 +348,7 @@
             <h3 class="font-bold text-white text-base">Historique Détaillé du Poids (30 jours)</h3>
             <p class="text-xs text-slate-400">Pesées réelles (points), Tendance glissante 7 jours (ligne verte) et Objectif cible (ligne pointillée)</p>
           </div>
-          <button onclick="openWeightModal()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+          <button onclick="openWeightModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>Nouvelle Pesée</span>
           </button>
@@ -392,7 +392,7 @@
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-md">
         <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
           <!-- Mode Desktop : vue côte à côte par défaut sur grand écran -->
-          <button id="btn-subnav-desktop-split" onclick="switchNutritionLayout('split')" class="hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 items-center justify-center space-x-2 transition-all">
+          <button id="btn-subnav-desktop-split" onclick="switchNutritionLayout('split')" class="hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-slate-950 shadow-md shadow-brand-500/20 items-center justify-center space-x-2 transition-all">
             <i data-lucide="columns-2" class="w-4 h-4"></i>
             <span>Vue Bureau Multi-Colonnes</span>
           </button>
@@ -408,16 +408,16 @@
 
         <div class="flex items-center gap-2 self-end sm:self-auto">
           <div class="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 bg-[#0B0F17] px-3 py-1.5 rounded-xl border border-[#1F2A3C]">
-            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-emerald-400 font-mono">Glisser-Déposer</kbd>
+            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-brand-400 font-mono">Glisser-Déposer</kbd>
             <span>vers un repas ou</span>
-            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-emerald-400 font-mono">/</kbd>
+            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-brand-400 font-mono">/</kbd>
             <span>rechercher</span>
           </div>
-          <button id="btn-quick-add-to-meal" onclick="openSelectFromCatalogModal('lunch')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-emerald-600/20 transition-all">
+          <button id="btn-quick-add-to-meal" onclick="openSelectFromCatalogModal('lunch')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition-all">
             <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
             <span>+ Ajouter au Repas</span>
           </button>
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-emerald-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-brand-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             <span>+ Aliment</span>
           </button>
@@ -437,7 +437,7 @@
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h3 class="font-bold text-white text-base flex items-center space-x-2">
-                  <i data-lucide="book-open" class="w-5 h-5 text-emerald-400"></i>
+                  <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
                   <span>Catalogue de Référence</span>
                 </h3>
                 <p class="text-xs text-slate-400">Glissez-déposez un aliment vers le repas de votre choix</p>
@@ -451,12 +451,12 @@
             <div class="flex flex-col gap-2.5">
               <div class="relative">
                 <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors">
+                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors">
                 <span class="absolute right-2.5 top-2 text-[10px] text-slate-500 font-mono hidden sm:inline">/</span>
               </div>
 
               <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
-                <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-colors">
+                <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-slate-950 transition-colors">
                   Tous
                 </button>
                 <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
@@ -469,7 +469,7 @@
 
               <!-- Filtre par Bienfait Santé (Stage 13) -->
               <div class="flex items-center gap-2">
-                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500">
+                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
                   <option value="">🎯 Tous les bienfaits santé (EFSA / ANSES)</option>
                   <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
                   <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
@@ -500,11 +500,11 @@
               <button onclick="changeJournalDate(-1)" title="Jour précédent" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
                 <i data-lucide="chevron-left" class="w-4 h-4"></i>
               </button>
-              <input type="date" id="journal-date-input" onchange="handleJournalDateChange(event)" class="bg-[#0B0F17] border border-[#1F2A3C] text-white text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 cursor-pointer">
+              <input type="date" id="journal-date-input" onchange="handleJournalDateChange(event)" class="bg-[#0B0F17] border border-[#1F2A3C] text-white text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500 cursor-pointer">
               <button onclick="changeJournalDate(1)" title="Jour suivant" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
               </button>
-              <button onclick="setJournalToToday()" class="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-semibold transition-colors">
+              <button onclick="setJournalToToday()" class="px-2.5 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 text-brand-400 text-xs font-semibold transition-colors">
                 Aujourd'hui
               </button>
             </div>
@@ -517,7 +517,7 @@
                 <span class="text-[10px] text-slate-400">kcal</span>
               </div>
               <div class="h-4 w-px bg-[#1F2A3C]"></div>
-              <span class="text-emerald-400 font-semibold" id="journal-day-prot">0g P</span>
+              <span class="text-brand-400 font-semibold" id="journal-day-prot">0g P</span>
               <span class="text-sky-400 font-semibold" id="journal-day-carbs">0g G</span>
               <span class="text-amber-400 font-semibold" id="journal-day-fat">0g L</span>
               <span class="text-slate-400" id="journal-day-fiber">0g F</span>
@@ -531,7 +531,7 @@
                 <span class="text-base">🧬</span>
                 <h4 class="text-xs font-bold text-white uppercase tracking-wider">Synthèse des Bienfaits du Jour</h4>
               </div>
-              <span id="journal-benefits-count-badge" class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span id="journal-benefits-count-badge" class="text-[10px] font-mono text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20">
                 0 bienfait actif
               </span>
             </div>
@@ -563,7 +563,7 @@
               <i data-lucide="bookmark" class="w-4 h-4 text-indigo-400"></i>
               <span>Mes Plats Sauvegardés</span>
             </button>
-            <button onclick="openCreateSavedMealModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-emerald-600/20 transition-all">
+            <button onclick="openCreateSavedMealModal()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition-all">
               <i data-lucide="plus" class="w-4 h-4"></i>
               <span>Créer un Plat Type</span>
             </button>
@@ -594,20 +594,20 @@
           </div>
 
           <!-- 2. Déjeuner -->
-          <div class="bg-[#0B0F17] border border-emerald-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-emerald-500/40 transition-colors">
+          <div class="bg-[#0B0F17] border border-brand-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-brand-500/40 transition-colors">
             <div class="flex items-center justify-between">
               <div class="flex items-center space-x-2">
                 <span class="text-lg">🥗</span>
                 <span class="font-bold text-sm text-white">Déjeuner</span>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">Midi</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-semibold">Midi</span>
             </div>
             <div class="flex items-center gap-1.5 pt-1">
               <button onclick="openSavedMealsLibraryModal('lunch')" class="flex-1 py-1.5 px-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors">
-                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-brand-400"></i>
                 <span>Mes Plats</span>
               </button>
-              <button onclick="openMealModal('lunch')" class="py-1.5 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
+              <button onclick="openMealModal('lunch')" class="py-1.5 px-2.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
                 <i data-lucide="camera" class="w-3.5 h-3.5"></i>
                 <span>Photo</span>
               </button>
@@ -665,7 +665,7 @@
             <h3 class="font-bold text-white text-base">Tableau des Calories Journalières & par Repas</h3>
             <p class="text-xs text-slate-400">Suivi direct des calories consommées par repas vs cible de 2 000 kcal</p>
           </div>
-          <span id="calories-table-today-badge" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 self-start sm:self-auto">
+          <span id="calories-table-today-badge" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto">
             Aujourd'hui : 0 kcal
           </span>
         </div>
@@ -698,7 +698,7 @@
             <h3 class="font-bold text-white text-base">Calories Réparties par Repas & par Jour</h3>
             <p class="text-xs text-slate-400">Petit-déjeuner 🥐, Déjeuner 🥗, Goûter 🍎, Dîner 🍲 comparés à la cible calorique (2 000 kcal)</p>
           </div>
-          <button onclick="openMealModal()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+          <button onclick="openMealModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
             <i data-lucide="camera" class="w-4 h-4"></i>
             <span>Ajouter Repas Photo</span>
           </button>
@@ -741,7 +741,7 @@
           <div>
             <div class="flex items-center space-x-1.5">
               <span class="text-xs text-slate-400">Score Sommeil</span>
-              <span id="badge-sleep-source" class="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Santé Connect</span>
+              <span id="badge-sleep-source" class="text-[9px] px-1.5 py-0.2 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">Santé Connect</span>
             </div>
             <div class="text-2xl font-black text-white" id="val-sleep-score">-- <span class="text-xs font-normal text-slate-400">/ 100</span></div>
             <span class="text-[10px] text-indigo-400 font-medium">Récupération optimale</span>
@@ -780,7 +780,7 @@
             <h3 class="font-bold text-white text-base">Activité Quotidienne (Pas & Calories d'Exercice)</h3>
             <p class="text-xs text-slate-400">Volume de pas quotidiens et dépenses d'entraînements actifs</p>
           </div>
-          <button onclick="openActivityModal()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+          <button onclick="openActivityModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>Ajouter Activité</span>
           </button>
@@ -797,7 +797,7 @@
             <h3 class="font-bold text-white text-base">Historique des Données Reçues (Google Santé Connect & Bague)</h3>
             <p class="text-xs text-slate-400">Détail des pas, calories actives, fréquence cardiaque, HRV et score de sommeil</p>
           </div>
-          <span class="text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Flux direct</span>
+          <span class="text-[11px] px-2.5 py-1 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium">Flux direct</span>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs text-left">
@@ -837,10 +837,10 @@
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <div class="flex items-center space-x-2">
-              <span class="text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">Objectifs Métaboliques</span>
+              <span class="text-xs font-bold uppercase tracking-wider text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full">Objectifs Métaboliques</span>
               <span class="text-xs text-slate-400">Calibrage 1-clic</span>
             </div>
-            <h3 class="text-base font-bold text-white mt-1">Profil Actuel : <span id="active-goal-title" class="text-emerald-400">🔥 Perte de Poids Durable</span></h3>
+            <h3 class="text-base font-bold text-white mt-1">Profil Actuel : <span id="active-goal-title" class="text-brand-400">🔥 Perte de Poids Durable</span></h3>
             <p id="active-goal-desc" class="text-xs text-slate-400 mt-0.5">Déficit cible -500 kcal/j, 1,8g/kg de protéines, 10 000 pas/j</p>
           </div>
           <div class="flex items-center space-x-1.5 self-start sm:self-auto text-xs bg-[#0B0F17] p-1 rounded-xl border border-[#1F2A3C]">
@@ -850,16 +850,16 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="goals-presets-buttons">
           <!-- Bouton 1 : Perte de Poids -->
-          <button onclick="selectGoalProfile('weight_loss')" id="btn-goal-weight_loss" class="goal-btn text-left p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 transition-all flex flex-col justify-between space-y-2">
+          <button onclick="selectGoalProfile('weight_loss')" id="btn-goal-weight_loss" class="goal-btn text-left p-3.5 rounded-xl border-2 border-brand-500 bg-brand-500/10 transition-all flex flex-col justify-between space-y-2">
             <div class="flex items-center justify-between">
               <span class="font-bold text-sm text-white flex items-center space-x-1.5">
                 <span>🔥</span>
                 <span>Perte de Poids</span>
               </span>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">-0,5 kg/sem</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 font-semibold border border-brand-500/30">-0,5 kg/sem</span>
             </div>
             <div class="text-[11px] text-slate-300">
-              Déficit : <span class="font-bold text-emerald-400">-500 kcal/j</span> • Protéines : <span class="font-bold text-white">1,8 g/kg</span>
+              Déficit : <span class="font-bold text-brand-400">-500 kcal/j</span> • Protéines : <span class="font-bold text-white">1,8 g/kg</span>
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
               <span>Objectif : 10 000 pas/j</span>
@@ -912,12 +912,12 @@
         <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Poids Actuel</span>
-            <i data-lucide="scale" class="w-4 h-4 text-emerald-400"></i>
+            <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
           </div>
           <div class="my-2">
             <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-weight">-- <span class="text-xs font-normal text-slate-400">kg</span></div>
             <div class="text-[11px] flex items-center space-x-1 font-medium" id="val-weight-trend">
-              <span class="text-emerald-400">Tendance 7j: -- kg</span>
+              <span class="text-brand-400">Tendance 7j: -- kg</span>
             </div>
           </div>
           <div class="text-[10px] text-slate-500" id="val-weight-diff">Variation 7j: --</div>
@@ -981,7 +981,7 @@
             <h3 class="font-bold text-white text-base">Objets Connectés & Synchronisations Actives</h3>
             <p class="text-xs text-slate-400">Statut en direct de vos connecteurs RingConn, Google Health Connect, Withings et Oura</p>
           </div>
-          <button onclick="openProfileModal()" class="text-xs text-emerald-400 hover:underline flex items-center space-x-1">
+          <button onclick="openProfileModal()" class="text-xs text-brand-400 hover:underline flex items-center space-x-1">
             <i data-lucide="user" class="w-3.5 h-3.5"></i>
             <span>Modifier mon profil</span>
           </button>
@@ -1045,7 +1045,7 @@
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <i data-lucide="book-open" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="cat-modal-title">Créer un élément de catalogue</h3>
         </div>
         <button onclick="closeCatalogItemModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1058,20 +1058,20 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'aliment ou du plat *</label>
-          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-3 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Type *</label>
-            <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="food">Aliment simple</option>
               <option value="dish">Plat / Recette</option>
             </select>
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Unité *</label>
-            <select id="cat-item-unit" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <select id="cat-item-unit" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="g">Grammes (g)</option>
               <option value="portion">Portion</option>
               <option value="ml">Millilitres (ml)</option>
@@ -1080,7 +1080,7 @@
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Quantité réf. *</label>
-            <input type="number" step="0.1" id="cat-item-qty" required value="100" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="cat-item-qty" required value="100" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -1131,7 +1131,7 @@
               <span id="dish-precalc-total-weight" class="text-[10px] text-slate-400 font-mono"></span>
             </div>
             <div class="flex items-center space-x-2 text-[11px] font-medium text-slate-300">
-              <span id="dish-precalc-prot" class="text-emerald-400">P: 0g</span>
+              <span id="dish-precalc-prot" class="text-brand-400">P: 0g</span>
               <span>&bull;</span>
               <span id="dish-precalc-carbs" class="text-sky-400">G: 0g</span>
               <span>&bull;</span>
@@ -1146,25 +1146,25 @@
         <div class="grid grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Calories *</label>
-            <input type="number" step="1" id="cat-item-cals" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            <input type="number" step="1" id="cat-item-cals" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
           </div>
           <div>
-            <label class="block text-[11px] font-semibold text-emerald-400 mb-1">Protéines</label>
-            <input type="number" step="0.1" id="cat-item-prot" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <label class="block text-[11px] font-semibold text-brand-400 mb-1">Protéines</label>
+            <input type="number" step="0.1" id="cat-item-prot" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-sky-400 mb-1">Glucides</label>
-            <input type="number" step="0.1" id="cat-item-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="cat-item-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-amber-400 mb-1">Lipides</label>
-            <input type="number" step="0.1" id="cat-item-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="cat-item-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Fibres (optionnel)</label>
-          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Section Bienfaits Santé EFSA / ANSES (Stage 13) -->
@@ -1174,7 +1174,7 @@
               <span>🩺</span>
               <span>Bienfaits Nutritionnels & Santé</span>
             </span>
-            <span class="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            <span class="text-[10px] text-brand-400 font-mono bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20">
               Règles EFSA / ANSES
             </span>
           </div>
@@ -1183,7 +1183,7 @@
           <div>
             <div class="text-[11px] text-slate-400 mb-1 flex items-center justify-between">
               <span>Suggestions automatiques calculées :</span>
-              <button type="button" onclick="triggerModalNutritionEvaluation()" class="text-[10px] text-emerald-400 hover:underline">Recalculer</button>
+              <button type="button" onclick="triggerModalNutritionEvaluation()" class="text-[10px] text-brand-400 hover:underline">Recalculer</button>
             </div>
             <div id="modal-auto-benefits-container" class="flex flex-wrap gap-1.5 min-h-[28px] items-center">
               <span class="text-[10px] text-slate-500 italic">Renseignez les valeurs nutritionnelles pour détecter les bienfaits éligibles.</span>
@@ -1196,7 +1196,7 @@
             <div id="modal-selected-benefits-tags" class="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
               <!-- Tags sélectionnés -->
             </div>
-            <select id="modal-benefit-picker" onchange="addBenefitToModalSelection(this.value); this.value='';" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500">
+            <select id="modal-benefit-picker" onchange="addBenefitToModalSelection(this.value); this.value='';" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
               <option value="">+ Ajouter un bienfait du référentiel...</option>
               <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
               <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
@@ -1225,9 +1225,9 @@
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
             <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
-              <i data-lucide="camera" class="w-4 h-4 text-emerald-400"></i>
+              <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
               <input type="file" accept="image/*" class="hidden" onchange="handleCatalogPhotoFile(event)">
             </label>
@@ -1238,7 +1238,7 @@
           <button type="button" onclick="closeCatalogItemModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium transition-colors">
             Annuler
           </button>
-          <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-1">
+          <button type="submit" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 transition-all flex items-center justify-center space-x-1">
             <i data-lucide="check" class="w-4 h-4"></i>
             <span>Enregistrer dans le Catalogue</span>
           </button>
@@ -1254,15 +1254,15 @@
   
   <!-- POP-IN INLINE RAPIDE POUR DROP DE QUANTITE -->
   <div id="modal-drop-portion" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-[#151D2A] border-2 border-emerald-500/60 shadow-2xl shadow-emerald-500/20 w-full max-w-md rounded-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+    <div class="bg-[#151D2A] border-2 border-brand-500/60 shadow-2xl shadow-brand-500/20 w-full max-w-md rounded-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2.5">
-          <span class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span class="p-2 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20">
             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
           </span>
           <div>
             <h3 class="font-bold text-white text-base">Ajout au Repas</h3>
-            <p class="text-xs text-slate-400">Cible : <span id="drop-modal-slot-title" class="text-emerald-400 font-bold uppercase"></span></p>
+            <p class="text-xs text-slate-400">Cible : <span id="drop-modal-slot-title" class="text-brand-400 font-bold uppercase"></span></p>
           </div>
         </div>
         <button onclick="closeDropPortionModal()" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
@@ -1283,26 +1283,26 @@
       <div class="space-y-1.5">
         <label for="drop-modal-qty-input" class="text-xs font-semibold text-slate-300 flex items-center justify-between">
           <span>Quantité consommée :</span>
-          <span class="text-[11px] text-slate-400 font-normal">Appuyez sur <kbd class="px-1.5 py-0.5 rounded bg-[#0B0F17] text-emerald-400 font-mono">Entrée ↵</kbd> pour valider</span>
+          <span class="text-[11px] text-slate-400 font-normal">Appuyez sur <kbd class="px-1.5 py-0.5 rounded bg-[#0B0F17] text-brand-400 font-mono">Entrée ↵</kbd> pour valider</span>
         </label>
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
-            <input type="number" step="any" id="drop-modal-qty-input" oninput="updateDropModalLiveMacros()" class="w-full bg-[#0B0F17] border-2 border-emerald-500/50 rounded-xl px-4 py-2.5 text-base font-extrabold text-white focus:outline-none focus:border-emerald-400 shadow-inner">
+            <input type="number" step="any" id="drop-modal-qty-input" oninput="updateDropModalLiveMacros()" class="w-full bg-[#0B0F17] border-2 border-brand-500/50 rounded-xl px-4 py-2.5 text-base font-extrabold text-white focus:outline-none focus:border-brand-500 shadow-inner">
           </div>
           <span id="drop-modal-unit-label" class="px-3 py-2.5 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl text-xs font-bold text-slate-300 min-w-[50px] text-center">g</span>
         </div>
       </div>
 
       <!-- Aperçu temps réel des macros calculées -->
-      <div class="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-1.5">
+      <div class="p-3.5 bg-brand-500/10 border border-brand-500/30 rounded-xl space-y-1.5">
         <div class="flex items-baseline justify-between">
           <span class="text-xs text-slate-400 font-medium">Énergie apportée :</span>
-          <div class="text-lg font-black text-emerald-400" id="drop-modal-live-cals">0 kcal</div>
+          <div class="text-lg font-black text-brand-400" id="drop-modal-live-cals">0 kcal</div>
         </div>
-        <div class="grid grid-cols-3 gap-2 pt-1 border-t border-emerald-500/20 text-center text-xs">
+        <div class="grid grid-cols-3 gap-2 pt-1 border-t border-brand-500/20 text-center text-xs">
           <div>
             <div class="text-[10px] text-slate-400 font-semibold">Protéines</div>
-            <div class="text-emerald-300 font-bold" id="drop-modal-live-prot">0g</div>
+            <div class="text-brand-300 font-bold" id="drop-modal-live-prot">0g</div>
           </div>
           <div>
             <div class="text-[10px] text-slate-400 font-semibold">Glucides</div>
@@ -1319,7 +1319,7 @@
         <button type="button" onclick="closeDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-400 hover:text-white text-xs font-semibold transition-colors flex items-center justify-center space-x-1">
           <span>Annuler (Échap)</span>
         </button>
-        <button type="button" onclick="confirmDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-1.5 transition-all active:scale-95">
+        <button type="button" onclick="confirmDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-lg shadow-brand-500/20 flex items-center justify-center space-x-1.5 transition-all active:scale-95">
           <i data-lucide="check" class="w-4 h-4"></i>
           <span>Valider (Entrée ↵)</span>
         </button>
@@ -1332,10 +1332,10 @@
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="plus-circle" class="w-5 h-5 text-brand-400"></i>
           <div>
             <h3 class="font-bold text-white text-base">Ajouter au repas</h3>
-            <p class="text-xs text-slate-400">Repas sélectionné : <span id="modal-select-cat-slot-title" class="text-emerald-400 font-bold">Déjeuner</span></p>
+            <p class="text-xs text-slate-400">Repas sélectionné : <span id="modal-select-cat-slot-title" class="text-brand-400 font-bold">Déjeuner</span></p>
           </div>
         </div>
         <button onclick="closeSelectFromCatalogModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1347,7 +1347,7 @@
       <div id="picker-step-select" class="space-y-3">
         <div class="relative">
           <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <div id="modal-catalog-picker-list" class="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -1356,7 +1356,7 @@
 
         <div class="pt-2 border-t border-[#1F2A3C] flex items-center justify-between">
           <span class="text-xs text-slate-400">Aliment absent ?</span>
-          <button onclick="openCreateCatalogItemModal('food')" class="text-xs font-semibold text-emerald-400 hover:underline">
+          <button onclick="openCreateCatalogItemModal('food')" class="text-xs font-semibold text-brand-400 hover:underline">
             + Créer dans mon catalogue
           </button>
         </div>
@@ -1373,15 +1373,15 @@
           <h4 id="picker-selected-item-name" class="font-bold text-sm text-white mb-1">Riz basmati</h4>
           <div class="flex items-center gap-2 mt-2">
             <label class="text-xs text-slate-300 font-semibold">Quantité consommée :</label>
-            <input type="number" step="0.1" id="picker-portion-qty" oninput="updatePickerLiveMacros()" value="100" class="w-24 bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="picker-portion-qty" oninput="updatePickerLiveMacros()" value="100" class="w-24 bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
             <span id="picker-portion-unit-label" class="text-xs text-slate-400">g</span>
           </div>
         </div>
 
         <!-- Aperçu dynamique live des macros calculées -->
-        <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-1">
+        <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl space-y-1">
           <div class="text-[11px] text-slate-400 font-medium">Valeurs nutritionnelles au prorata :</div>
-          <div class="text-base font-extrabold text-emerald-400" id="picker-live-cals">0 kcal</div>
+          <div class="text-base font-extrabold text-brand-400" id="picker-live-cals">0 kcal</div>
           <div class="text-xs text-slate-300" id="picker-live-macros">Protéines: 0g | Glucides: 0g | Lipides: 0g</div>
         </div>
 
@@ -1389,7 +1389,7 @@
           <button type="button" onclick="closeSelectFromCatalogModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium">
             Annuler
           </button>
-          <button type="button" onclick="confirmAddCatalogItemToMeal()" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-1">
+          <button type="button" onclick="confirmAddCatalogItemToMeal()" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 flex items-center justify-center space-x-1">
             <i data-lucide="check" class="w-4 h-4"></i>
             <span>Valider et Ajouter au Repas</span>
           </button>
@@ -1406,7 +1406,7 @@
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <i data-lucide="camera" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="camera" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base">📸 Analyser mon repas</h3>
         </div>
         <button onclick="closeMealModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1419,10 +1419,10 @@
         <!-- Zone Photo Smartphone / Fichier -->
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prendre une photo de l'assiette ou choisir un fichier</label>
-          <div class="relative border-2 border-dashed border-[#1F2A3C] hover:border-emerald-500/50 rounded-xl p-4 text-center cursor-pointer bg-[#0B0F17]/50 transition-colors" onclick="document.getElementById('meal-file-input').click()">
+          <div class="relative border-2 border-dashed border-[#1F2A3C] hover:border-brand-500/50 rounded-xl p-4 text-center cursor-pointer bg-[#0B0F17]/50 transition-colors" onclick="document.getElementById('meal-file-input').click()">
             <input type="file" id="meal-file-input" accept="image/*" capture="environment" class="hidden" onchange="handleMealPhotoSelected(event)">
             <div id="meal-photo-placeholder" class="space-y-1">
-              <i data-lucide="image-plus" class="w-8 h-8 mx-auto text-emerald-400"></i>
+              <i data-lucide="image-plus" class="w-8 h-8 mx-auto text-brand-400"></i>
               <div class="text-xs text-slate-300 font-medium">Appuyer pour ouvrir l'appareil photo</div>
               <div class="text-[10px] text-slate-500">ou glisser une photo de plat</div>
             </div>
@@ -1435,7 +1435,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Moment du repas</label>
-            <select id="meal-type-select" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <select id="meal-type-select" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="breakfast">Petit-déjeuner</option>
               <option value="lunch" selected>Déjeuner</option>
               <option value="dinner">Dîner</option>
@@ -1444,17 +1444,17 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-            <input type="date" id="meal-date-input" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="date" id="meal-date-input" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Description ou ingrédients (facultatif)</label>
-          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Bouton Déclenchement de l'analyse -->
-        <button onclick="triggerMealEstimation()" id="btn-estimate-meal" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-transform">
+        <button onclick="triggerMealEstimation()" id="btn-estimate-meal" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-brand-600/20 active:scale-95 transition-transform">
           <i data-lucide="sparkles" class="w-4 h-4"></i>
           <span>Estimer les Calories & Macros</span>
         </button>
@@ -1466,9 +1466,9 @@
           <div class="bg-[#0B0F17] p-3 rounded-xl border border-[#1F2A3C] space-y-1.5">
             <div class="flex justify-between items-center text-xs">
               <span class="font-semibold text-slate-300">Ajustement de portion :</span>
-              <span class="font-bold text-emerald-400" id="portion-scale-val">1.0x (Normale)</span>
+              <span class="font-bold text-brand-400" id="portion-scale-val">1.0x (Normale)</span>
             </div>
-            <input type="range" id="portion-scale-range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-emerald-500 cursor-pointer" oninput="updatePortionScale(this.value)">
+            <input type="range" id="portion-scale-range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-brand-500 cursor-pointer" oninput="updatePortionScale(this.value)">
             <div class="flex justify-between text-[10px] text-slate-500">
               <span>0.5x (Petite)</span>
               <span>1.0x (Standard)</span>
@@ -1483,7 +1483,7 @@
               <span class="text-sm font-extrabold text-white" id="est-calories">0 kcal</span>
             </div>
             <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
-              <span class="text-[10px] text-emerald-400 block">Protéines</span>
+              <span class="text-[10px] text-brand-400 block">Protéines</span>
               <span class="text-xs font-bold text-white" id="est-protein">0g</span>
             </div>
             <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
@@ -1506,7 +1506,7 @@
 
           <!-- Bouton final : Enregistrer dans le journal & Sauvegarder comme plat réutilisable -->
           <div class="space-y-2">
-            <button onclick="saveMealToJournal()" id="btn-save-meal" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs shadow-lg shadow-emerald-500/25 active:scale-95 transition-all flex items-center justify-center space-x-2">
+            <button onclick="saveMealToJournal()" id="btn-save-meal" class="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs shadow-lg shadow-brand-500/25 active:scale-95 transition-all flex items-center justify-center space-x-2">
               <i data-lucide="check" class="w-4 h-4"></i>
               <span>Enregistrer dans mon journal</span>
             </button>
@@ -1534,7 +1534,7 @@
           <h3 class="font-bold text-white text-base">Bibliothèque de Plats Réutilisables</h3>
         </div>
         <div class="flex items-center space-x-2">
-          <button onclick="openCreateSavedMealModal()" class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center space-x-1">
+          <button onclick="openCreateSavedMealModal()" class="px-2.5 py-1 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 border border-brand-500/30 text-xs font-semibold flex items-center space-x-1">
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             <span>Nouveau</span>
           </button>
@@ -1579,7 +1579,7 @@
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <i data-lucide="utensils" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="utensils" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="saved-meal-form-title">Créer un Plat Type Réutilisable</h3>
         </div>
         <button onclick="closeCreateSavedMealModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1592,13 +1592,13 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du plat *</label>
-          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Type de repas *</label>
-            <select id="saved-meal-type" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <select id="saved-meal-type" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="breakfast">🥐 Petit-déjeuner</option>
               <option value="lunch" selected>🥗 Déjeuner</option>
               <option value="snack">🍎 Goûter / Collation</option>
@@ -1607,7 +1607,7 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Portion / Quantité</label>
-            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -1615,33 +1615,33 @@
         <div class="grid grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Calories *</label>
-            <input type="number" step="1" id="saved-meal-calories" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-bold">
+            <input type="number" step="1" id="saved-meal-calories" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500 font-bold">
           </div>
           <div>
-            <label class="block text-[11px] font-semibold text-emerald-400 mb-1">Protéines</label>
-            <input type="number" step="0.1" id="saved-meal-protein" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <label class="block text-[11px] font-semibold text-brand-400 mb-1">Protéines</label>
+            <input type="number" step="0.1" id="saved-meal-protein" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-sky-400 mb-1">Glucides</label>
-            <input type="number" step="0.1" id="saved-meal-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="saved-meal-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-amber-400 mb-1">Lipides</label>
-            <input type="number" step="0.1" id="saved-meal-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="saved-meal-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Composition / Ingrédients (facultatif)</label>
-          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
             <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
-              <i data-lucide="camera" class="w-4 h-4 text-emerald-400"></i>
+              <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
               <input type="file" accept="image/*" class="hidden" onchange="handleSavedMealPhotoFile(event)">
             </label>
@@ -1657,7 +1657,7 @@
           <button type="button" onclick="closeCreateSavedMealModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium transition-colors">
             Annuler
           </button>
-          <button type="submit" id="btn-submit-saved-meal" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center space-x-1">
+          <button type="submit" id="btn-submit-saved-meal" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 transition-all flex items-center justify-center space-x-1">
             <i data-lucide="check" class="w-4 h-4"></i>
             <span>Enregistrer le plat</span>
           </button>
@@ -1674,7 +1674,7 @@
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
-          <i data-lucide="scale" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="scale" class="w-5 h-5 text-brand-400"></i>
           <span>Saisie rapide de la pesée</span>
         </h3>
         <button onclick="closeWeightModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1685,24 +1685,24 @@
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-          <input type="date" id="input-weight-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          <input type="date" id="input-weight-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Poids (kg) *</label>
-          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-bold">
+          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-400 mb-1">Masse grasse (%)</label>
-            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-400 mb-1">Masse muscle (kg)</label>
-            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
-        <button onclick="submitWeightEntry()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95">
+        <button onclick="submitWeightEntry()" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95">
           <i data-lucide="check" class="w-4 h-4"></i>
           <span>Enregistrer la Pesée</span>
         </button>
@@ -1717,7 +1717,7 @@
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
-          <i data-lucide="footprints" class="w-5 h-5 text-emerald-400"></i>
+          <i data-lucide="footprints" class="w-5 h-5 text-brand-400"></i>
           <span>Ajouter Activité & Pas</span>
         </h3>
         <button onclick="closeActivityModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
@@ -1728,24 +1728,24 @@
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-          <input type="date" id="input-act-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          <input type="date" id="input-act-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre de pas du jour</label>
-          <input type="number" id="input-act-steps" placeholder="Ex: 10450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-bold">
+          <input type="number" id="input-act-steps" placeholder="Ex: 10450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-400 mb-1">Calories brûlées (kcal)</label>
-            <input type="number" id="input-act-cals" placeholder="Ex: 450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" id="input-act-cals" placeholder="Ex: 450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-400 mb-1">Minutes d'exercice</label>
-            <input type="number" id="input-act-minutes" placeholder="Ex: 45" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" id="input-act-minutes" placeholder="Ex: 45" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
-        <button onclick="submitActivityEntry()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95">
+        <button onclick="submitActivityEntry()" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95">
           <i data-lucide="check" class="w-4 h-4"></i>
           <span>Synchroniser l'Activité</span>
         </button>
@@ -1759,7 +1759,7 @@
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div class="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
             <i data-lucide="user" class="w-4 h-4"></i>
           </div>
           <div>
@@ -1795,46 +1795,46 @@
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prénom ou Pseudo</label>
-          <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+          <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-3 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Sexe</label>
-            <select id="prof-gender" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <select id="prof-gender" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="male" selected>Homme</option>
               <option value="female">Femme</option>
             </select>
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Âge (ans)</label>
-            <input type="number" id="prof-age" value="35" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" id="prof-age" value="35" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Taille (cm)</label>
-            <input type="number" id="prof-height" value="178" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" id="prof-height" value="178" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Poids Cible (kg)</label>
-            <input type="number" step="0.1" id="prof-target-weight" value="77.0" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="prof-target-weight" value="77.0" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-brand-400 font-bold focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Objectif Pas / jour</label>
-            <input type="number" id="prof-target-steps" value="10000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500">
+            <input type="number" id="prof-target-steps" value="10000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Cible Calories (kcal/j)</label>
-            <input type="number" id="prof-target-cals" value="2000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" id="prof-target-cals" value="2000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Protéines (g / kg)</label>
-            <input type="number" step="0.1" id="prof-target-prot" value="1.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+            <input type="number" step="0.1" id="prof-target-prot" value="1.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -1857,12 +1857,12 @@
                 <span id="prof-ring-label">RingConn Gen 3</span>
               </span>
             </button>
-            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('health_connect')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-emerald-500/60 text-left transition-all cursor-pointer group">
+            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('health_connect')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-brand-500/60 text-left transition-all cursor-pointer group">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] text-slate-400 block">Agrégateur santé :</span>
-                <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">Configurer →</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 font-semibold">Configurer →</span>
               </div>
-              <span class="font-bold text-emerald-400 group-hover:text-emerald-300 flex items-center space-x-1 mt-1">
+              <span class="font-bold text-brand-400 group-hover:text-brand-300 flex items-center space-x-1 mt-1">
                 <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
                 <span>Google Health Connect</span>
               </span>
@@ -1870,7 +1870,7 @@
           </div>
         </div>
 
-        <button onclick="saveUserProfile()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-lg shadow-emerald-600/25">
+        <button onclick="saveUserProfile()" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-lg shadow-brand-600/25">
           <i data-lucide="save" class="w-4 h-4"></i>
           <span>Enregistrer mon Profil</span>
         </button>
@@ -1879,16 +1879,16 @@
         <div class="pt-3 border-t border-[#1F2A3C] space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-white flex items-center space-x-1.5">
-              <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+              <i data-lucide="shield-check" class="w-4 h-4 text-brand-400"></i>
               <span>Sauvegarde & Persistance Durable (Anti-Perte)</span>
             </span>
-            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">SQLite + Auto-Sync Client</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium">SQLite + Auto-Sync Client</span>
           </div>
           <p class="text-[11px] text-slate-400">Vos données sont automatiquement synchronisées localement sur votre téléphone/navigateur (localStorage) pour garantir zéro perte de données même sur Vercel Serverless.</p>
           
           <div class="grid grid-cols-2 gap-2 pt-1">
             <button type="button" onclick="exportDataBackup()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-              <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-400"></i>
+              <i data-lucide="download" class="w-3.5 h-3.5 text-brand-400"></i>
               <span>Exporter JSON (1-clic)</span>
             </button>
             <button type="button" onclick="document.getElementById('file-import-backup').click()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
@@ -1968,13 +1968,13 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="wizard-device-selector">
             
             <!-- Option 1 : RingConn Gen 3 (Recommandée) -->
-            <button type="button" onclick="selectWizardDevice('ringconn')" id="wiz-opt-ringconn" class="wizard-device-card p-3 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 text-left transition-all">
+            <button type="button" onclick="selectWizardDevice('ringconn')" id="wiz-opt-ringconn" class="wizard-device-card p-3 rounded-xl border-2 border-brand-500 bg-brand-500/10 text-left transition-all">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-white text-xs flex items-center space-x-1.5">
-                  <i data-lucide="circle-dot" class="w-4 h-4 text-emerald-400"></i>
+                  <i data-lucide="circle-dot" class="w-4 h-4 text-brand-400"></i>
                   <span>RingConn Gen 3</span>
                 </span>
-                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500 text-black font-extrabold uppercase">Ma Bague</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-500 text-black font-extrabold uppercase">Ma Bague</span>
               </div>
               <p class="text-[11px] text-slate-300">Sommeil, HRV en ms, rythme cardiaque et calories actives</p>
             </button>
@@ -1995,7 +1995,7 @@
             <button type="button" onclick="selectWizardDevice('withings')" id="wiz-opt-withings" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-white text-xs flex items-center space-x-1.5">
-                  <i data-lucide="scale" class="w-4 h-4 text-emerald-400"></i>
+                  <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
                   <span>Withings Body Smart</span>
                 </span>
                 <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold uppercase">Balance</span>
@@ -2043,7 +2043,7 @@
       <!-- En-tête de la Modale -->
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2.5">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-white shadow-md">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-electric-cyan flex items-center justify-center text-white shadow-md">
             <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
           </div>
           <div>
@@ -2058,16 +2058,16 @@
 
       <!-- État Déjà Connecté : Vue Session Active -->
       <div id="auth-connected-view" class="space-y-3.5 hidden">
-        <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center space-x-3">
-          <div id="auth-user-avatar-wrap" class="w-11 h-11 rounded-full border border-emerald-400 flex items-center justify-center overflow-hidden bg-slate-800 text-white font-bold shrink-0">
+        <div class="p-3.5 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center space-x-3">
+          <div id="auth-user-avatar-wrap" class="w-11 h-11 rounded-full border border-brand-500 flex items-center justify-center overflow-hidden bg-slate-800 text-white font-bold shrink-0">
             <img id="auth-user-avatar" src="" alt="Avatar" class="w-full h-full object-cover hidden">
             <span id="auth-user-initials">VT</span>
           </div>
           <div class="overflow-hidden">
             <div id="auth-user-name" class="font-bold text-white text-sm truncate">Sébastien LAMOLIATE</div>
-            <div id="auth-user-email" class="text-xs text-emerald-300 truncate">sebastienlamoliate@gmail.com</div>
+            <div id="auth-user-email" class="text-xs text-brand-300 truncate">sebastienlamoliate@gmail.com</div>
             <div class="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-0.5">
-              <span id="auth-provider-badge" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-medium">Google</span>
+              <span id="auth-provider-badge" class="px-1.5 py-0.2 rounded bg-brand-500/20 text-brand-300 font-medium">Google</span>
               <span>• Session active sécurisée</span>
             </div>
           </div>
@@ -2076,14 +2076,14 @@
         <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] text-xs space-y-1.5">
           <div class="flex items-center justify-between text-slate-300">
             <span>Jeton Bearer JWT :</span>
-            <span class="text-emerald-400 font-mono text-[10px] flex items-center space-x-1">
+            <span class="text-brand-400 font-mono text-[10px] flex items-center space-x-1">
               <i data-lucide="key" class="w-3.5 h-3.5"></i>
               <span>Actif (localStorage)</span>
             </span>
           </div>
           <div class="flex items-center justify-between text-slate-300">
             <span>Passerelle Google Health :</span>
-            <button type="button" onclick="closeAuthModal(); openConnectWizardModal('health_connect')" class="text-emerald-400 hover:text-emerald-300 font-bold flex items-center space-x-1 underline">
+            <button type="button" onclick="closeAuthModal(); openConnectWizardModal('health_connect')" class="text-brand-400 hover:text-brand-300 font-bold flex items-center space-x-1 underline">
               <i data-lucide="settings" class="w-3.5 h-3.5"></i>
               <span>Configurer / Liée</span>
             </button>
@@ -2098,7 +2098,7 @@
         </div>
 
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" onclick="closeAuthModal(); openProfileModal()" class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 transition-all">
+          <button type="button" onclick="closeAuthModal(); openProfileModal()" class="py-2.5 px-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 transition-all">
             <i data-lucide="user" class="w-4 h-4"></i>
             <span>Mon Profil</span>
           </button>
@@ -2119,7 +2119,7 @@
         
         <!-- Onglets de sélection du mode d'authentification -->
         <div class="grid grid-cols-2 p-1 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] text-xs font-semibold">
-          <button type="button" id="tab-auth-google" onclick="switchAuthTab('google')" class="py-2 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center space-x-1.5 transition-all">
+          <button type="button" id="tab-auth-google" onclick="switchAuthTab('google')" class="py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all">
             <svg class="w-4 h-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -2144,7 +2144,7 @@
           <!-- En-tête Google Account Chooser -->
           <div class="text-center pt-1 pb-1">
             <h4 class="text-sm font-semibold text-white">Connexion rapide Google</h4>
-            <p class="text-xs text-slate-400 mt-0.5">Pour synchroniser vos balances et bagues avec <span class="text-emerald-400 font-semibold">VitalTrack</span></p>
+            <p class="text-xs text-slate-400 mt-0.5">Pour synchroniser vos balances et bagues avec <span class="text-brand-400 font-semibold">VitalTrack</span></p>
           </div>
 
           <!-- Liste des comptes Google : Vue Sélecteur -->
@@ -2156,11 +2156,11 @@
                   S
                 </div>
                 <div class="overflow-hidden">
-                  <div class="text-sm font-semibold text-white group-hover:text-emerald-400 transition-colors">Sébastien LAMOLIATE</div>
+                  <div class="text-sm font-semibold text-white group-hover:text-brand-400 transition-colors">Sébastien LAMOLIATE</div>
                   <div class="text-xs text-slate-400 truncate">sebastienlamoliate@gmail.com</div>
                 </div>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">1-Clic</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium shrink-0">1-Clic</span>
             </button>
 
             <!-- Option : Utiliser un autre compte -->
@@ -2222,7 +2222,7 @@
         <div id="auth-panel-email" class="space-y-3.5 hidden">
           <!-- Sous-sélecteur Se connecter vs Créer un compte -->
           <div class="flex items-center justify-center space-x-4 border-b border-[#1F2A3C] pb-2 text-xs">
-            <button type="button" id="btn-mode-login" onclick="setAuthEmailMode('login')" class="font-bold text-emerald-400 pb-1 border-b-2 border-emerald-400 transition-all">
+            <button type="button" id="btn-mode-login" onclick="setAuthEmailMode('login')" class="font-bold text-brand-400 pb-1 border-b-2 border-brand-500 transition-all">
               Se connecter
             </button>
             <button type="button" id="btn-mode-register" onclick="setAuthEmailMode('register')" class="text-slate-400 hover:text-slate-200 pb-1 border-b-2 border-transparent transition-all">
@@ -2234,7 +2234,7 @@
           <div id="email-field-name" class="space-y-1 hidden">
             <label class="block text-[11px] font-medium text-slate-300">Nom complet ou prénom :</label>
             <div class="relative">
-              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
               <i data-lucide="user" class="w-4 h-4 text-slate-500 absolute right-3 top-2.5"></i>
             </div>
           </div>
@@ -2243,7 +2243,7 @@
           <div class="space-y-1">
             <label class="block text-[11px] font-medium text-slate-300">Adresse email :</label>
             <div class="relative">
-              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
               <i data-lucide="at-sign" class="w-4 h-4 text-slate-500 absolute right-3 top-2.5"></i>
             </div>
           </div>
@@ -2255,7 +2255,7 @@
               <span id="password-hint" class="text-[10px] text-slate-500 hidden">Minimum 6 caractères</span>
             </div>
             <div class="relative">
-              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
               <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-2 text-slate-400 hover:text-slate-200">
                 <i data-lucide="eye" id="icon-toggle-password" class="w-4 h-4"></i>
               </button>
@@ -2269,7 +2269,7 @@
           </div>
 
           <!-- Bouton de Soumission Email -->
-          <button type="button" id="btn-submit-email-auth" onclick="handleEmailAuthSubmit()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center space-x-1.5 active:scale-95">
+          <button type="button" id="btn-submit-email-auth" onclick="handleEmailAuthSubmit()" class="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-black font-bold text-xs shadow-lg shadow-brand-500/25 transition-all flex items-center justify-center space-x-1.5 active:scale-95">
             <span id="btn-submit-email-label">Se connecter</span>
           </button>
         </div>
