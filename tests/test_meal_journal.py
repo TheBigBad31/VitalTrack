@@ -256,3 +256,24 @@ def test_meal_journal_sync_with_meals_and_dashboard(journal_setup):
     assert today_str in dash_data["meals_by_day_7d"]
     assert dash_data["meals_by_day_7d"][today_str]["lunch"] == 350.0
     assert dash_data["meals_by_day_7d"][today_str]["total"] >= 350.0
+
+
+def test_dashboard_read_path_does_not_call_sync_all(journal_setup, monkeypatch):
+    """Vérifie que la route GET /api/dashboard ne déclenche plus de sync massive en lecture."""
+    client = journal_setup["client"]
+    token1 = journal_setup["token1"]
+    headers = {"Authorization": f"Bearer {token1}"}
+    db = journal_setup["db"]
+
+    sync_called = False
+
+    def fake_sync_all(user_id=None):
+        nonlocal sync_called
+        sync_called = True
+
+    monkeypatch.setattr(db, "sync_all_meal_logs_to_meals", fake_sync_all)
+
+    res = client.get("/api/dashboard", headers=headers)
+    assert res.status_code == 200
+    assert not sync_called, "GET /api/dashboard ne doit pas exécuter sync_all_meal_logs_to_meals"
+
