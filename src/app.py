@@ -15,7 +15,9 @@ Endpoints :
 - GET  /api/fallback-data     : jeu de données complet 30 jours embarqué
 """
 
+import csv
 import hmac
+import io
 import logging
 import os
 import time
@@ -23,7 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -34,7 +36,9 @@ logger = logging.getLogger("vitaltrack.observability")
 from src.db import Database, DatabaseServiceUnavailableError, get_db_path
 from src.models import (
     ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
-    MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry
+    MealLog, MealLogItem, MealType, NutritionBenefitItem, SavedMeal, WeightEntry,
+    DailyMetricsEntry, WorkoutEntry, SleepSessionEntry, SleepStageEntry,
+    IntradaySampleEntry, HydrationLogEntry, RawIngestEntry, UserConsentItem
 )
 from src.nutrition_engine import NutritionEngine
 from src.nutrition_rules import evaluate_dish_benefits
@@ -1843,10 +1847,107 @@ class BackupRestoreInput(BaseModel):
 
 
 @app.get("/api/backup/export")
+@app.get("/api/export/json")
 def export_backup(current_user: AuthUser = Depends(get_current_user)):
-    """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique."""
+    """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique en JSON (RGPD)."""
     backup_data = db.export_full_backup(user_id=current_user.id)
     return backup_data
+
+
+@app.get("/api/export/csv")
+def export_data_csv(current_user: AuthUser = Depends(get_current_user)):
+    """Exporte les données biométriques principales (pesées et activités) au format CSV standard (RGPD)."""
+    weights = db.get_weights(limit=1000, user_id=current_user.id)
+    activities = db.get_activities(limit=1000, user_id=current_user.id)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # 1. Section Pesées
+    writer.writerow(["### SECTION: WEIGHTS ###"])
+    writer.writerow(["date", "weight_kg", "body_fat_pct", "muscle_mass_kg", "water_pct", "bmi", "trend_7d_kg", "source", "external_id", "notes"])
+    for w in weights:
+        writer.writerow([
+            w.date.isoformat(),
+            w.weight_kg,
+            w.body_fat_pct if w.body_fat_pct is not None else "",
+            w.muscle_mass_kg if w.muscle_mass_kg is not None else "",
+            w.water_pct if w.water_pct is not None else "",
+            w.bmi if w.bmi is not None else "",
+            w.trend_7d_kg if w.trend_7d_kg is not None else "",
+            w.source,
+            w.external_id or "",
+            w.notes or ""
+        ])
+
+    writer.writerow([])
+    # 2. Section Activités
+    writer.writerow(["### SECTION: ACTIVITIES ###"])
+    writer.writerow(["date", "steps", "active_calories_kcal", "bmr_kcal", "total_burned_kcal", "workout_minutes", "workout_type", "resting_hr_bpm", "hrv_ms", "sleep_score", "source", "external_id"])
+    for a in activities:
+        writer.writerow([
+            a.date.isoformat(),
+            a.steps,
+            a.active_calories_kcal,
+            a.bmr_kcal,
+            a.total_burned_kcal,
+            a.workout_minutes,
+            a.workout_type or "",
+            a.resting_hr_bpm if a.resting_hr_bpm is not None else "",
+            a.hrv_ms if a.hrv_ms is not None else "",
+            a.sleep_score if a.sleep_score is not None else "",
+            a.source,
+            a.external_id or ""
+        ])
+
+    csv_content = output.getvalue()
+    filename = f"vitaltrack_export_{current_user.id}_{date.today().isoformat()}.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.delete("/api/user/data")
+@app.delete("/api/user/account")
+def delete_user_account_and_data_endpoint(current_user: AuthUser = Depends(get_current_user)):
+    """Supprime définitivement le compte utilisateur et l'ensemble de ses données associées (Droit à l'oubli RGPD)."""
+    success = db.delete_user_account_and_data(user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable ou déjà supprimé")
+    return {
+        "status": "success",
+        "message": f"Compte et toutes les données associées pour {current_user.email} ont été définitivement supprimés."
+    }
+
+
+@app.get("/api/user/consents")
+def get_user_consents_endpoint(current_user: AuthUser = Depends(get_current_user)):
+    """Retourne les préférences de consentement RGPD par catégorie pour l'utilisateur."""
+    consents = db.get_user_consents(user_id=current_user.id)
+    return {
+        "user_id": current_user.id,
+        "consents": consents
+    }
+
+
+class ConsentUpdatePayload(BaseModel):
+    category: str = Field(..., description="biometrics, nutrition, analytics, devices")
+    consented: bool = Field(..., description="true ou false")
+
+
+@app.post("/api/user/consents")
+def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: AuthUser = Depends(get_current_user)):
+    """Met à jour le consentement pour une catégorie spécifique."""
+    allowed_categories = {"biometrics", "nutrition", "analytics", "devices"}
+    if payload.category not in allowed_categories:
+        raise HTTPException(status_code=400, detail=f"Catégorie invalide. Choix possibles: {allowed_categories}")
+    res = db.set_user_consent(category=payload.category, consented=payload.consented, user_id=current_user.id)
+    return {
+        "status": "success",
+        "consent": res.model_dump()
+    }
 
 
 @app.post("/api/backup/import")
@@ -1973,13 +2074,64 @@ def handle_health_webhook(
     saved_weight = None
     saved_act = None
 
+    # Idempotence : enregistrement raw_ingest avec clé d'idempotence
+    source_name = payload.get("source", "health_connect")
+    ext_id = payload.get("external_id") or payload.get("id") or (weight_entry.external_id if weight_entry else (act_entry.external_id if act_entry else None))
+    idemp_key = f"{source_name}:{ext_id}" if ext_id else None
+    
+    db.insert_raw_ingest(
+        source=source_name,
+        payload=payload,
+        user_id=resolved_user_id,
+        endpoint="/api/webhook/health",
+        idempotency_key=idemp_key
+    )
+
     if weight_entry:
+        if ext_id and not weight_entry.external_id:
+            weight_entry.external_id = str(ext_id)
         saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
     if act_entry:
+        if ext_id and not act_entry.external_id:
+            act_entry.external_id = str(ext_id)
         saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
 
+    # Mémoriser les métriques enrichies le cas échéant (daily_metrics, workouts, sleep, intraday)
+    saved_daily_metric = None
+    has_daily_metric = any(k in payload for k in [
+        "resting_hr_bpm", "resting_heart_rate", "hrv_rmssd_ms", "hrv_sdnn_ms", "hrv_ms",
+        "spo2_pct", "spo2", "skin_temperature_c", "skin_temperature", "sleep_score", "recovery_score"
+    ])
+    if has_daily_metric:
+        raw_d = payload.get("date")
+        target_d = date.fromisoformat(str(raw_d)[:10]) if raw_d else date.today()
+        d_metric = DailyMetricsEntry(
+            user_id=resolved_user_id,
+            date=target_d,
+            source=source_name,
+            steps=int(payload.get("steps", 0)),
+            active_calories_kcal=float(payload.get("active_calories_kcal", payload.get("active_calories", 0.0))),
+            total_calories_kcal=float(payload.get("total_burned_kcal", payload.get("total_calories", 0.0))),
+            resting_hr_bpm=int(payload["resting_hr_bpm"]) if payload.get("resting_hr_bpm") is not None else (
+                int(payload["resting_heart_rate"]) if payload.get("resting_heart_rate") is not None else None
+            ),
+            hrv_rmssd_ms=float(payload["hrv_rmssd_ms"]) if payload.get("hrv_rmssd_ms") is not None else (
+                float(payload["hrv_ms"]) if payload.get("hrv_ms") is not None else None
+            ),
+            hrv_sdnn_ms=float(payload["hrv_sdnn_ms"]) if payload.get("hrv_sdnn_ms") is not None else None,
+            spo2_pct=float(payload["spo2_pct"]) if payload.get("spo2_pct") is not None else (
+                float(payload["spo2"]) if payload.get("spo2") is not None else None
+            ),
+            skin_temperature_c=float(payload["skin_temperature_c"]) if payload.get("skin_temperature_c") is not None else (
+                float(payload["skin_temperature"]) if payload.get("skin_temperature") is not None else None
+            ),
+            sleep_score=int(payload["sleep_score"]) if payload.get("sleep_score") is not None else None,
+            recovery_score=int(payload["recovery_score"]) if payload.get("recovery_score") is not None else None,
+            external_id=str(ext_id) if ext_id else None
+        )
+        saved_daily_metric = db.insert_daily_metric(d_metric, user_id=resolved_user_id).model_dump()
+
     # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu
-    source_name = payload.get("source", "health_connect")
     dev_id = matched_device.get("device_id") if matched_device else (
         "ringconn" if "ring" in source_name.lower() else (
             "withings" if "withings" in source_name.lower() else "health_connect"
@@ -2006,7 +2158,8 @@ def handle_health_webhook(
         "user_id": resolved_user_id,
         "ingested": {
             "weight": saved_weight,
-            "activity": saved_act
+            "activity": saved_act,
+            "daily_metric": saved_daily_metric
         }
     }
 
