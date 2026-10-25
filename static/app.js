@@ -1,3 +1,5 @@
+// static/app.js - Module Desktop Web & PWA pour Catalogue Aliments & Plats et Journal Quotidien
+
 // static/app.js - Module Desktop Web & PWA pour Catalogue Aliments & Plats et Journal Quotidien des Repas (Stage 12)
 
 let currentCatalogItems = [];
@@ -207,7 +209,7 @@ async function loadCatalogItems() {
   }
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(url) : fetch(url));
+    const res = await apiFetch(url);
     if (res.ok) {
       currentCatalogItems = await res.json();
       renderCatalogItems();
@@ -624,15 +626,11 @@ async function confirmDropPortionModal() {
   closeDropPortionModal();
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${slot}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${slot}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${slot}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') {
@@ -1116,15 +1114,11 @@ async function triggerModalNutritionEvaluation() {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch('/api/nutrition/evaluate', {
+    const res = await apiFetch('/api/nutrition/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch('/api/nutrition/evaluate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       const data = await res.json();
@@ -1219,15 +1213,11 @@ async function handleCatalogItemFormSubmit(event) {
     const url = isEdit ? `/api/catalog/items/${itemId}` : '/api/catalog/items';
     const method = isEdit ? 'PUT' : 'POST';
 
-    const res = await (typeof apiFetch === 'function' ? apiFetch(url, {
+    const res = await apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       const createdOrUpdated = await res.json();
@@ -1244,11 +1234,7 @@ async function handleCatalogItemFormSubmit(event) {
               explanation: b.explanation || ''
             }))
           };
-          if (typeof apiFetch === 'function') {
-            await apiFetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
-          } else {
-            await fetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
-          }
+          await apiFetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
         } catch (bErr) {
           console.warn("Erreur mise à jour bienfaits:", bErr);
         }
@@ -1271,7 +1257,7 @@ async function deleteCatalogItem(itemId) {
   if (!confirm(`Supprimer '${name}' de votre catalogue ?`)) return;
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' }) : fetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' }));
+    const res = await apiFetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' });
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`'${name}' supprimé du catalogue`, 'success');
       loadCatalogItems();
@@ -1293,7 +1279,7 @@ async function loadMealsJournal(dateStr) {
   if (dateInput) dateInput.value = currentJournalDate;
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal?date=${currentJournalDate}`) : fetch(`/api/meals/journal?date=${currentJournalDate}`));
+    const res = await apiFetch(`/api/meals/journal?date=${currentJournalDate}`);
     if (res.ok) {
       currentJournalData = await res.json();
       renderMealsJournal();
@@ -1520,7 +1506,7 @@ function renderJournalDayBenefitsSummary(meals) {
 
 async function removeMealLogItem(itemId) {
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' }) : fetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' }));
+    const res = await apiFetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' });
     if (res.ok) {
       if (typeof showToast === 'function') showToast("Aliment retiré du repas", "success");
       loadMealsJournal(currentJournalDate);
@@ -1642,15 +1628,11 @@ async function confirmAddCatalogItemToMeal() {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`'${item.name}' ajouté au ${currentActiveMealSlot} !`, 'success');
@@ -1675,15 +1657,11 @@ async function saveSlotAsDishModal(slot) {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${slot}/save-as-dish`, {
+    const res = await apiFetch(`/api/meals/journal/${slot}/save-as-dish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${slot}/save-as-dish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`Plat '${payload.name}' créé dans votre catalogue !`, 'success');

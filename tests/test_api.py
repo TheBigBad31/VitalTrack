@@ -605,3 +605,17 @@ def test_vercel_path_resolver():
     res_direct = vercel_client.get("/api/index.py")
     assert res_direct.status_code == 200
     assert res_direct.json()["status"] == "ok"
+
+
+def test_api_serve_frontend_modules(client):
+    """Vérifie que les modules front découplés et le thème CSS sont bien servis."""
+    for path in [
+        "/static/modules/theme.css",
+        "/static/modules/api.js",
+        "/static/modules/lazy.js",
+        "/static/modules/dashboard.js",
+        "/static/modules/nutrition.js",
+        "/static/manifest.json"
+    ]:
+        res = client.get(path)
+        assert res.status_code == 200, f"Échec pour {path}"
