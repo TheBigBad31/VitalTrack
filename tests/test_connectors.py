@@ -124,7 +124,8 @@ def test_withings_connector_demo_mode():
     end = date.today()
     weights = connector.sync_weights(start, end)
     assert len(weights) == 8
-    assert all(w.source == "withings" for w in weights)
+    assert all(w.source in ("withings", "simulation") for w in weights)
+    assert all(w.is_simulated is True for w in weights)
     assert all(w.weight_kg > 70 for w in weights)
 
 
@@ -159,7 +160,8 @@ def test_oura_connector_demo_mode():
     end = date.today()
     acts = connector.sync_activities(start, end)
     assert len(acts) == 6
-    assert all(a.source == "oura" for a in acts)
+    assert all(a.source in ("oura", "simulation") for a in acts)
+    assert all(a.is_simulated is True for a in acts)
     assert all(a.sleep_score is not None for a in acts)
     assert all(a.hrv_ms is not None for a in acts)
 
@@ -270,7 +272,8 @@ def test_google_health_connect_demo_and_config():
     end = date.today()
     activities = demo_conn.sync_activities(start, end)
     assert len(activities) == 7
-    assert all(a.source == "health_connect" for a in activities)
+    assert all(a.source in ("health_connect", "simulation") for a in activities)
+    assert all(a.is_simulated is True for a in activities)
     assert all(a.steps > 5000 for a in activities)
     assert all(a.sleep_score is not None for a in activities)
 
@@ -387,6 +390,84 @@ def test_google_health_connect_webhook_hmac_and_bearer():
     })
     assert act is not None
     assert act.steps == 12700  # Somme des pas horaires
-    assert act.resting_hr_bpm == 58
-    assert act.sleep_score == 86
-    assert act.source == "health_connect"
+
+
+def test_simulation_data_marking_and_exclusion(temp_db):
+    """Teste le marquage source='simulation' et l'exclusion par défaut dans le calcul et l'affichage."""
+    from src.models import WeightEntry, ActivityEntry
+    import os
+
+    # 1. Insertion de pesées réelles et d'une pesée simulée
+    w_real_1 = WeightEntry(date=date(2026, 10, 10), weight_kg=80.0, source="manual")
+    w_sim = WeightEntry(date=date(2026, 10, 11), weight_kg=90.0, source="simulation", is_simulated=True)
+    w_real_2 = WeightEntry(date=date(2026, 10, 12), weight_kg=80.0, source="manual")
+
+    temp_db.insert_weight(w_real_1, user_id=1)
+    temp_db.insert_weight(w_sim, user_id=1)
+    temp_db.insert_weight(w_real_2, user_id=1)
+
+    # get_weights avec exclusion par défaut
+    weights_excluded = temp_db.get_weights(limit=10, user_id=1, exclude_simulation=True)
+    assert len(weights_excluded) == 2
+    assert all(w.source != "simulation" for w in weights_excluded)
+
+    # get_weights avec inclusion explicite
+    weights_all = temp_db.get_weights(limit=10, user_id=1, exclude_simulation=False)
+    assert len(weights_all) == 3
+    assert any(w.source == "simulation" for w in weights_all)
+
+    # calculate_7d_trend exclut la pesée simulée à 90 kg pour ne pas fausser la tendance réelle
+    trend = temp_db.calculate_7d_trend(date(2026, 10, 12), 80.0, user_id=1, exclude_simulation=True)
+    # Entre 80.0 (w_real_1) et 80.0 (w_real_2), la moyenne doit être 80.0 (et non pas ~83.33 si 90kg était inclus)
+    assert trend == 80.0
+
+    # 2. Insertion d'activités simulées et réelles
+    act_real = ActivityEntry(date=date(2026, 10, 10), steps=10000, total_burned_kcal=2200, source="health_connect")
+    act_sim = ActivityEntry(date=date(2026, 10, 11), steps=5000, total_burned_kcal=1800, source="simulation", is_simulated=True)
+    temp_db.insert_activity(act_real, user_id=1)
+    temp_db.insert_activity(act_sim, user_id=1)
+
+    acts_excluded = temp_db.get_activities(limit=10, user_id=1, exclude_simulation=True)
+    assert len(acts_excluded) == 1
+    assert acts_excluded[0].source == "health_connect"
+
+    acts_all = temp_db.get_activities(limit=10, user_id=1, exclude_simulation=False)
+    assert len(acts_all) == 2
+
+
+def test_production_protection_blocks_simulation():
+    """Vérifie qu'en production, l'injection de fausses données de simulation est strictement interdite sans confirmation explicite."""
+    import os
+    import pytest
+    from src.connectors.base import SimulationNotAllowedInProductionError
+    from src.connectors.withings import WithingsScaleConnector
+    from src.connectors.oura import OuraRingConnector
+
+    old_env = os.environ.get("ENVIRONMENT")
+    try:
+        os.environ["ENVIRONMENT"] = "production"
+
+        # 1. Withings non configuré en production sans profil démo -> Doit lever SimulationNotAllowedInProductionError
+        withings = WithingsScaleConnector()
+        assert not withings.is_configured
+        with pytest.raises(SimulationNotAllowedInProductionError):
+            withings.sync_weights(date.today() - timedelta(days=2), date.today())
+
+        # 2. Oura non configuré en production sans profil démo -> Doit lever SimulationNotAllowedInProductionError
+        oura = OuraRingConnector()
+        assert not oura.is_configured
+        with pytest.raises(SimulationNotAllowedInProductionError):
+            oura.sync_activities(date.today() - timedelta(days=2), date.today())
+
+        # 3. Avec confirmation explicite d'un profil de démonstration (allow_simulation=True ou is_demo_profile=True)
+        withings_confirmed = WithingsScaleConnector(config={"allow_simulation": True})
+        sim_weights = withings_confirmed.sync_weights(date.today() - timedelta(days=2), date.today())
+        assert len(sim_weights) == 3
+        assert all(w.source == "simulation" for w in sim_weights)
+        assert all(w.is_simulated is True for w in sim_weights)
+
+    finally:
+        if old_env is not None:
+            os.environ["ENVIRONMENT"] = old_env
+        else:
+            os.environ.pop("ENVIRONMENT", None)

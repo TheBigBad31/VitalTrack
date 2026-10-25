@@ -97,6 +97,9 @@ def run_daily_sync(db: Optional[Database] = None):
                     weights = connector.sync_weights(start_date=start_date, end_date=today)
                     print(f"     Pesees recuperees : {len(weights)}")
                     for entry in weights:
+                        if entry.source in ("simulation", "demo") and getattr(connector, "is_production", False):
+                            print(f"       -> Ignore (simulation non autorisee en production) : {entry.date}")
+                            continue
                         db.insert_weight(entry, user_id=u_id)
                         print(f"       -> Pesee enregistree pour #{u_id} : {entry.date} - {entry.weight_kg} kg (MG: {entry.body_fat_pct}%)")
                 except Exception as e:
@@ -108,6 +111,9 @@ def run_daily_sync(db: Optional[Database] = None):
                     activities = connector.sync_activities(start_date=start_date, end_date=today)
                     print(f"     Activites recuperees : {len(activities)}")
                     for act in activities:
+                        if act.source in ("simulation", "demo") and getattr(connector, "is_production", False):
+                            print(f"       -> Ignore (simulation non autorisee en production) : {act.date}")
+                            continue
                         db.insert_activity(act, user_id=u_id)
                         print(f"       -> Activite enregistree pour #{u_id} : {act.date} - {act.steps} pas, {act.active_calories_kcal} kcal actives")
                 except Exception as e:

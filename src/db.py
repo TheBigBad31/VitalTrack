@@ -265,6 +265,7 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        is_demo_profile INTEGER DEFAULT 0,
                         updated_at TEXT NOT NULL,
                         CONSTRAINT uq_user_profile_user UNIQUE (user_id)
                     );
@@ -500,6 +501,7 @@ class Database:
                     ("birth_date", "TEXT"),
                     ("current_weight_kg", "REAL"),
                     ("meal_distribution", "TEXT"),
+                    ("is_demo_profile", "INTEGER DEFAULT 0"),
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS {col} {def_val};")
@@ -577,6 +579,7 @@ class Database:
                         google_name TEXT,
                         google_picture TEXT,
                         google_sub TEXT,
+                        is_demo_profile INTEGER DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
                 """)
@@ -797,6 +800,7 @@ class Database:
                     ("birth_date", "TEXT"),
                     ("current_weight_kg", "REAL"),
                     ("meal_distribution", "TEXT"),
+                    ("is_demo_profile", "INTEGER DEFAULT 0"),
                 ]:
                     try:
                         cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {def_val}")
@@ -935,8 +939,8 @@ class Database:
 
             # Créer automatiquement son profil par défaut
             cursor.execute("""
-                INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, preferred_ring, preferred_scale, google_email, google_name, google_picture, google_sub, updated_at)
-                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', ?, ?, ?, ?, ?)
+                INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, preferred_ring, preferred_scale, is_demo_profile, google_email, google_name, google_picture, google_sub, updated_at)
+                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', 0, ?, ?, ?, ?, ?)
             """, (user_dict["id"], user_dict["name"] or "Utilisateur", user_dict["email"], user_dict["name"], user_dict["picture"], google_sub, now_str))
             conn.commit()
 
@@ -971,18 +975,25 @@ class Database:
     # Tendance et Pesées Multi-Utilisateurs
     # ---------------------------------------------------------
 
-    def calculate_7d_trend(self, target_date: date, new_weight_kg: float, user_id: int = 1) -> float:
+    def calculate_7d_trend(self, target_date: date, new_weight_kg: float, user_id: int = 1, exclude_simulation: bool = True) -> float:
         """Calcule la moyenne mobile sur 7 jours incluant la pesée actuelle pour l'utilisateur."""
         start_date = (target_date - timedelta(days=6)).isoformat()
         end_date = target_date.isoformat()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT weight_kg FROM weights
-                WHERE user_id = ? AND date >= ? AND date < ?
-                ORDER BY date ASC
-            """, (user_id, start_date, end_date))
+            if exclude_simulation:
+                cursor.execute("""
+                    SELECT weight_kg FROM weights
+                    WHERE user_id = ? AND date >= ? AND date < ? AND source NOT IN ('simulation')
+                    ORDER BY date ASC
+                """, (user_id, start_date, end_date))
+            else:
+                cursor.execute("""
+                    SELECT weight_kg FROM weights
+                    WHERE user_id = ? AND date >= ? AND date < ?
+                    ORDER BY date ASC
+                """, (user_id, start_date, end_date))
             rows = cursor.fetchall()
 
         previous_weights = [r["weight_kg"] for r in rows]
@@ -1048,15 +1059,22 @@ class Database:
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
         return WeightEntry(**entry_dict)
 
-    def get_weights(self, limit: int = 30, user_id: int = 1) -> List[WeightEntry]:
+    def get_weights(self, limit: int = 30, user_id: int = 1, exclude_simulation: bool = False) -> List[WeightEntry]:
         """Récupère l'historique des pesées ordonné par date croissante pour un utilisateur."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT ?
-                ) sub ORDER BY date ASC
-            """, (user_id, limit))
+            if exclude_simulation:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM weights WHERE user_id = ? AND source NOT IN ('simulation') ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, limit))
             rows = cursor.fetchall()
 
         results = []
@@ -1071,6 +1089,7 @@ class Database:
                 bmi=r["bmi"],
                 trend_7d_kg=r["trend_7d_kg"],
                 source=r["source"],
+                is_simulated=(r["source"] in ("simulation", "demo") or "Démo" in (r.get("notes") or "")),
                 notes=r["notes"],
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
@@ -1210,15 +1229,22 @@ class Database:
         entry_dict["created_at"] = datetime.fromisoformat(now_str)
         return ActivityEntry(**entry_dict)
 
-    def get_activities(self, limit: int = 30, user_id: int = 1) -> List[ActivityEntry]:
+    def get_activities(self, limit: int = 30, user_id: int = 1, exclude_simulation: bool = False) -> List[ActivityEntry]:
         """Récupère l'historique d'activité ordonné par date croissante pour un utilisateur."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM activities WHERE user_id = ? ORDER BY date DESC LIMIT ?
-                ) sub ORDER BY date ASC
-            """, (user_id, limit))
+            if exclude_simulation:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM activities WHERE user_id = ? AND source NOT IN ('simulation') ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT * FROM activities WHERE user_id = ? ORDER BY date DESC LIMIT ?
+                    ) sub ORDER BY date ASC
+                """, (user_id, limit))
             rows = cursor.fetchall()
 
         results = []
@@ -1236,6 +1262,7 @@ class Database:
                 hrv_ms=r["hrv_ms"],
                 sleep_score=r["sleep_score"],
                 source=r["source"],
+                is_simulated=(r["source"] in ("simulation", "demo")),
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
@@ -2210,8 +2237,8 @@ class Database:
             if not row:
                 now_str = datetime.now(timezone.utc).isoformat()
                 cursor.execute("""
-                    INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, updated_at)
-                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', ?)
+                    INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, is_demo_profile, updated_at)
+                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', 0, ?)
                 """, (user_id, now_str))
                 conn.commit()
                 cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
@@ -2268,6 +2295,7 @@ class Database:
         meal_distribution = _val("meal_distribution", None)
         if isinstance(meal_distribution, (dict, list)):
             meal_distribution = json.dumps(meal_distribution)
+        is_demo_profile = 1 if _val("is_demo_profile", 0) else 0
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2280,13 +2308,14 @@ class Database:
                     daily_protein_target_g = ?, daily_carbs_target_g = ?, daily_fat_target_g = ?,
                     daily_water_target_ml = ?, goal_type = ?, activity_level = ?,
                     birth_date = ?, current_weight_kg = ?, meal_distribution = ?,
+                    is_demo_profile = ?,
                     updated_at = ?
                 WHERE user_id = ?
             """, (
                 name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake,
                 prot, ring, scale, google_email, google_name, google_picture, google_sub,
                 daily_protein, daily_carbs, daily_fat, daily_water, goal_type, activity_level,
-                birth_date, current_weight, meal_distribution, now_str, user_id
+                birth_date, current_weight, meal_distribution, is_demo_profile, now_str, user_id
             ))
             conn.commit()
 
@@ -2665,8 +2694,8 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("DELETE FROM weights WHERE source = 'demo' OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%'")
-                cursor.execute("DELETE FROM activities WHERE source = 'demo'")
+                cursor.execute("DELETE FROM weights WHERE source IN ('demo', 'simulation') OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%'")
+                cursor.execute("DELETE FROM activities WHERE source IN ('demo', 'simulation')")
                 cursor.execute(
                     "DELETE FROM meals WHERE total_calories_kcal IN (430.0, 685.0, 195.0, 560.0) "
                     "AND (items_json LIKE '%Flocons d%' OR items_json LIKE '%Blanc de poulet rôti%' "
@@ -2711,7 +2740,8 @@ class Database:
                 muscle_mass_kg=muscle_kg,
                 water_pct=water_pct,
                 bmi=bmi,
-                source="demo",
+                source="simulation",
+                is_simulated=True,
                 notes="Pesée automatique matinale (Balance Démo)"
             )
             self.insert_weight(weight_entry, user_id=user_id)
@@ -2736,7 +2766,8 @@ class Database:
                 resting_hr_bpm=resting_hr,
                 hrv_ms=hrv,
                 sleep_score=sleep_score,
-                source="demo"
+                source="simulation",
+                is_simulated=True
             )
             self.insert_activity(activity_entry, user_id=user_id)
 

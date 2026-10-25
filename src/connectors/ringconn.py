@@ -83,6 +83,7 @@ class RingConnConnector(BaseHealthConnector):
     def sync_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Récupère les activités RingConn ou génère la simulation réaliste Gen 3."""
         if not self.is_configured:
+            self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
         # Si des payloads de test/mock sont configurés
@@ -148,7 +149,8 @@ class RingConnConnector(BaseHealthConnector):
                 resting_hr_bpm=resting_hr,
                 hrv_ms=hrv,
                 sleep_score=sleep_score,
-                source="ringconn"
+                source="simulation",
+                is_simulated=True
             ))
         return entries
 

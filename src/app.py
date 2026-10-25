@@ -219,7 +219,7 @@ class WeightInput(BaseModel):
     water_pct: Optional[float] = Field(None, ge=30.0, le=80.0, description="% eau")
     bmi: Optional[float] = Field(None, ge=10.0, le=70.0, description="IMC")
     notes: Optional[str] = None
-    source: Literal["manual", "withings", "garmin", "apple_health", "demo"] = "manual"
+    source: Literal["manual", "withings", "garmin", "apple_health", "demo", "simulation"] = "manual"
 
 
 class ActivityInput(BaseModel):
@@ -231,7 +231,7 @@ class ActivityInput(BaseModel):
     resting_hr_bpm: Optional[int] = Field(None, ge=30, le=220, description="Fréquence cardiaque au repos")
     hrv_ms: Optional[float] = Field(None, ge=0.0, description="Variabilité cardiaque (HRV en ms)")
     sleep_score: Optional[int] = Field(None, ge=0, le=100, description="Score de sommeil")
-    source: Literal["oura", "health_connect", "apple_health", "strava", "demo"] = "health_connect"
+    source: Literal["oura", "health_connect", "apple_health", "strava", "demo", "simulation"] = "health_connect"
 
 
 class MealEstimateRequest(BaseModel):
@@ -368,12 +368,25 @@ def health_check():
 # =====================================================================
 
 @app.get("/api/dashboard")
-def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
+def get_dashboard_data(
+    include_simulation: bool = Query(False, description="Inclure ou exclure les données de simulation"),
+    current_user: AuthUser = Depends(get_current_user)
+):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
     user_id = current_user.id
     db.sync_all_meal_logs_to_meals(user_id=user_id)
-    weights = db.get_weights(limit=30, user_id=user_id)
-    activities = db.get_activities(limit=30, user_id=user_id)
+    profile = db.get_user_profile(user_id=user_id)
+    
+    # Exclure par défaut les données simulées sauf si confirmation explicite d'un profil de démo ou requête include_simulation=True
+    effective_exclude = not include_simulation and not bool(profile.get("is_demo_profile"))
+    weights = db.get_weights(limit=30, user_id=user_id, exclude_simulation=effective_exclude)
+    # Si le profil est un profil démo ou si l'utilisateur n'a pas encore de pesées réelles et que l'utilisateur est sur profil démo
+    if not weights and not effective_exclude:
+        weights = db.get_weights(limit=30, user_id=user_id, exclude_simulation=False)
+    
+    activities = db.get_activities(limit=30, user_id=user_id, exclude_simulation=effective_exclude)
+    if not activities and not effective_exclude:
+        activities = db.get_activities(limit=30, user_id=user_id, exclude_simulation=False)
     meals = db.get_meals(limit=60, user_id=user_id)
 
     # Date du jour (ou dernière pesée)
@@ -483,9 +496,16 @@ def get_dashboard_data(current_user: AuthUser = Depends(get_current_user)):
 
 @app.get("/api/weights")
 @app.get("/api/weight")
-def get_weights(limit: int = Query(30, ge=1, le=180), current_user: AuthUser = Depends(get_current_user)):
+def get_weights(
+    limit: int = Query(30, ge=1, le=180),
+    include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
+    current_user: AuthUser = Depends(get_current_user)
+):
     """Retourne la série chronologique des pesées pour l'utilisateur connecté."""
-    weights = db.get_weights(limit=limit, user_id=current_user.id)
+    profile = db.get_user_profile(user_id=current_user.id)
+    is_demo = bool(profile.get("is_demo_profile"))
+    effective_exclude = not include_simulation if include_simulation is not None else not is_demo
+    weights = db.get_weights(limit=limit, user_id=current_user.id, exclude_simulation=effective_exclude)
     return [w.model_dump() for w in weights]
 
 
@@ -553,9 +573,16 @@ def delete_weight(weight_id: int, current_user: AuthUser = Depends(get_current_u
 
 @app.get("/api/activities")
 @app.get("/api/activity")
-def get_activities(limit: int = Query(30, ge=1, le=180), current_user: AuthUser = Depends(get_current_user)):
+def get_activities(
+    limit: int = Query(30, ge=1, le=180),
+    include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
+    current_user: AuthUser = Depends(get_current_user)
+):
     """Retourne la série chronologique de l'activité quotidienne pour l'utilisateur connecté."""
-    acts = db.get_activities(limit=limit, user_id=current_user.id)
+    profile = db.get_user_profile(user_id=current_user.id)
+    is_demo = bool(profile.get("is_demo_profile"))
+    effective_exclude = not include_simulation if include_simulation is not None else not is_demo
+    acts = db.get_activities(limit=limit, user_id=current_user.id, exclude_simulation=effective_exclude)
     return [a.model_dump() for a in acts]
 
 
@@ -1471,7 +1498,7 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_cu
         if hasattr(connector, "sync_weights"):
             raw_weights = [
                 w for w in connector.sync_weights(start_val, today_val)
-                if w.source != "demo" and "Démo" not in (w.notes or "")
+                if w.source not in ("demo", "simulation") and "Démo" not in (w.notes or "")
             ]
             for w in raw_weights:
                 db.insert_weight(w, user_id=current_user.id)
@@ -1480,7 +1507,7 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_cu
         if hasattr(connector, "sync_activities"):
             raw_acts = [
                 a for a in connector.sync_activities(start_val, today_val)
-                if a.source != "demo"
+                if a.source not in ("demo", "simulation")
             ]
             for a in raw_acts:
                 db.insert_activity(a, user_id=current_user.id)
@@ -1757,6 +1784,8 @@ def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(
 @app.post("/api/profile/reset-demo")
 def reset_demo(current_user: AuthUser = Depends(get_current_user)):
     """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
+    # Marquer explicitement le profil comme profil de démonstration confirmé
+    db.update_user_profile({"is_demo_profile": 1}, user_id=current_user.id)
     db.reset_demo_data(user_id=current_user.id)
     return {
         "status": "success",
@@ -1768,6 +1797,8 @@ def reset_demo(current_user: AuthUser = Depends(get_current_user)):
 def clear_history(current_user: AuthUser = Depends(get_current_user)):
     """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
     db.clear_all_history(keep_profile=True, user_id=current_user.id)
+    # Rétablir le profil en profil réel (non démo)
+    db.update_user_profile({"is_demo_profile": 0}, user_id=current_user.id)
     return {
         "status": "success",
         "message": "Historique effacé. Vous pouvez démarrer votre suivi réel !"

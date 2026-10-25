@@ -2754,7 +2754,7 @@
             <td class="py-2.5 px-3 text-slate-400">${w.body_fat_pct ? w.body_fat_pct + '%' : '--'}</td>
             <td class="py-2.5 px-3 text-slate-400">${w.muscle_mass_kg ? w.muscle_mass_kg + ' kg' : '--'}</td>
             <td class="py-2.5 px-3">
-              <span class="px-2 py-0.5 rounded text-[10px] ${w.source === 'withings' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-slate-800 text-slate-400'}">
+              <span class="px-2 py-0.5 rounded text-[10px] ${w.source === 'simulation' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : (w.source === 'withings' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-slate-800 text-slate-400')}">
                 ${w.source}
               </span>
             </td>
