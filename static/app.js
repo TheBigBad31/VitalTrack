@@ -1,3 +1,5 @@
+// static/app.js - Module Desktop Web & PWA pour Catalogue Aliments & Plats et Journal Quotidien
+
 // static/app.js - Module Desktop Web & PWA pour Catalogue Aliments & Plats et Journal Quotidien des Repas (Stage 12)
 
 let currentCatalogItems = [];
@@ -60,7 +62,7 @@ function switchNutritionLayout(mode) {
       secCatalog.className = 'xl:col-span-5 space-y-4';
     }
     if (btnDesktopSplit) {
-      btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 items-center justify-center space-x-2 transition-all';
+      btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 items-center justify-center space-x-2 transition-all';
     }
     if (btnJournal) {
       btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
@@ -80,7 +82,7 @@ function switchNutritionLayout(mode) {
       btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
     }
     if (btnJournal) {
-      btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-2 transition-all';
+      btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all';
     }
     if (btnCatalog) {
       btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
@@ -96,7 +98,7 @@ function switchNutritionLayout(mode) {
       btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
     }
     if (btnCatalog) {
-      btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-2 transition-all';
+      btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all';
     }
     if (btnJournal) {
       btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
@@ -207,7 +209,7 @@ async function loadCatalogItems() {
   }
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(url) : fetch(url));
+    const res = await apiFetch(url);
     if (res.ok) {
       currentCatalogItems = await res.json();
       renderCatalogItems();
@@ -230,7 +232,7 @@ function filterCatalog(type) {
     const btn = document.getElementById(`cat-filter-${t}`);
     if (btn) {
       if (t === type) {
-        btn.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-colors';
+        btn.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors';
       } else {
         btn.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors';
       }
@@ -274,7 +276,7 @@ function renderCatalogItems() {
         <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
         <p class="text-xs text-slate-500 max-w-sm mx-auto">Aucun élément ne correspond à votre filtre de bienfait ou recherche.</p>
         <div class="flex items-center justify-center gap-2 pt-2">
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
           <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
         </div>
       </div>
@@ -288,7 +290,7 @@ function renderCatalogItems() {
     // Remplacement du texte par un code couleur + icône intuitive (assiette Plat / pomme Aliment)
     const typeBadge = isDish
       ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
-      : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
+      : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
 
     const unitLabel = `${item.default_quantity}${item.default_unit || 'g'}`;
     const p = Math.round((item.protein_per_unit_g || 0) * 10) / 10;
@@ -302,7 +304,7 @@ function renderCatalogItems() {
       <div class="flex flex-wrap items-center gap-1 pt-0.5">
         ${benefitsList.map(b => `
           <span 
-            class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-xs cursor-help hover:scale-110 hover:bg-emerald-500/25 transition-all shadow-sm"
+            class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-brand-500/15 border border-brand-500/30 text-xs cursor-help hover:scale-110 hover:bg-brand-500/25 transition-all shadow-sm"
             title="${b.title || b.benefit_id}${b.explanation ? ' : ' + b.explanation : ''}"
           >
             ${b.icon || '🛡️'}
@@ -313,7 +315,7 @@ function renderCatalogItems() {
 
     return `
       <div 
-        class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-emerald-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-emerald-500/5 select-none group"
+        class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
         draggable="true"
         ondragstart="handleCatalogDragStart(event, '${item.id}')"
         ondragend="handleCatalogDragEnd(event)"
@@ -323,7 +325,7 @@ function renderCatalogItems() {
       >
         <div class="flex items-center justify-between gap-1.5">
           <div class="flex items-center space-x-1.5 min-w-0 flex-1">
-            <div class="text-slate-500 group-hover:text-emerald-400 shrink-0 cursor-grab active:cursor-grabbing">
+            <div class="text-slate-500 group-hover:text-brand-400 shrink-0 cursor-grab active:cursor-grabbing">
               <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
             </div>
             ${typeBadge}
@@ -344,7 +346,7 @@ function renderCatalogItems() {
         <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-[#151D2A] rounded-lg">
           <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
           <span class="shrink-0 space-x-1.5">
-            <span class="text-emerald-400 font-semibold">P:${p}g</span>
+            <span class="text-brand-400 font-semibold">P:${p}g</span>
             <span class="text-sky-400 font-semibold">G:${g}g</span>
             <span class="text-amber-400 font-semibold">L:${l}g</span>
           </span>
@@ -364,7 +366,7 @@ function renderCatalogItems() {
             type="button"
             onclick="promptAddToMeal('${item.id}')" 
             title="Ajouter au repas sélectionné"
-            class="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
+            class="text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 transition-colors"
           >
             <i data-lucide="plus" class="w-3 h-3"></i>
             <span>Ajouter</span>
@@ -413,12 +415,12 @@ function handleCatalogDragStart(event, itemId) {
   // Création d'un Ghost preview semi-transparent
   const ghost = document.createElement('div');
   ghost.id = 'drag-ghost-preview';
-  ghost.className = 'fixed -top-96 -left-96 bg-[#151D2A] border-2 border-emerald-400 text-white px-3 py-2 rounded-xl shadow-2xl flex items-center space-x-2.5 z-50 pointer-events-none opacity-90';
+  ghost.className = 'fixed -top-96 -left-96 bg-[#151D2A] border-2 border-brand-400 text-white px-3 py-2 rounded-xl shadow-2xl flex items-center space-x-2.5 z-50 pointer-events-none opacity-90';
   ghost.innerHTML = `
     <span class="text-base">${item.item_type === 'dish' ? '🍲' : '🥗'}</span>
     <div>
       <div class="font-bold text-xs text-white">${item.name}</div>
-      <div class="text-[10px] text-emerald-300">${Math.round(item.calories_per_unit)} kcal &bull; ${item.default_quantity} ${item.default_unit}</div>
+      <div class="text-[10px] text-brand-300">${Math.round(item.calories_per_unit)} kcal &bull; ${item.default_quantity} ${item.default_unit}</div>
     </div>
   `;
   document.body.appendChild(ghost);
@@ -428,7 +430,7 @@ function handleCatalogDragStart(event, itemId) {
   // Mise en surbrillance réceptrice des 4 zones de repas
   const dropZones = document.querySelectorAll('.meal-drop-zone');
   dropZones.forEach(zone => {
-    zone.classList.add('border-dashed', 'border-emerald-500/60', 'bg-emerald-500/[0.03]');
+    zone.classList.add('border-dashed', 'border-brand-500/60', 'bg-brand-500/[0.03]');
   });
 }
 
@@ -436,7 +438,7 @@ function handleCatalogDragEnd(event) {
   draggedCatalogItem = null;
   const dropZones = document.querySelectorAll('.meal-drop-zone');
   dropZones.forEach(zone => {
-    zone.classList.remove('border-dashed', 'border-emerald-500/60', 'bg-emerald-500/[0.03]', 'ring-2', 'ring-emerald-400/50');
+    zone.classList.remove('border-dashed', 'border-brand-500/60', 'bg-brand-500/[0.03]', 'ring-2', 'ring-brand-400/50');
   });
 
   const placeholders = document.querySelectorAll('.drop-target-placeholder');
@@ -449,7 +451,7 @@ function handleMealDragOver(event, slot) {
 
   const zone = document.getElementById(`meal-zone-${slot}`);
   if (zone) {
-    zone.classList.add('ring-2', 'ring-emerald-400', 'bg-emerald-500/[0.07]');
+    zone.classList.add('ring-2', 'ring-brand-400', 'bg-brand-500/[0.07]');
   }
 
   const placeholder = document.getElementById(`drop-placeholder-${slot}`);
@@ -461,7 +463,7 @@ function handleMealDragOver(event, slot) {
 function handleMealDragLeave(event, slot) {
   const zone = document.getElementById(`meal-zone-${slot}`);
   if (zone) {
-    zone.classList.remove('ring-2', 'ring-emerald-400', 'bg-emerald-500/[0.07]');
+    zone.classList.remove('ring-2', 'ring-brand-400', 'bg-brand-500/[0.07]');
   }
 
   const placeholder = document.getElementById(`drop-placeholder-${slot}`);
@@ -624,15 +626,11 @@ async function confirmDropPortionModal() {
   closeDropPortionModal();
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${slot}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${slot}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${slot}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') {
@@ -927,7 +925,7 @@ function renderDishIngredientsList() {
             <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 font-mono">Ingrédient</span>
           </div>
           <div class="text-[10px] text-slate-400">
-            <strong class="text-emerald-400 font-bold">${cals} kcal</strong>
+            <strong class="text-brand-400 font-bold">${cals} kcal</strong>
             <span class="mx-1">&bull;</span>
             <span>P: ${p}g</span>
             <span class="mx-1">&bull;</span>
@@ -1048,7 +1046,7 @@ function renderModalSelectedBenefits() {
   }
 
   container.innerHTML = modalSelectedBenefits.map((b, idx) => `
-    <span class="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+    <span class="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
       <span>${b.icon || '🛡️'}</span>
       <span>${b.title || b.benefit_id}</span>
       <button type="button" onclick="removeBenefitFromModalSelection(${idx})" class="hover:text-rose-400 ml-1">
@@ -1116,15 +1114,11 @@ async function triggerModalNutritionEvaluation() {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch('/api/nutrition/evaluate', {
+    const res = await apiFetch('/api/nutrition/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch('/api/nutrition/evaluate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       const data = await res.json();
@@ -1152,8 +1146,8 @@ function renderModalAutoBenefits(results) {
         onclick="applyAutoBenefitToModal('${r.benefit_id}', '${r.title.replace(/'/g, "\\'")}', '${r.icon}', '${r.explanation.replace(/'/g, "\\'")}')"
         class="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-md font-semibold transition-all ${
           alreadySelected 
-            ? 'bg-emerald-500 text-slate-950 font-bold' 
-            : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+            ? 'bg-brand-500 text-white font-bold' 
+            : 'bg-brand-500/10 text-brand-300 border border-brand-500/30 hover:bg-brand-500/25'
         }"
         title="${r.explanation}"
       >
@@ -1219,15 +1213,11 @@ async function handleCatalogItemFormSubmit(event) {
     const url = isEdit ? `/api/catalog/items/${itemId}` : '/api/catalog/items';
     const method = isEdit ? 'PUT' : 'POST';
 
-    const res = await (typeof apiFetch === 'function' ? apiFetch(url, {
+    const res = await apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       const createdOrUpdated = await res.json();
@@ -1244,11 +1234,7 @@ async function handleCatalogItemFormSubmit(event) {
               explanation: b.explanation || ''
             }))
           };
-          if (typeof apiFetch === 'function') {
-            await apiFetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
-          } else {
-            await fetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
-          }
+          await apiFetch(bUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bPayload) });
         } catch (bErr) {
           console.warn("Erreur mise à jour bienfaits:", bErr);
         }
@@ -1271,7 +1257,7 @@ async function deleteCatalogItem(itemId) {
   if (!confirm(`Supprimer '${name}' de votre catalogue ?`)) return;
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' }) : fetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' }));
+    const res = await apiFetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' });
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`'${name}' supprimé du catalogue`, 'success');
       loadCatalogItems();
@@ -1293,7 +1279,7 @@ async function loadMealsJournal(dateStr) {
   if (dateInput) dateInput.value = currentJournalDate;
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal?date=${currentJournalDate}`) : fetch(`/api/meals/journal?date=${currentJournalDate}`));
+    const res = await apiFetch(`/api/meals/journal?date=${currentJournalDate}`);
     if (res.ok) {
       currentJournalData = await res.json();
       renderMealsJournal();
@@ -1343,7 +1329,7 @@ function renderMealsJournal() {
   // 2. Les 4 repas
   const slotConfig = {
     breakfast: { name: "Petit-déjeuner", emoji: "🥐", border: "border-amber-500/30", color: "text-amber-400", bgBadge: "bg-amber-500/10" },
-    lunch: { name: "Déjeuner", emoji: "🥗", border: "border-emerald-500/30", color: "text-emerald-400", bgBadge: "bg-emerald-500/10" },
+    lunch: { name: "Déjeuner", emoji: "🥗", border: "border-brand-500/30", color: "text-brand-400", bgBadge: "bg-brand-500/10" },
     snack: { name: "Goûter", emoji: "🍎", border: "border-pink-500/30", color: "text-pink-400", bgBadge: "bg-pink-500/10" },
     dinner: { name: "Dîner", emoji: "🍲", border: "border-indigo-500/30", color: "text-indigo-400", bgBadge: "bg-indigo-500/10" }
   };
@@ -1363,7 +1349,7 @@ function renderMealsJournal() {
     return `
       <div 
         id="meal-zone-${slot}"
-        class="meal-drop-zone bg-[#151D2A] border ${cfg.border} hover:border-emerald-500/50 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-3.5 shadow-sm transition-all duration-150"
+        class="meal-drop-zone bg-[#151D2A] border ${cfg.border} hover:border-brand-500/50 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-3.5 shadow-sm transition-all duration-150"
         ondragover="handleMealDragOver(event, '${slot}')"
         ondragleave="handleMealDragLeave(event, '${slot}')"
         ondrop="handleMealDrop(event, '${slot}')"
@@ -1388,7 +1374,7 @@ function renderMealsJournal() {
         </div>
 
         <!-- Indicateur dynamique au survol glissé (« Déposer ici ») -->
-        <div id="drop-placeholder-${slot}" class="drop-target-placeholder hidden py-3 px-4 border-2 border-dashed border-emerald-400 rounded-xl bg-emerald-500/10 text-emerald-300 text-xs font-bold text-center flex items-center justify-center space-x-2 animate-pulse">
+        <div id="drop-placeholder-${slot}" class="drop-target-placeholder hidden py-3 px-4 border-2 border-dashed border-brand-400 rounded-xl bg-brand-500/10 text-brand-300 text-xs font-bold text-center flex items-center justify-center space-x-2 animate-pulse">
           <i data-lucide="arrow-down-to-dot" class="w-4 h-4"></i>
           <span>Déposer ici pour ajouter à ce repas</span>
         </div>
@@ -1406,7 +1392,7 @@ function renderMealsJournal() {
                 <div class="text-xs font-bold text-white line-clamp-1">${it.name}</div>
                 <div class="text-[11px] text-slate-400">
                   <span class="font-semibold text-slate-300">${it.quantity} ${it.unit}</span> &bull; 
-                  <span class="text-emerald-400 font-bold">${Math.round(it.calories)} kcal</span> 
+                  <span class="text-brand-400 font-bold">${Math.round(it.calories)} kcal</span> 
                   (P:${Math.round(it.protein_g || 0)}g G:${Math.round(it.carbs_g || 0)}g L:${Math.round(it.fat_g || 0)}g)
                 </div>
               </div>
@@ -1419,7 +1405,7 @@ function renderMealsJournal() {
 
         <!-- Boutons d'actions -->
         <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]/70">
-          <button onclick="openSelectFromCatalogModal('${slot}')" class="flex-1 py-2 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors">
+          <button onclick="openSelectFromCatalogModal('${slot}')" class="flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>+ Ajouter un aliment</span>
           </button>
@@ -1509,18 +1495,18 @@ function renderJournalDayBenefitsSummary(meals) {
 
   container.innerHTML = benefitsList.map(b => `
     <div 
-      class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs shadow-sm cursor-help hover:bg-emerald-500/20 hover:scale-105 transition-all"
+      class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs shadow-sm cursor-help hover:bg-brand-500/20 hover:scale-105 transition-all"
       title="${b.title} : ${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
     >
       <span class="text-base">${b.icon || '🛡️'}</span>
-      <span class="text-[10px] font-bold text-emerald-300 font-mono">${(b.foodNames || []).length}</span>
+      <span class="text-[10px] font-bold text-brand-300 font-mono">${(b.foodNames || []).length}</span>
     </div>
   `).join('');
 }
 
 async function removeMealLogItem(itemId) {
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' }) : fetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' }));
+    const res = await apiFetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' });
     if (res.ok) {
       if (typeof showToast === 'function') showToast("Aliment retiré du repas", "success");
       loadMealsJournal(currentJournalDate);
@@ -1580,12 +1566,12 @@ function renderModalCatalogList(searchQuery = '') {
   }
 
   container.innerHTML = filtered.map(it => `
-    <div onclick="selectCatalogItemForPortion('${it.id}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-emerald-500/50 cursor-pointer flex items-center justify-between transition-colors">
+    <div onclick="selectCatalogItemForPortion('${it.id}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
       <div class="flex-1 pr-2">
         <div class="text-xs font-bold text-white">${it.name}</div>
         <div class="text-[11px] text-slate-400">Réf: ${it.default_quantity} ${it.default_unit} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
       </div>
-      <button class="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-300 text-xs font-semibold shrink-0">Choisir</button>
+      <button class="px-2 py-1 rounded-lg bg-brand-500/20 text-brand-300 text-xs font-semibold shrink-0">Choisir</button>
     </div>
   `).join('');
 }
@@ -1642,15 +1628,11 @@ async function confirmAddCatalogItemToMeal() {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`'${item.name}' ajouté au ${currentActiveMealSlot} !`, 'success');
@@ -1675,15 +1657,11 @@ async function saveSlotAsDishModal(slot) {
   };
 
   try {
-    const res = await (typeof apiFetch === 'function' ? apiFetch(`/api/meals/journal/${slot}/save-as-dish`, {
+    const res = await apiFetch(`/api/meals/journal/${slot}/save-as-dish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }) : fetch(`/api/meals/journal/${slot}/save-as-dish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }));
+    });
 
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`Plat '${payload.name}' créé dans votre catalogue !`, 'success');
