@@ -3517,11 +3517,36 @@
                   <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white underline text-[10px]">Copier</button>
                 </div>
               </div>
+              <div class="flex justify-between items-center pt-1 border-t border-[#1F2A3C]/50">
+                <span class="text-slate-400">Jeton d'appareil individuel :</span>
+                <button type="button" onclick="generateDeviceToken('health_connect')" class="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 font-semibold text-[10px]">Générer Jeton</button>
+              </div>
+              <div id="wiz-token-display-health_connect" class="hidden p-1.5 rounded bg-[#0B0F17] font-mono text-[10px] text-emerald-400 flex items-center justify-between">
+                <span id="wiz-token-text-health_connect" class="truncate max-w-[200px]"></span>
+                <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('wiz-token-text-health_connect').innerText); alert('Token copié !');" class="text-slate-400 hover:text-white underline text-[10px]">Copier</button>
+              </div>
               <div class="flex justify-between">
                 <span class="text-slate-400">Statut :</span>
                 <span class="text-emerald-400 font-bold">Prêt pour réception continue</span>
               </div>
             </div>
+
+            <!-- Guide Xiaomi HyperOS / MIUI -->
+            <div class="p-2.5 rounded-lg bg-[#0B0F17] border border-amber-500/30 text-[11px] space-y-1.5">
+              <div class="flex items-center space-x-1.5 text-amber-400 font-bold">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+                <span>Réglages Requis Xiaomi HyperOS / MIUI</span>
+              </div>
+              <p class="text-slate-300 text-[10.5px]">
+                Pour assurer la synchronisation en arrière-plan sans interruption par l'OS :
+              </p>
+              <ul class="text-[10px] text-slate-300 list-disc list-inside space-y-0.5">
+                <li><strong>Démarrage auto</strong> : <em>Paramètres > Applications > Gérer les applications > VitalTrack Bridge (ou MacroDroid) > Démarrage automatique</em> : <strong>Activé</strong>.</li>
+                <li><strong>Batterie</strong> : <em>Économiseur de batterie MIUI</em> : régler sur <strong>« Pas de restrictions »</strong>.</li>
+                <li><strong>Santé Connect</strong> : <em>Paramètres > Sécurité & Confidentialité > Health Connect > Applications autorisées</em> : accorder l'accès en lecture à toutes les catégories.</li>
+              </ul>
+            </div>
+
             <div class="pt-1">
               <button type="button" onclick="testHealthConnectIngestion()" class="w-full py-2 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
@@ -3602,8 +3627,38 @@
       }
     }
 
+    async function generateDeviceToken(deviceId) {
+      try {
+        const res = await apiFetch(`/api/devices/${deviceId}/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : 'RingConn Ring' })
+        });
+        if (res && res.token) {
+          const disp = document.getElementById(`wiz-token-display-${deviceId}`);
+          const txt = document.getElementById(`wiz-token-text-${deviceId}`);
+          if (disp && txt) {
+            txt.innerText = res.token;
+            disp.classList.remove('hidden');
+          }
+          alert(`Jeton sécurisé généré pour ${deviceId} : \n${res.token}\n\nCopié dans le presse-papier.`);
+          navigator.clipboard.writeText(res.token);
+          loadDashboardData();
+        }
+      } catch (err) {
+        console.error("Erreur génération token:", err);
+        alert("Erreur lors de la génération du jeton.");
+      }
+    }
+
     async function testHealthConnectIngestion() {
       const todayStr = new Date().toISOString().split('T')[0];
+      const tokenSpan = document.getElementById('wiz-token-text-health_connect');
+      const customToken = tokenSpan ? tokenSpan.innerText.trim() : "";
+      const headers = { 'Content-Type': 'application/json' };
+      if (customToken) {
+        headers['X-Webhook-Token'] = customToken;
+      }
       const payload = {
         date: todayStr,
         source: "health_connect",
@@ -3611,17 +3666,21 @@
         active_calories_kcal: 530.0,
         resting_hr_bpm: 57,
         hrv_ms: 59.0,
-        sleep_score: 85
+        sleep_score: 85,
+        token: customToken || undefined
       };
       try {
         const res = await fetch('/api/webhooks/health-connect', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: JSON.stringify(payload)
         });
         if (res.ok) {
           alert("✓ Succès ! Passerelle Google Health Connect testée et validée.");
           loadDashboardData();
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert("Erreur HTTP: " + (errData.detail || res.statusText));
         }
       } catch (e) {
         alert("Erreur lors du test webhook Google Health");
@@ -4412,6 +4471,8 @@
     window.closeConnectWizardModal = closeConnectWizardModal;
     window.selectWizardDevice = selectWizardDevice;
     window.submitDeviceConnection = submitDeviceConnection;
+    window.generateDeviceToken = generateDeviceToken;
+    window.testHealthConnectIngestion = testHealthConnectIngestion;
     window.openAuthModal = openAuthModal;
     window.closeAuthModal = closeAuthModal;
     window.switchTab = switchTab;

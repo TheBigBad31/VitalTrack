@@ -49,6 +49,7 @@ from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
+from src.routers.webhooks import router as webhooks_router
 from src.auth import (
     AuthUser,
     GoogleAuthPayload,
@@ -1547,6 +1548,31 @@ def disconnect_device(device_id: str, current_user: AuthUser = Depends(get_curre
     }
 
 
+@app.post("/api/devices/{device_id}/token")
+def create_device_token_endpoint(
+    device_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Génère ou renouvelle un token secret individuel sécurisé pour un appareil/passerelle mobile."""
+    req_payload = payload or {}
+    name = req_payload.get("name")
+    dev_type = req_payload.get("device_type")
+    device_token_info = db.generate_device_token(
+        device_id=device_id,
+        name=name,
+        device_type=dev_type,
+        user_id=current_user.id
+    )
+    return {
+        "status": "success",
+        "message": f"Jeton individuel d'appareil généré avec succès pour '{device_id}'",
+        "device_id": device_id,
+        "token": device_token_info["token"],
+        "device": device_token_info
+    }
+
+
 @app.post("/api/devices/{device_id}/sync")
 def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_current_user)):
     """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
@@ -2015,190 +2041,7 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 # =====================================================================
 # Endpoints Webhooks Universels (Health Connect, RingConn, Apple Santé)
 # =====================================================================
-
-@app.post("/api/webhook/health")
-@app.post("/api/webhooks/health-connect")
-@app.post("/api/webhooks/ringconn")
-def handle_health_webhook(
-    payload: Dict[str, Any],
-    token: Optional[str] = Query(None),
-    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
-    authorization: Optional[str] = Header(None)
-):
-    """Point d'entrée universel et sécurisé pour les webhooks mobiles ou automatisations (Tasker, Raccourcis, RingConn).
-    
-    Exige obligatoirement un token d'authentification valide fourni via :
-    - Header 'X-Webhook-Token'
-    - Header 'Authorization' (Bearer <token> ou token direct)
-    - Query parameter '?token=...'
-    - Payload JSON champ 'token', 'webhook_token' ou 'api_key'
-    """
-    # 1. Extraction du jeton (Headers prioritaires, puis Query, puis Payload)
-    auth_token = None
-    if x_webhook_token and str(x_webhook_token).strip():
-        auth_token = str(x_webhook_token).strip()
-    elif authorization and str(authorization).strip():
-        auth_str = str(authorization).strip()
-        if auth_str.lower().startswith("bearer "):
-            auth_token = auth_str[7:].strip()
-        else:
-            auth_token = auth_str
-    elif token and str(token).strip():
-        auth_token = str(token).strip()
-    elif isinstance(payload, dict):
-        for candidate_key in ("token", "webhook_token", "api_key"):
-            cand = payload.get(candidate_key)
-            if cand and str(cand).strip():
-                auth_token = str(cand).strip()
-                break
-
-    # Rendre le jeton obligatoire
-    if not auth_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Jeton d'authentification manquant. Fournissez un token via header 'X-Webhook-Token', 'Authorization' ou query param 'token'."
-        )
-
-    # 2. Validation du token et résolution dynamique device / user
-    user_match = db.find_user_by_device_token(auth_token)
-    resolved_user_id = None
-    matched_device = None
-
-    if user_match:
-        resolved_user_id = user_match.get("user_id")
-        matched_device = user_match.get("device")
-    else:
-        # Fallback de validation via connecteur universel configuré ou WEBHOOK_SECRET global
-        # Comportement fail-closed strict :
-        # - En environnement de production (VERCEL=1 ou ENV=production), si WEBHOOK_SECRET est absent -> HTTP 503
-        is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
-        global_secret = os.getenv("WEBHOOK_SECRET")
-
-        if not global_secret:
-            if is_production:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Service Webhook non configuré en production (secret absent)"
-                )
-        else:
-            if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
-                # Si le payload spécifie explicitement un user_id valide, on l'utilise, sinon vérification du compte 1
-                target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
-                if target_user_id:
-                    user_obj = db.get_user_by_id(int(target_user_id))
-                    if user_obj:
-                        resolved_user_id = int(target_user_id)
-                else:
-                    default_user = db.get_user_by_id(1)
-                    if default_user:
-                        resolved_user_id = 1
-
-    if not resolved_user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Token webhook invalide ou non autorisé : aucun compte utilisateur ou appareil associé"
-        )
-
-    # 3. Extraction et validation des données de pesée / activité
-    connector = MobileHealthWebhookConnector()
-    weight_entry, act_entry = connector.process_webhook_payload(payload)
-    saved_weight = None
-    saved_act = None
-
-    # Idempotence : enregistrement raw_ingest avec clé d'idempotence
-    source_name = payload.get("source", "health_connect")
-    ext_id = payload.get("external_id") or payload.get("id") or (weight_entry.external_id if weight_entry else (act_entry.external_id if act_entry else None))
-    idemp_key = f"{source_name}:{ext_id}" if ext_id else None
-    
-    # Vérification des consentements de l'utilisateur avant ingestion
-    user_consents = db.get_user_consents(user_id=resolved_user_id)
-    can_ingest_biometrics = user_consents.get("biometrics", True)
-    can_ingest_devices = user_consents.get("devices", True)
-    
-    db.insert_raw_ingest(
-        source=source_name,
-        payload=payload,
-        user_id=resolved_user_id,
-        endpoint="/api/webhook/health",
-        idempotency_key=idemp_key
-    )
-
-    if weight_entry and can_ingest_biometrics:
-        if ext_id and not weight_entry.external_id:
-            weight_entry.external_id = str(ext_id)
-        saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
-    if act_entry and can_ingest_biometrics:
-        if ext_id and not act_entry.external_id:
-            act_entry.external_id = str(ext_id)
-        saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
-
-    # Mémoriser les métriques enrichies le cas échéant (daily_metrics, workouts, sleep, intraday)
-    saved_daily_metric = None
-    has_daily_metric = any(k in payload for k in [
-        "resting_hr_bpm", "resting_heart_rate", "hrv_rmssd_ms", "hrv_sdnn_ms", "hrv_ms",
-        "spo2_pct", "spo2", "skin_temperature_c", "skin_temperature", "sleep_score", "recovery_score"
-    ])
-    if has_daily_metric and can_ingest_biometrics:
-        raw_d = payload.get("date")
-        target_d = date.fromisoformat(str(raw_d)[:10]) if raw_d else date.today()
-        d_metric = DailyMetricsEntry(
-            user_id=resolved_user_id,
-            date=target_d,
-            source=source_name,
-            steps=int(payload.get("steps", 0)),
-            active_calories_kcal=float(payload.get("active_calories_kcal", payload.get("active_calories", 0.0))),
-            total_calories_kcal=float(payload.get("total_burned_kcal", payload.get("total_calories", 0.0))),
-            resting_hr_bpm=int(payload["resting_hr_bpm"]) if payload.get("resting_hr_bpm") is not None else (
-                int(payload["resting_heart_rate"]) if payload.get("resting_heart_rate") is not None else None
-            ),
-            hrv_rmssd_ms=float(payload["hrv_rmssd_ms"]) if payload.get("hrv_rmssd_ms") is not None else (
-                float(payload["hrv_ms"]) if payload.get("hrv_ms") is not None else None
-            ),
-            hrv_sdnn_ms=float(payload["hrv_sdnn_ms"]) if payload.get("hrv_sdnn_ms") is not None else None,
-            spo2_pct=float(payload["spo2_pct"]) if payload.get("spo2_pct") is not None else (
-                float(payload["spo2"]) if payload.get("spo2") is not None else None
-            ),
-            skin_temperature_c=float(payload["skin_temperature_c"]) if payload.get("skin_temperature_c") is not None else (
-                float(payload["skin_temperature"]) if payload.get("skin_temperature") is not None else None
-            ),
-            sleep_score=int(payload["sleep_score"]) if payload.get("sleep_score") is not None else None,
-            recovery_score=int(payload["recovery_score"]) if payload.get("recovery_score") is not None else None,
-            external_id=str(ext_id) if ext_id else None
-        )
-        saved_daily_metric = db.insert_daily_metric(d_metric, user_id=resolved_user_id).model_dump()
-
-    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu si consentement accordé
-    dev_id = matched_device.get("device_id") if matched_device else (
-        "ringconn" if "ring" in source_name.lower() else (
-            "withings" if "withings" in source_name.lower() else "health_connect"
-        )
-    )
-    dev_name = matched_device.get("name") if matched_device else dev_id.replace("_", " ").title()
-    dev_type = matched_device.get("device_type") if matched_device else (
-        "ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator")
-    )
-
-    if can_ingest_devices:
-        db.update_user_device(
-            device_id=dev_id,
-            name=dev_name,
-            device_type=dev_type,
-            connected=True,
-            auth_type="webhook",
-            user_id=resolved_user_id
-        )
-
-    return {
-        "status": "success",
-        "message": f"Données de santé webhook ingérées avec succès pour l'utilisateur {resolved_user_id}",
-        "device_id": dev_id,
-        "user_id": resolved_user_id,
-        "ingested": {
-            "weight": saved_weight,
-            "activity": saved_act,
-            "daily_metric": saved_daily_metric
-        }
-    }
+app.include_router(webhooks_router)
 
 
 

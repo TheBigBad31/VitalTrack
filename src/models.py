@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-WeightSource = Literal["withings", "garmin", "manual", "apple_health", "demo", "simulation"]
+WeightSource = Literal["withings", "garmin", "manual", "apple_health", "health_connect", "demo", "simulation"]
 ActivitySource = Literal["oura", "ringconn", "health_connect", "apple_health", "strava", "demo", "simulation"]
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 

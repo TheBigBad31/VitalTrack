@@ -62,8 +62,12 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
                     h = self.config["user_height_m"]
                     bmi = round(w_kg / (h ** 2), 1)
 
-                weight_source = "apple_health" if "apple" in source_name else (
-                    "garmin" if "garmin" in source_name else "manual"
+                weight_source = "health_connect" if ("connect" in source_name or "android" in source_name) else (
+                    "apple_health" if "apple" in source_name else (
+                        "withings" if "withings" in source_name else (
+                            "garmin" if "garmin" in source_name else "manual"
+                        )
+                    )
                 )
 
                 weight_entry = WeightEntry(
@@ -95,9 +99,13 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
             hrv = payload.get("hrv_ms", payload.get("hrv"))
             sleep_sc = payload.get("sleep_score")
 
-            act_source = "health_connect" if "connect" in source_name or "android" in source_name else (
-                "apple_health" if "apple" in source_name else (
-                    "strava" if "strava" in source_name else "demo"
+            act_source = "ringconn" if "ring" in source_name.lower() else (
+                "health_connect" if "connect" in source_name or "android" in source_name else (
+                    "apple_health" if "apple" in source_name else (
+                        "oura" if "oura" in source_name.lower() else (
+                            "strava" if "strava" in source_name else "demo"
+                        )
+                    )
                 )
             )
 

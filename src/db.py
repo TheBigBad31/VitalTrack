@@ -2934,7 +2934,39 @@ class Database:
             return dev
         return None
 
-        return None
+    def generate_device_token(
+        self,
+        device_id: str,
+        name: Optional[str] = None,
+        device_type: Optional[str] = None,
+        user_id: int = 1
+    ) -> Dict[str, Any]:
+        """Génère un token secret individuel sécurisé pour un appareil/pont mobile et l'enregistre chiffré."""
+        import secrets
+        raw_token = f"vt_{device_id}_{secrets.token_urlsafe(24)}"
+        dev_name = name or device_id.replace("_", " ").title()
+        dev_type = device_type or ("ring" if "ring" in device_id else ("scale" if "scale" in device_id or "withings" in device_id else "mobile_aggregator"))
+
+        existing = self.get_user_device(device_id, user_id=user_id, reveal_secrets=True)
+        creds = dict(existing.get("credentials", {})) if existing and existing.get("credentials") else {}
+        creds["api_key"] = raw_token
+        creds["webhook_token"] = raw_token
+
+        updated = self.update_user_device(
+            device_id=device_id,
+            name=dev_name,
+            device_type=dev_type,
+            connected=True,
+            auth_type="webhook",
+            api_key=raw_token,
+            credentials=creds,
+            user_id=user_id
+        )
+
+        res = dict(updated)
+        res["token"] = raw_token
+        res["device_token"] = raw_token
+        return res
 
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
