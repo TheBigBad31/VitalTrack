@@ -3870,6 +3870,34 @@ class Database:
                 d["updated_at"] = datetime.fromisoformat(d["updated_at"])
             return SleepSessionEntry(**d)
 
+    def get_sleep_sessions(self, limit: int = 30, user_id: int = 1) -> List[SleepSessionEntry]:
+        """Récupère l'historique des sessions de sommeil avec leurs phases détaillées."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM (
+                    SELECT * FROM sleep_sessions WHERE user_id = ? ORDER BY date DESC LIMIT ?
+                ) sub ORDER BY date ASC
+            """, (user_id, limit))
+            rows = cursor.fetchall()
+
+            results = []
+            for r in rows:
+                d = dict(r)
+                d["date"] = date.fromisoformat(d["date"][:10])
+                cursor.execute(
+                    "SELECT * FROM sleep_stages WHERE sleep_session_id = ? ORDER BY start_time ASC",
+                    (d["id"],)
+                )
+                stages_rows = cursor.fetchall()
+                d["stages"] = [SleepStageEntry(**dict(st)) for st in stages_rows]
+                if d.get("created_at"):
+                    d["created_at"] = datetime.fromisoformat(d["created_at"])
+                if d.get("updated_at"):
+                    d["updated_at"] = datetime.fromisoformat(d["updated_at"])
+                results.append(SleepSessionEntry(**d))
+        return results
+
     def insert_intraday_samples(self, samples: List[IntradaySampleEntry], user_id: int = 1) -> int:
         """Insère un lot d'échantillons haute fréquence (FC, pas horaires, SpO2)."""
         if not samples:

@@ -170,7 +170,12 @@ function switchTab(tabId) {
   setTimeout(() => {
     if (tabId === 'weight' && typeof chartWeightDetail !== 'undefined' && chartWeightDetail) chartWeightDetail.resize();
     if (tabId === 'nutrition' && typeof chartMealsStacked !== 'undefined' && chartMealsStacked) chartMealsStacked.resize();
-    if (tabId === 'activity' && typeof chartActivity !== 'undefined' && chartActivity) chartActivity.resize();
+    if (tabId === 'activity') {
+      if (typeof chartActivity !== 'undefined' && chartActivity) chartActivity.resize();
+      if (typeof chartHRIntraday !== 'undefined' && chartHRIntraday) chartHRIntraday.resize();
+      if (typeof chartBiometricsTrends !== 'undefined' && chartBiometricsTrends) chartBiometricsTrends.resize();
+      if (typeof chartCrossCorrelations !== 'undefined' && chartCrossCorrelations) chartCrossCorrelations.resize();
+    }
     if (tabId === 'summary' && typeof chartWeightSummary !== 'undefined' && chartWeightSummary) chartWeightSummary.resize();
     if (tabId === 'summary' && typeof chartMacrosDonut !== 'undefined' && chartMacrosDonut) chartMacrosDonut.resize();
     if (window.lucide && lucide.createIcons) {
