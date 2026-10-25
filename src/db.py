@@ -34,6 +34,10 @@ from src.models import (
     ActivityEntry, AssociatedBenefit, CatalogItem, FoodItem, MealEntry,
     MealLog, MealLogItem, NutritionBenefitItem, SavedMeal, WeightEntry
 )
+from src.repositories.users_repo import UsersRepository
+from src.repositories.weights_repo import WeightsRepository
+from src.repositories.meals_repo import MealsRepository
+from src.repositories.devices_repo import DevicesRepository
 from src.crypto import encrypt_data, decrypt_data, encrypt_credentials, decrypt_credentials
 
 # Essai d'import de psycopg pour le support Neon PostgreSQL
@@ -162,11 +166,18 @@ class DatabaseConnectionWrapper:
 class Database:
     """Gestionnaire de persistance hybride (PostgreSQL Serverless Neon & SQLite Fallback)."""
 
+
     def __init__(self, db_path: Optional[str] = None, database_url: Optional[str] = None):
         self.database_url = database_url or get_database_url()
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
+        # Repositories (la façade Database délègue à ces classes)
+        self.users = UsersRepository(self)
+        self.weights = WeightsRepository(self)
+        self.meals = MealsRepository(self)
+        self.devices = DevicesRepository(self)
         self._init_db()
+
 
     def get_connection(self) -> DatabaseConnectionWrapper:
         """Fournit une connexion unifiée (PostgreSQL ou SQLite)."""
@@ -187,6 +198,7 @@ class Database:
         except Exception:
             pass
         return DatabaseConnectionWrapper(conn, is_postgres=False)
+
 
     def _init_db(self):
         """Initialise le schéma multi-utilisateurs et effectue les migrations idempotentes."""
@@ -820,1740 +832,6 @@ class Database:
         # Purger toute donnée de démonstration résiduelle
         self.purge_demo_data()
 
-    # ---------------------------------------------------------
-    # Gestion des Utilisateurs (Multi-utilisateurs & Auth)
-    # ---------------------------------------------------------
-
-    def _ensure_default_user(self) -> Dict[str, Any]:
-        """Crée ou retourne le compte principal par défaut (Sébastien LAMOLIATE)."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        default_email = "sebastienlamoliate@gmail.com"
-        default_name = "Sébastien LAMOLIATE"
-        default_uuid = "00000000-0000-4000-8000-000000000001"
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE email = ? OR id = 1", (default_email,))
-            row = cursor.fetchone()
-            if not row:
-                if self.is_postgres:
-                    cursor.execute("""
-                        INSERT INTO users (id, uuid, email, auth_provider, google_sub, name, picture, created_at, updated_at)
-                        VALUES (1, ?, ?, 'google', 'default_google_sub', ?, 'https://lh3.googleusercontent.com/a/default-user=s96-c', ?, ?)
-                        ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
-                        RETURNING *;
-                    """, (default_uuid, default_email, default_name, now_str, now_str))
-                    row = cursor.fetchone()
-                else:
-                    cursor.execute("""
-                        INSERT INTO users (id, uuid, email, auth_provider, google_sub, name, picture, created_at, updated_at)
-                        VALUES (1, ?, ?, 'google', 'default_google_sub', ?, 'https://lh3.googleusercontent.com/a/default-user=s96-c', ?, ?)
-                    """, (default_uuid, default_email, default_name, now_str, now_str))
-                    conn.commit()
-                    cursor.execute("SELECT * FROM users WHERE id = 1")
-                    row = cursor.fetchone()
-            return dict(row)
-
-    def get_or_create_user(
-        self,
-        email: str,
-        name: Optional[str] = None,
-        picture: Optional[str] = None,
-        auth_provider: str = "google",
-        google_sub: Optional[str] = None,
-        password_hash: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Récupère un utilisateur par email ou le crée s'il n'existe pas."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        email_clean = email.strip().lower()
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE email = ?", (email_clean,))
-            user = cursor.fetchone()
-
-            if user:
-                # Mise à jour éventuelle des infos profil
-                if (name and name != user.get("name")) or (picture and picture != user.get("picture")) or (google_sub and not user.get("google_sub")):
-                    cursor.execute("""
-                        UPDATE users
-                        SET name = COALESCE(?, name), picture = COALESCE(?, picture),
-                            google_sub = COALESCE(?, google_sub), updated_at = ?
-                        WHERE id = ?
-                    """, (name, picture, google_sub, now_str, user["id"]))
-                    conn.commit()
-                    cursor.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
-                    user = cursor.fetchone()
-                return dict(user)
-
-            # Création nouvel utilisateur
-            new_uuid = str(uuid.uuid4())
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO users (uuid, email, password_hash, auth_provider, google_sub, name, picture, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    RETURNING *;
-                """, (new_uuid, email_clean, password_hash, auth_provider, google_sub, name or email_clean.split("@")[0], picture or "", now_str, now_str))
-                created = cursor.fetchone()
-            else:
-                cursor.execute("""
-                    INSERT INTO users (uuid, email, password_hash, auth_provider, google_sub, name, picture, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (new_uuid, email_clean, password_hash, auth_provider, google_sub, name or email_clean.split("@")[0], picture or "", now_str, now_str))
-                conn.commit()
-                cursor.execute("SELECT * FROM users WHERE email = ?", (email_clean,))
-                created = cursor.fetchone()
-
-            user_dict = dict(created)
-
-            # Créer automatiquement son profil par défaut
-            cursor.execute("""
-                INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, preferred_ring, preferred_scale, google_email, google_name, google_picture, google_sub, updated_at)
-                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', ?, ?, ?, ?, ?)
-            """, (user_dict["id"], user_dict["name"] or "Utilisateur", user_dict["email"], user_dict["name"], user_dict["picture"], google_sub, now_str))
-            conn.commit()
-
-        return user_dict
-
-    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Récupère un compte utilisateur par son identifiant numérique."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        """Récupère un compte utilisateur par son adresse email (insensible à la casse)."""
-        clean_email = email.strip().lower()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (clean_email,))
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    # ---------------------------------------------------------
-    # Tendance et Pesées Multi-Utilisateurs
-    # ---------------------------------------------------------
-
-    def calculate_7d_trend(self, target_date: date, new_weight_kg: float, user_id: int = 1) -> float:
-        """Calcule la moyenne mobile sur 7 jours incluant la pesée actuelle pour l'utilisateur."""
-        start_date = (target_date - timedelta(days=6)).isoformat()
-        end_date = target_date.isoformat()
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT weight_kg FROM weights
-                WHERE user_id = ? AND date >= ? AND date < ?
-                ORDER BY date ASC
-            """, (user_id, start_date, end_date))
-            rows = cursor.fetchall()
-
-        previous_weights = [r["weight_kg"] for r in rows]
-        all_weights = previous_weights + [new_weight_kg]
-        return round(sum(all_weights) / len(all_weights), 2)
-
-    def insert_weight(self, entry: WeightEntry, user_id: int = 1) -> WeightEntry:
-        """Insère ou met à jour une pesée en recalculant la tendance 7j pour user_id."""
-        trend = entry.trend_7d_kg
-        if trend is None:
-            trend = self.calculate_7d_trend(entry.date, entry.weight_kg, user_id=user_id)
-
-        now_str = datetime.now(timezone.utc).isoformat()
-        date_str = entry.date.isoformat()
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO weights (user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
-                        weight_kg = EXCLUDED.weight_kg,
-                        body_fat_pct = EXCLUDED.body_fat_pct,
-                        muscle_mass_kg = EXCLUDED.muscle_mass_kg,
-                        water_pct = EXCLUDED.water_pct,
-                        bmi = EXCLUDED.bmi,
-                        trend_7d_kg = EXCLUDED.trend_7d_kg,
-                        source = EXCLUDED.source,
-                        notes = EXCLUDED.notes
-                    RETURNING id;
-                """, (
-                    user_id, date_str, entry.weight_kg, entry.body_fat_pct,
-                    entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
-                    entry.source, entry.notes, now_str
-                ))
-                res = cursor.fetchone()
-                entry_id = res["id"] if res else None
-            else:
-                cursor.execute("""
-                    INSERT INTO weights (user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
-                        weight_kg = excluded.weight_kg,
-                        body_fat_pct = excluded.body_fat_pct,
-                        muscle_mass_kg = excluded.muscle_mass_kg,
-                        water_pct = excluded.water_pct,
-                        bmi = excluded.bmi,
-                        trend_7d_kg = excluded.trend_7d_kg,
-                        source = excluded.source,
-                        notes = excluded.notes
-                """, (
-                    user_id, date_str, entry.weight_kg, entry.body_fat_pct,
-                    entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
-                    entry.source, entry.notes, now_str
-                ))
-                entry_id = cursor.lastrowid
-            conn.commit()
-
-        entry_dict = entry.model_dump()
-        entry_dict["id"] = entry_id
-        entry_dict["trend_7d_kg"] = trend
-        entry_dict["created_at"] = datetime.fromisoformat(now_str)
-        return WeightEntry(**entry_dict)
-
-    def get_weights(self, limit: int = 30, user_id: int = 1) -> List[WeightEntry]:
-        """Récupère l'historique des pesées ordonné par date croissante pour un utilisateur."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM weights WHERE user_id = ? ORDER BY date DESC LIMIT ?
-                ) sub ORDER BY date ASC
-            """, (user_id, limit))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            results.append(WeightEntry(
-                id=r["id"],
-                date=date.fromisoformat(r["date"][:10]),
-                weight_kg=r["weight_kg"],
-                body_fat_pct=r["body_fat_pct"],
-                muscle_mass_kg=r["muscle_mass_kg"],
-                water_pct=r["water_pct"],
-                bmi=r["bmi"],
-                trend_7d_kg=r["trend_7d_kg"],
-                source=r["source"],
-                notes=r["notes"],
-                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-            ))
-        return results
-
-    # ---------------------------------------------------------
-    
-    def get_weight_by_id(self, weight_id: int, user_id: int = 1) -> Optional[WeightEntry]:
-        """Récupère une pesée spécifique par son ID pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
-            r = cursor.fetchone()
-        if not r:
-            return None
-        return WeightEntry(
-            id=r["id"],
-            date=date.fromisoformat(r["date"][:10]),
-            weight_kg=r["weight_kg"],
-            body_fat_pct=r["body_fat_pct"],
-            muscle_mass_kg=r["muscle_mass_kg"],
-            water_pct=r["water_pct"],
-            bmi=r["bmi"],
-            trend_7d_kg=r["trend_7d_kg"],
-            source=r["source"],
-            notes=r["notes"],
-            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-        )
-
-    def update_weight(self, weight_id: int, entry: WeightEntry, user_id: int = 1) -> Optional[WeightEntry]:
-        """Met à jour une pesée existante et recalcule la tendance 7j."""
-        existing = self.get_weight_by_id(weight_id, user_id=user_id)
-        if not existing:
-            return None
-
-        target_date = entry.date
-        trend = entry.trend_7d_kg
-        if trend is None:
-            trend = self.calculate_7d_trend(target_date, entry.weight_kg, user_id=user_id)
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE weights
-                SET date = ?, weight_kg = ?, body_fat_pct = ?, muscle_mass_kg = ?,
-                    water_pct = ?, bmi = ?, trend_7d_kg = ?, source = ?, notes = ?
-                WHERE id = ? AND user_id = ?
-            """, (
-                target_date.isoformat(), entry.weight_kg, entry.body_fat_pct,
-                entry.muscle_mass_kg, entry.water_pct, entry.bmi, trend,
-                entry.source, entry.notes, weight_id, user_id
-            ))
-            conn.commit()
-
-        entry_dict = entry.model_dump()
-        entry_dict["id"] = weight_id
-        entry_dict["trend_7d_kg"] = trend
-        entry_dict["created_at"] = existing.created_at
-        return WeightEntry(**entry_dict)
-
-    def delete_weight(self, weight_id: int, user_id: int = 1) -> bool:
-        """Supprime une pesée pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
-            if not cursor.fetchone():
-                return False
-            cursor.execute("DELETE FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
-            conn.commit()
-            return True
-
-    # Activités Multi-Utilisateurs
-    # ---------------------------------------------------------
-
-    def insert_activity(self, entry: ActivityEntry, user_id: int = 1) -> ActivityEntry:
-        """Insère ou met à jour une entrée d'activité pour user_id."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        date_str = entry.date.isoformat()
-
-        total_burned = entry.total_burned_kcal
-        if total_burned <= 0 and (entry.bmr_kcal > 0 or entry.active_calories_kcal > 0):
-            total_burned = round(entry.bmr_kcal + entry.active_calories_kcal, 1)
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO activities (user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
-                        steps = EXCLUDED.steps,
-                        active_calories_kcal = EXCLUDED.active_calories_kcal,
-                        bmr_kcal = EXCLUDED.bmr_kcal,
-                        total_burned_kcal = EXCLUDED.total_burned_kcal,
-                        workout_minutes = EXCLUDED.workout_minutes,
-                        workout_type = EXCLUDED.workout_type,
-                        resting_hr_bpm = EXCLUDED.resting_hr_bpm,
-                        hrv_ms = EXCLUDED.hrv_ms,
-                        sleep_score = EXCLUDED.sleep_score,
-                        source = EXCLUDED.source
-                    RETURNING id;
-                """, (
-                    user_id, date_str, entry.steps, entry.active_calories_kcal,
-                    entry.bmr_kcal, total_burned, entry.workout_minutes,
-                    entry.workout_type, entry.resting_hr_bpm, entry.hrv_ms,
-                    entry.sleep_score, entry.source, now_str
-                ))
-                res = cursor.fetchone()
-                entry_id = res["id"] if res else None
-            else:
-                cursor.execute("""
-                    INSERT INTO activities (user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
-                        steps = excluded.steps,
-                        active_calories_kcal = excluded.active_calories_kcal,
-                        bmr_kcal = excluded.bmr_kcal,
-                        total_burned_kcal = excluded.total_burned_kcal,
-                        workout_minutes = excluded.workout_minutes,
-                        workout_type = excluded.workout_type,
-                        resting_hr_bpm = excluded.resting_hr_bpm,
-                        hrv_ms = excluded.hrv_ms,
-                        sleep_score = excluded.sleep_score,
-                        source = excluded.source
-                """, (
-                    user_id, date_str, entry.steps, entry.active_calories_kcal,
-                    entry.bmr_kcal, total_burned, entry.workout_minutes,
-                    entry.workout_type, entry.resting_hr_bpm, entry.hrv_ms,
-                    entry.sleep_score, entry.source, now_str
-                ))
-                entry_id = cursor.lastrowid
-            conn.commit()
-
-        entry_dict = entry.model_dump()
-        entry_dict["id"] = entry_id
-        entry_dict["total_burned_kcal"] = total_burned
-        entry_dict["created_at"] = datetime.fromisoformat(now_str)
-        return ActivityEntry(**entry_dict)
-
-    def get_activities(self, limit: int = 30, user_id: int = 1) -> List[ActivityEntry]:
-        """Récupère l'historique d'activité ordonné par date croissante pour un utilisateur."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM activities WHERE user_id = ? ORDER BY date DESC LIMIT ?
-                ) sub ORDER BY date ASC
-            """, (user_id, limit))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            results.append(ActivityEntry(
-                id=r["id"],
-                date=date.fromisoformat(r["date"][:10]),
-                steps=r["steps"],
-                active_calories_kcal=r["active_calories_kcal"],
-                bmr_kcal=r["bmr_kcal"],
-                total_burned_kcal=r["total_burned_kcal"],
-                workout_minutes=r["workout_minutes"],
-                workout_type=r["workout_type"],
-                resting_hr_bpm=r["resting_hr_bpm"],
-                hrv_ms=r["hrv_ms"],
-                sleep_score=r["sleep_score"],
-                source=r["source"],
-                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-            ))
-        return results
-
-    # ---------------------------------------------------------
-    # Repas Multi-Utilisateurs
-    # ---------------------------------------------------------
-
-    def insert_meal(self, entry: MealEntry, user_id: int = 1) -> MealEntry:
-        """Insère un repas pour user_id avec ses aliments décomposés."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        date_str = entry.date.isoformat()
-        items_json = json.dumps([item.model_dump() for item in entry.items])
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO meals (user_id, date, meal_type, total_calories_kcal, protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    RETURNING id;
-                """, (
-                    user_id, date_str, entry.meal_type, entry.total_calories_kcal,
-                    entry.protein_g, entry.carbs_g, entry.fat_g, entry.fiber_g,
-                    entry.photo_data_url, items_json, now_str
-                ))
-                res = cursor.fetchone()
-                entry_id = res["id"] if res else None
-            else:
-                cursor.execute("""
-                    INSERT INTO meals (user_id, date, meal_type, total_calories_kcal, protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    user_id, date_str, entry.meal_type, entry.total_calories_kcal,
-                    entry.protein_g, entry.carbs_g, entry.fat_g, entry.fiber_g,
-                    entry.photo_data_url, items_json, now_str
-                ))
-                entry_id = cursor.lastrowid
-            conn.commit()
-
-        entry_dict = entry.model_dump()
-        entry_dict["id"] = entry_id
-        entry_dict["created_at"] = datetime.fromisoformat(now_str)
-        return MealEntry(**entry_dict)
-
-    def get_meals_for_date(self, target_date: date, user_id: int = 1) -> List[MealEntry]:
-        """Récupère tous les repas d'une date spécifique pour user_id."""
-        date_str = target_date.isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM meals
-                WHERE user_id = ? AND date = ?
-                ORDER BY id ASC
-            """, (user_id, date_str))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
-            items = [FoodItem(**item) for item in raw_items]
-            results.append(MealEntry(
-                id=r["id"],
-                date=date.fromisoformat(r["date"][:10]),
-                meal_type=r["meal_type"],
-                total_calories_kcal=r["total_calories_kcal"],
-                protein_g=r["protein_g"],
-                carbs_g=r["carbs_g"],
-                fat_g=r["fat_g"],
-                fiber_g=r["fiber_g"],
-                photo_data_url=r["photo_data_url"],
-                items=items,
-                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-            ))
-        return results
-
-    def get_meals(self, limit: int = 50, user_id: int = 1) -> List[MealEntry]:
-        """Récupère l'historique récent des repas pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM meals WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT ?
-                ) sub ORDER BY date ASC, id ASC
-            """, (user_id, limit))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
-            items = [FoodItem(**item) for item in raw_items]
-            results.append(MealEntry(
-                id=r["id"],
-                date=date.fromisoformat(r["date"][:10]),
-                meal_type=r["meal_type"],
-                total_calories_kcal=r["total_calories_kcal"],
-                protein_g=r["protein_g"],
-                carbs_g=r["carbs_g"],
-                fat_g=r["fat_g"],
-                fiber_g=r["fiber_g"],
-                photo_data_url=r["photo_data_url"],
-                items=items,
-                created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-            ))
-        return results
-
-    # ---------------------------------------------------------
-    
-    def get_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[MealEntry]:
-        """Récupère un repas spécifique par son ID pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            r = cursor.fetchone()
-        if not r:
-            return None
-        raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
-        items = [FoodItem(**item) for item in raw_items]
-        return MealEntry(
-            id=r["id"],
-            date=date.fromisoformat(r["date"][:10]),
-            meal_type=r["meal_type"],
-            total_calories_kcal=r["total_calories_kcal"],
-            protein_g=r["protein_g"],
-            carbs_g=r["carbs_g"],
-            fat_g=r["fat_g"],
-            fiber_g=r["fiber_g"],
-            photo_data_url=r["photo_data_url"],
-            items=items,
-            created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
-        )
-
-    def update_meal(self, meal_id: int, entry: MealEntry, user_id: int = 1) -> Optional[MealEntry]:
-        """Met à jour un repas existant pour user_id."""
-        existing = self.get_meal_by_id(meal_id, user_id=user_id)
-        if not existing:
-            return None
-
-        items_json = json.dumps([item.model_dump() for item in entry.items])
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE meals
-                SET date = ?, meal_type = ?, total_calories_kcal = ?, protein_g = ?,
-                    carbs_g = ?, fat_g = ?, fiber_g = ?, photo_data_url = ?, items_json = ?
-                WHERE id = ? AND user_id = ?
-            """, (
-                entry.date.isoformat(), entry.meal_type, entry.total_calories_kcal,
-                entry.protein_g, entry.carbs_g, entry.fat_g, entry.fiber_g,
-                entry.photo_data_url or existing.photo_data_url, items_json, meal_id, user_id
-            ))
-            conn.commit()
-
-        entry_dict = entry.model_dump()
-        entry_dict["id"] = meal_id
-        entry_dict["created_at"] = existing.created_at
-        return MealEntry(**entry_dict)
-
-    def delete_meal(self, meal_id: int, user_id: int = 1) -> bool:
-        """Supprime un repas pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            if not cursor.fetchone():
-                return False
-            cursor.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            conn.commit()
-            return True
-
-    # ---------------------------------------------------------
-    # Plats Sauvegardés / Bibliothèque de Repas Réutilisables
-    # ---------------------------------------------------------
-
-    def insert_saved_meal(self, saved_meal: SavedMeal, user_id: int = 1) -> SavedMeal:
-        """Enregistre un nouveau plat type dans la bibliothèque réutilisable."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO saved_meals (
-                        user_id, name, meal_type, serving_size, quantity_grams,
-                        calories, protein_g, carbs_g, fat_g, fiber_g,
-                        ingredients, items_json, photo_url, is_favorite,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    RETURNING id, created_at, updated_at;
-                """, (
-                    user_id, saved_meal.name, saved_meal.meal_type, saved_meal.serving_size or "1 portion",
-                    saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
-                    saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
-                    saved_meal.ingredients, items_json, saved_meal.photo_url,
-                    1 if saved_meal.is_favorite else 0, now_str, now_str
-                ))
-                row = cursor.fetchone()
-                meal_id = row["id"]
-                created_at = row["created_at"]
-            else:
-                cursor.execute("""
-                    INSERT INTO saved_meals (
-                        user_id, name, meal_type, serving_size, quantity_grams,
-                        calories, protein_g, carbs_g, fat_g, fiber_g,
-                        ingredients, items_json, photo_url, is_favorite,
-                        created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    user_id, saved_meal.name, saved_meal.meal_type, saved_meal.serving_size or "1 portion",
-                    saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
-                    saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
-                    saved_meal.ingredients, items_json, saved_meal.photo_url,
-                    1 if saved_meal.is_favorite else 0, now_str, now_str
-                ))
-                meal_id = cursor.lastrowid
-                created_at = now_str
-            conn.commit()
-
-        result = saved_meal.model_copy()
-        result.id = meal_id
-        result.user_id = user_id
-        result.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
-        result.updated_at = datetime.fromisoformat(now_str)
-        return result
-
-    def get_saved_meals(
-        self,
-        meal_type: Optional[str] = None,
-        is_favorite: Optional[bool] = None,
-        user_id: int = 1
-    ) -> List[SavedMeal]:
-        """Récupère les plats sauvegardés d'un utilisateur avec filtres optionnels."""
-        query = "SELECT * FROM saved_meals WHERE user_id = ?"
-        params: List[Any] = [user_id]
-
-        if meal_type:
-            query += " AND meal_type = ?"
-            params.append(meal_type)
-        if is_favorite is not None:
-            query += " AND is_favorite = ?"
-            params.append(1 if is_favorite else 0)
-
-        query += " ORDER BY is_favorite DESC, updated_at DESC, id DESC"
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, tuple(params))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
-            items = [FoodItem(**item) for item in raw_items]
-            results.append(SavedMeal(
-                id=r["id"],
-                user_id=r["user_id"],
-                name=r["name"],
-                meal_type=r["meal_type"],
-                serving_size=r["serving_size"],
-                quantity_grams=r["quantity_grams"],
-                calories=r["calories"],
-                protein_g=r["protein_g"],
-                carbs_g=r["carbs_g"],
-                fat_g=r["fat_g"],
-                fiber_g=r["fiber_g"],
-                ingredients=r["ingredients"],
-                items=items,
-                photo_url=r["photo_url"],
-                is_favorite=bool(r["is_favorite"]),
-                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
-                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None
-            ))
-        return results
-
-    def get_saved_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[SavedMeal]:
-        """Récupère un plat réutilisable précis par son ID."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            r = cursor.fetchone()
-        if not r:
-            return None
-        raw_items = json.loads(r["items_json"]) if r.get("items_json") else []
-        items = [FoodItem(**item) for item in raw_items]
-        return SavedMeal(
-            id=r["id"],
-            user_id=r["user_id"],
-            name=r["name"],
-            meal_type=r["meal_type"],
-            serving_size=r["serving_size"],
-            quantity_grams=r["quantity_grams"],
-            calories=r["calories"],
-            protein_g=r["protein_g"],
-            carbs_g=r["carbs_g"],
-            fat_g=r["fat_g"],
-            fiber_g=r["fiber_g"],
-            ingredients=r["ingredients"],
-            items=items,
-            photo_url=r["photo_url"],
-            is_favorite=bool(r["is_favorite"]),
-            created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
-            updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None
-        )
-
-    def update_saved_meal(self, meal_id: int, saved_meal: SavedMeal, user_id: int = 1) -> Optional[SavedMeal]:
-        """Met à jour un plat type réutilisable."""
-        existing = self.get_saved_meal_by_id(meal_id, user_id=user_id)
-        if not existing:
-            return None
-
-        now_str = datetime.now(timezone.utc).isoformat()
-        items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE saved_meals
-                SET name = ?, meal_type = ?, serving_size = ?, quantity_grams = ?,
-                    calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, fiber_g = ?,
-                    ingredients = ?, items_json = ?, photo_url = ?, is_favorite = ?,
-                    updated_at = ?
-                WHERE id = ? AND user_id = ?
-            """, (
-                saved_meal.name, saved_meal.meal_type, saved_meal.serving_size,
-                saved_meal.quantity_grams, saved_meal.calories, saved_meal.protein_g,
-                saved_meal.carbs_g, saved_meal.fat_g, saved_meal.fiber_g or 0.0,
-                saved_meal.ingredients, items_json,
-                saved_meal.photo_url if saved_meal.photo_url is not None else existing.photo_url,
-                1 if saved_meal.is_favorite else 0, now_str, meal_id, user_id
-            ))
-            conn.commit()
-
-        updated = saved_meal.model_copy()
-        updated.id = meal_id
-        updated.user_id = user_id
-        updated.created_at = existing.created_at
-        updated.updated_at = datetime.fromisoformat(now_str)
-        return updated
-
-    def delete_saved_meal(self, meal_id: int, user_id: int = 1) -> bool:
-        """Supprime un plat réutilisable de la bibliothèque."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            if not cursor.fetchone():
-                return False
-            cursor.execute("DELETE FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
-            conn.commit()
-            return True
-
-
-    # ---------------------------------------------------------
-    # Catalogue Aliments & Plats (Stage 12 - food_items)
-    # ---------------------------------------------------------
-
-    def insert_food_item(self, item: CatalogItem, user_id: int = 1) -> CatalogItem:
-        """Crée un aliment ou un plat dans le catalogue de l'utilisateur."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO food_items (
-                        user_id, name, item_type, default_unit, default_quantity,
-                        calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    RETURNING id, created_at, updated_at;
-                """, (
-                    user_id, item.name, item.item_type, item.default_unit or "g",
-                    item.default_quantity or 100.0, item.calories_per_unit,
-                    item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
-                    item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
-                    item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    now_str, now_str
-                ))
-                row = cursor.fetchone()
-                item_id = row["id"]
-                created_at = row["created_at"]
-                updated_at = row["updated_at"]
-            else:
-                cursor.execute("""
-                    INSERT INTO food_items (
-                        user_id, name, item_type, default_unit, default_quantity,
-                        calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    user_id, item.name, item.item_type, item.default_unit or "g",
-                    item.default_quantity or 100.0, item.calories_per_unit,
-                    item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
-                    item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
-                    item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    now_str, now_str
-                ))
-                item_id = cursor.lastrowid
-                created_at = now_str
-                updated_at = now_str
-            conn.commit()
-
-        res = item.model_copy()
-        res.id = item_id
-        res.user_id = user_id
-        res.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
-        res.updated_at = datetime.fromisoformat(updated_at) if isinstance(updated_at, str) else updated_at
-        if item.benefits:
-            self.set_food_item_benefits(item_id, [b.model_dump() for b in item.benefits])
-            res.benefits = self.get_food_item_benefits(item_id)
-        else:
-            res.benefits = []
-        return res
-
-    def get_food_items(
-        self,
-        item_type: Optional[str] = None,
-        query: Optional[str] = None,
-        user_id: int = 1
-    ) -> List[CatalogItem]:
-        """Récupère les éléments du catalogue de l'utilisateur avec filtres optionnels."""
-        sql = "SELECT * FROM food_items WHERE user_id = ?"
-        params: List[Any] = [user_id]
-
-        if item_type:
-            sql += " AND item_type = ?"
-            params.append(item_type)
-
-        if query:
-            sql += " AND LOWER(name) LIKE ?"
-            params.append(f"%{query.strip().lower()}%")
-
-        sql += " ORDER BY name ASC"
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(sql, tuple(params))
-            rows = cursor.fetchall()
-
-        items = []
-        for r in rows:
-            it = CatalogItem(
-                id=r["id"],
-                user_id=r["user_id"],
-                name=r["name"],
-                item_type=r["item_type"],
-                default_unit=r["default_unit"],
-                default_quantity=float(r["default_quantity"]),
-                calories_per_unit=float(r["calories_per_unit"]),
-                protein_per_unit_g=float(r.get("protein_per_unit_g") or 0.0),
-                carbs_per_unit_g=float(r.get("carbs_per_unit_g") or 0.0),
-                fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
-                fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
-                photo_url=r.get("photo_url"),
-                recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
-                benefits=self.get_food_item_benefits(r["id"]),
-                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
-                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
-            )
-            items.append(it)
-        return items
-
-    def get_food_item_by_id(self, item_id: int, user_id: int = 1) -> Optional[CatalogItem]:
-        """Récupère un élément du catalogue par son ID pour user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
-            r = cursor.fetchone()
-            if not r:
-                return None
-            return CatalogItem(
-                id=r["id"],
-                user_id=r["user_id"],
-                name=r["name"],
-                item_type=r["item_type"],
-                default_unit=r["default_unit"],
-                default_quantity=float(r["default_quantity"]),
-                calories_per_unit=float(r["calories_per_unit"]),
-                protein_per_unit_g=float(r.get("protein_per_unit_g") or 0.0),
-                carbs_per_unit_g=float(r.get("carbs_per_unit_g") or 0.0),
-                fat_per_unit_g=float(r.get("fat_per_unit_g") or 0.0),
-                fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
-                photo_url=r.get("photo_url"),
-                recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
-                benefits=self.get_food_item_benefits(r["id"]),
-                created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
-                updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
-            )
-
-    def update_food_item(self, item_id: int, data: Dict[str, Any], user_id: int = 1) -> Optional[CatalogItem]:
-        """Met à jour un aliment ou plat du catalogue."""
-        existing = self.get_food_item_by_id(item_id, user_id=user_id)
-        if not existing:
-            return None
-
-        now_str = datetime.now(timezone.utc).isoformat()
-        name = data.get("name", existing.name)
-        item_type = data.get("item_type", existing.item_type)
-        default_unit = data.get("default_unit", existing.default_unit)
-        default_quantity = data.get("default_quantity", existing.default_quantity)
-        calories_per_unit = data.get("calories_per_unit", existing.calories_per_unit)
-        protein_per_unit_g = data.get("protein_per_unit_g", existing.protein_per_unit_g)
-        carbs_per_unit_g = data.get("carbs_per_unit_g", existing.carbs_per_unit_g)
-        fat_per_unit_g = data.get("fat_per_unit_g", existing.fat_per_unit_g)
-        fiber_per_unit_g = data.get("fiber_per_unit_g", existing.fiber_per_unit_g)
-        photo_url = data.get("photo_url", existing.photo_url)
-        recipe_items = data.get("recipe_items", existing.recipe_items)
-        recipe_items_json = json.dumps(recipe_items) if recipe_items is not None else None
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE food_items
-                SET name = ?, item_type = ?, default_unit = ?, default_quantity = ?,
-                    calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
-                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?, updated_at = ?
-                WHERE id = ? AND user_id = ?
-            """, (
-                name, item_type, default_unit, default_quantity,
-                calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, now_str,
-                item_id, user_id
-            ))
-            conn.commit()
-
-        updated = existing.model_copy()
-        updated.name = name
-        updated.item_type = item_type
-        updated.recipe_items = recipe_items or []
-        updated.default_unit = default_unit
-        updated.default_quantity = default_quantity
-        updated.calories_per_unit = calories_per_unit
-        updated.protein_per_unit_g = protein_per_unit_g
-        updated.carbs_per_unit_g = carbs_per_unit_g
-        updated.fat_per_unit_g = fat_per_unit_g
-        updated.fiber_per_unit_g = fiber_per_unit_g
-        updated.photo_url = photo_url
-        updated.updated_at = datetime.fromisoformat(now_str)
-        return updated
-
-    def delete_food_item(self, item_id: int, user_id: int = 1) -> bool:
-        """Supprime un aliment ou plat du catalogue de l'utilisateur."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
-            if not cursor.fetchone():
-                return False
-            cursor.execute("DELETE FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
-            conn.commit()
-            return True
-
-    # ---------------------------------------------------------
-    # Référentiel des Bienfaits Nutritionnels (Stage 13)
-    # ---------------------------------------------------------
-
-    def _seed_nutrition_benefits(self):
-        """Seede le référentiel des bienfaits nutritionnels depuis le fichier source ou le fallback."""
-        from src.nutrition_rules import EXPERT_BENEFITS_CATALOG
-
-        # On essaie d'abord de charger les données complètes
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            for b in EXPERT_BENEFITS_CATALOG:
-                rule_cfg = json.dumps(b.get("rule_config") or {})
-                if self.is_postgres:
-                    cursor.execute("""
-                        INSERT INTO nutrition_benefits (id, category, category_id, title, description, icon, rule_config, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (id) DO UPDATE SET
-                            category = EXCLUDED.category,
-                            category_id = EXCLUDED.category_id,
-                            title = EXCLUDED.title,
-                            description = EXCLUDED.description,
-                            icon = EXCLUDED.icon,
-                            rule_config = EXCLUDED.rule_config;
-                    """, (
-                        b["id"], b["category"], b["category_id"], b["title"],
-                        b["description"], b["icon"], rule_cfg, now_str
-                    ))
-                else:
-                    cursor.execute("""
-                        INSERT INTO nutrition_benefits (id, category, category_id, title, description, icon, rule_config, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (id) DO UPDATE SET
-                            category = excluded.category,
-                            category_id = excluded.category_id,
-                            title = excluded.title,
-                            description = excluded.description,
-                            icon = excluded.icon,
-                            rule_config = excluded.rule_config;
-                    """, (
-                        b["id"], b["category"], b["category_id"], b["title"],
-                        b["description"], b["icon"], rule_cfg, now_str
-                    ))
-            conn.commit()
-
-    def get_all_nutrition_benefits(self) -> List[NutritionBenefitItem]:
-        """Retourne la liste de tous les bienfaits disponibles ordonnés par catégorie."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM nutrition_benefits ORDER BY category_id ASC, title ASC")
-            rows = cursor.fetchall()
-
-        benefits = []
-        for r in rows:
-            cfg = None
-            if r.get("rule_config"):
-                try:
-                    cfg = json.loads(r["rule_config"])
-                except Exception:
-                    cfg = None
-            benefits.append(NutritionBenefitItem(
-                id=r["id"],
-                category=r["category"],
-                category_id=int(r["category_id"]),
-                title=r["title"],
-                description=r["description"],
-                icon=r["icon"],
-                rule_config=cfg
-            ))
-        return benefits
-
-    def get_food_item_benefits(self, food_item_id: int) -> List[AssociatedBenefit]:
-        """Récupère les bienfaits associés à un aliment/plat du catalogue."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT nb.id, nb.category, nb.category_id, nb.title, nb.description, nb.icon,
-                       fib.source, fib.explanation
-                FROM food_item_benefits fib
-                JOIN nutrition_benefits nb ON fib.benefit_id = nb.id
-                WHERE fib.food_item_id = ?
-                ORDER BY nb.category_id ASC, nb.title ASC
-            """, (food_item_id,))
-            rows = cursor.fetchall()
-
-        results = []
-        for r in rows:
-            results.append(AssociatedBenefit(
-                benefit_id=r["id"],
-                category=r["category"],
-                category_id=int(r["category_id"]),
-                title=r["title"],
-                description=r["description"],
-                icon=r["icon"],
-                source=r["source"],
-                explanation=r.get("explanation")
-            ))
-        return results
-
-    def set_food_item_benefits(
-        self,
-        food_item_id: int,
-        benefits_data: List[Dict[str, Any]]
-    ) -> List[AssociatedBenefit]:
-        """Associe ou remplace l'ensemble des bienfaits d'un aliment/plat."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            # Supprimer les anciens bienfaits
-            cursor.execute("DELETE FROM food_item_benefits WHERE food_item_id = ?", (food_item_id,))
-
-            for b in benefits_data:
-                benefit_id = b.get("benefit_id") or b.get("id")
-                if not benefit_id:
-                    continue
-                source = b.get("source", "manual")
-                explanation = b.get("explanation", "")
-                cursor.execute("""
-                    INSERT INTO food_item_benefits (food_item_id, benefit_id, source, explanation, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (food_item_id, benefit_id, source, explanation, now_str))
-            conn.commit()
-
-        return self.get_food_item_benefits(food_item_id)
-
-    # ---------------------------------------------------------
-
-    def get_or_create_meal_log(self, date_val: date, meal_type: str, user_id: int = 1) -> MealLog:
-        """Récupère l'instance de repas pour une date et un type, ou la crée si inexistante."""
-        date_str = date_val.isoformat()
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM meal_logs
-                WHERE user_id = ? AND date = ? AND meal_type = ?
-            """, (user_id, date_str, meal_type))
-            row = cursor.fetchone()
-
-            if not row:
-                if self.is_postgres:
-                    cursor.execute("""
-                        INSERT INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
-                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
-                        ON CONFLICT (user_id, date, meal_type) DO NOTHING
-                        RETURNING id, date, meal_type, photo_url, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at;
-                    """, (user_id, date_str, meal_type, now_str, now_str))
-                    row = cursor.fetchone()
-                else:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
-                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
-                    """, (user_id, date_str, meal_type, now_str, now_str))
-                conn.commit()
-
-                if not row:
-                    cursor.execute("""
-                        SELECT * FROM meal_logs
-                        WHERE user_id = ? AND date = ? AND meal_type = ?
-                    """, (user_id, date_str, meal_type))
-                    row = cursor.fetchone()
-
-        return self._build_meal_log(dict(row), user_id=user_id)
-
-    def _build_meal_log(self, row: Dict[str, Any], user_id: int = 1) -> MealLog:
-        """Construit un objet MealLog avec tous ses MealLogItem associés."""
-        meal_log_id = row["id"]
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM meal_log_items
-                WHERE meal_log_id = ?
-                ORDER BY id ASC
-            """, (meal_log_id,))
-            item_rows = cursor.fetchall()
-
-        items = [
-            MealLogItem(
-                id=it["id"],
-                meal_log_id=it["meal_log_id"],
-                food_item_id=it.get("food_item_id"),
-                name=it["name"],
-                quantity=float(it["quantity"]),
-                unit=it["unit"],
-                calories=float(it["calories"]),
-                protein_g=float(it.get("protein_g") or 0.0),
-                carbs_g=float(it.get("carbs_g") or 0.0),
-                fat_g=float(it.get("fat_g") or 0.0),
-                fiber_g=float(it["fiber_g"]) if it.get("fiber_g") is not None else 0.0,
-                created_at=datetime.fromisoformat(it["created_at"]) if it.get("created_at") else None,
-            )
-            for it in item_rows
-        ]
-
-        return MealLog(
-            id=row["id"],
-            user_id=row["user_id"],
-            date=date.fromisoformat(row["date"][:10]),
-            meal_type=row["meal_type"],
-            photo_url=row.get("photo_url"),
-            total_calories=float(row.get("total_calories") or 0.0),
-            total_protein_g=float(row.get("total_protein_g") or 0.0),
-            total_carbs_g=float(row.get("total_carbs_g") or 0.0),
-            total_fat_g=float(row.get("total_fat_g") or 0.0),
-            total_fiber_g=float(row["total_fiber_g"]) if row.get("total_fiber_g") is not None else 0.0,
-            items=items,
-            created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
-            updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
-        )
-
-    def get_meal_logs_for_date(self, target_date: date, user_id: int = 1) -> List[MealLog]:
-        """Récupère les 4 repas d'une date (avec les instances existantes)."""
-        date_str = target_date.isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM meal_logs
-                WHERE user_id = ? AND date = ?
-                ORDER BY id ASC
-            """, (user_id, date_str))
-            rows = cursor.fetchall()
-
-        return [self._build_meal_log(dict(r), user_id=user_id) for r in rows]
-
-    def add_item_to_meal_log(
-        self,
-        date_val: date,
-        meal_type: str,
-        name: str,
-        quantity: float,
-        unit: str,
-        calories: float,
-        protein_g: float = 0.0,
-        carbs_g: float = 0.0,
-        fat_g: float = 0.0,
-        fiber_g: float = 0.0,
-        food_item_id: Optional[int] = None,
-        user_id: int = 1
-    ) -> MealLog:
-        """Ajoute un aliment/plat à un repas pour une date et recalcule les totaux."""
-        meal_log = self.get_or_create_meal_log(date_val, meal_type, user_id=user_id)
-        now_str = datetime.now(timezone.utc).isoformat()
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO meal_log_items (
-                    meal_log_id, food_item_id, name, quantity, unit,
-                    calories, protein_g, carbs_g, fat_g, fiber_g, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                meal_log.id, food_item_id, name, quantity, unit,
-                calories, protein_g, carbs_g, fat_g, fiber_g, now_str
-            ))
-            conn.commit()
-
-        self._recalculate_meal_log_totals(meal_log.id, user_id=user_id)
-        return self._get_meal_log_by_id(meal_log.id, user_id=user_id)
-
-    def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
-        """Supprime une ligne d'aliment consommée et recalcule le repas parent."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT m.id AS meal_log_id
-                FROM meal_log_items it
-                JOIN meal_logs m ON it.meal_log_id = m.id
-                WHERE it.id = ? AND m.user_id = ?
-            """, (item_id, user_id))
-            row = cursor.fetchone()
-            if not row:
-                return None
-
-            meal_log_id = row["meal_log_id"]
-            cursor.execute("DELETE FROM meal_log_items WHERE id = ?", (item_id,))
-            conn.commit()
-
-        self._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
-        return self._get_meal_log_by_id(meal_log_id, user_id=user_id)
-
-    def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
-        """Recalcule et met à jour les totaux d'un MealLog."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT
-                    COALESCE(SUM(calories), 0.0) AS total_cal,
-                    COALESCE(SUM(protein_g), 0.0) AS total_prot,
-                    COALESCE(SUM(carbs_g), 0.0) AS total_carbs,
-                    COALESCE(SUM(fat_g), 0.0) AS total_fat,
-                    COALESCE(SUM(fiber_g), 0.0) AS total_fiber
-                FROM meal_log_items
-                WHERE meal_log_id = ?
-            """, (meal_log_id,))
-            totals = cursor.fetchone()
-
-            cursor.execute("""
-                UPDATE meal_logs
-                SET total_calories = ?, total_protein_g = ?, total_carbs_g = ?,
-                    total_fat_g = ?, total_fiber_g = ?, updated_at = ?
-                WHERE id = ? AND user_id = ?
-            """, (
-                round(float(totals["total_cal"]), 1),
-                round(float(totals["total_prot"]), 1),
-                round(float(totals["total_carbs"]), 1),
-                round(float(totals["total_fat"]), 1),
-                round(float(totals["total_fiber"]), 1),
-                now_str, meal_log_id, user_id
-            ))
-            conn.commit()
-
-
-    def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
-        """Synchronise un meal_log avec la table meals pour alimenter l'historique et les calories journalières."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
-            ml = cursor.fetchone()
-            if not ml:
-                return
-
-            date_str = ml["date"][:10]
-            meal_type = ml["meal_type"]
-            total_cals = round(float(ml["total_calories"] or 0.0), 1)
-            total_prot = round(float(ml["total_protein_g"] or 0.0), 1)
-            total_carbs = round(float(ml["total_carbs_g"] or 0.0), 1)
-            total_fat = round(float(ml["total_fat_g"] or 0.0), 1)
-            total_fiber = round(float(ml["total_fiber_g"] or 0.0), 1)
-
-            # Charger les items
-            cursor.execute("""
-                SELECT name, quantity, unit, calories, protein_g, carbs_g, fat_g, fiber_g
-                FROM meal_log_items
-                WHERE meal_log_id = ?
-            """, (meal_log_id,))
-            items_rows = cursor.fetchall()
-            items_list = [
-                {
-                    "name": r["name"],
-                    "portion_g": float(r["quantity"]) if r["unit"] == "g" else 100.0,
-                    "calories_kcal": float(r["calories"] or 0.0),
-                    "protein_g": float(r["protein_g"] or 0.0),
-                    "carbs_g": float(r["carbs_g"] or 0.0),
-                    "fat_g": float(r["fat_g"] or 0.0),
-                    "fiber_g": float(r["fiber_g"] or 0.0),
-                    "confidence_score": 1.0
-                }
-                for r in items_rows
-            ]
-            items_json = json.dumps(items_list)
-
-            # Chercher dans meals si une entrée existe déjà
-            cursor.execute("""
-                SELECT id FROM meals
-                WHERE user_id = ? AND date = ? AND meal_type = ?
-                ORDER BY id DESC LIMIT 1
-            """, (user_id, date_str, meal_type))
-            existing = cursor.fetchone()
-
-            if total_cals > 0:
-                if existing:
-                    cursor.execute("""
-                        UPDATE meals
-                        SET total_calories_kcal = ?, protein_g = ?, carbs_g = ?,
-                            fat_g = ?, fiber_g = ?, items_json = ?
-                        WHERE id = ?
-                    """, (total_cals, total_prot, total_carbs, total_fat, total_fiber, items_json, existing["id"]))
-                else:
-                    cursor.execute("""
-                        INSERT INTO meals (
-                            user_id, date, meal_type, total_calories_kcal,
-                            protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        user_id, date_str, meal_type, total_cals,
-                        total_prot, total_carbs, total_fat, total_fiber,
-                        None, items_json, now_str
-                    ))
-            else:
-                if existing:
-                    cursor.execute("DELETE FROM meals WHERE id = ?", (existing["id"],))
-            conn.commit()
-
-    def sync_all_meal_logs_to_meals(self, user_id: Optional[int] = None):
-        """Synchronise l'ensemble des meal_logs existants vers la table meals."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if user_id:
-                cursor.execute("SELECT id, user_id FROM meal_logs WHERE user_id = ?", (user_id,))
-            else:
-                cursor.execute("SELECT id, user_id FROM meal_logs")
-            rows = cursor.fetchall()
-        for r in rows:
-            self._sync_meal_log_to_meals(r["id"], user_id=r["user_id"])
-
-    def _get_meal_log_by_id(self, meal_log_id: int, user_id: int = 1) -> MealLog:
-        """Récupère un MealLog complet par son ID."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
-            row = cursor.fetchone()
-        return self._build_meal_log(dict(row), user_id=user_id)
-
-    # Profil Utilisateur & Appareils
-    # ---------------------------------------------------------
-
-    def get_user_profile(self, user_id: int = 1) -> Dict[str, Any]:
-        """Récupère le profil personnalisé de user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
-            row = cursor.fetchone()
-
-            if not row:
-                now_str = datetime.now(timezone.utc).isoformat()
-                cursor.execute("""
-                    INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, updated_at)
-                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', ?)
-                """, (user_id, now_str))
-                conn.commit()
-                cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
-                row = cursor.fetchone()
-
-        return dict(row)
-
-    def update_user_profile(self, data: Dict[str, Any], user_id: int = 1) -> Dict[str, Any]:
-        """Met à jour le profil de l'utilisateur."""
-        current = self.get_user_profile(user_id=user_id)
-        now_str = datetime.now(timezone.utc).isoformat()
-
-        def _val(key, default):
-            v = data.get(key)
-            if v is not None:
-                return v
-            return current.get(key, default)
-
-        name = _val("name", "Sébastien")
-        gender = _val("gender", "male")
-        age = int(_val("age", 35))
-        height_cm = float(_val("height_cm", 178.0))
-        target_weight = float(_val("target_weight_kg", 77.0))
-        goal_id = _val("goal_profile_id", "weight_loss")
-        steps = int(_val("target_steps", 10000))
-        cal_intake = float(_val("target_calories_intake", 2000.0))
-        prot = float(_val("protein_target_per_kg", 1.8))
-        ring = _val("preferred_ring", "ringconn")
-        scale = _val("preferred_scale", "withings")
-        google_email = _val("google_email", None)
-        google_name = _val("google_name", None)
-        google_picture = _val("google_picture", None)
-        google_sub = _val("google_sub", None)
-
-        # Nouveaux champs profil nutritionnel & métabolique
-        daily_protein = _val("daily_protein_target_g", None)
-        if daily_protein is not None:
-            daily_protein = float(daily_protein)
-        daily_carbs = _val("daily_carbs_target_g", None)
-        if daily_carbs is not None:
-            daily_carbs = float(daily_carbs)
-        daily_fat = _val("daily_fat_target_g", None)
-        if daily_fat is not None:
-            daily_fat = float(daily_fat)
-        daily_water = _val("daily_water_target_ml", 2000.0)
-        if daily_water is not None:
-            daily_water = float(daily_water)
-        goal_type = _val("goal_type", "weight_loss")
-        activity_level = _val("activity_level", "moderately_active")
-        birth_date = _val("birth_date", None)
-        current_weight = _val("current_weight_kg", None)
-        if current_weight is not None:
-            current_weight = float(current_weight)
-        meal_distribution = _val("meal_distribution", None)
-        if isinstance(meal_distribution, (dict, list)):
-            meal_distribution = json.dumps(meal_distribution)
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE user_profile
-                SET name = ?, gender = ?, age = ?, height_cm = ?, target_weight_kg = ?,
-                    goal_profile_id = ?, target_steps = ?, target_calories_intake = ?,
-                    protein_target_per_kg = ?, preferred_ring = ?, preferred_scale = ?,
-                    google_email = ?, google_name = ?, google_picture = ?, google_sub = ?,
-                    daily_protein_target_g = ?, daily_carbs_target_g = ?, daily_fat_target_g = ?,
-                    daily_water_target_ml = ?, goal_type = ?, activity_level = ?,
-                    birth_date = ?, current_weight_kg = ?, meal_distribution = ?,
-                    updated_at = ?
-                WHERE user_id = ?
-            """, (
-                name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake,
-                prot, ring, scale, google_email, google_name, google_picture, google_sub,
-                daily_protein, daily_carbs, daily_fat, daily_water, goal_type, activity_level,
-                birth_date, current_weight, meal_distribution, now_str, user_id
-            ))
-            conn.commit()
-
-        return self.get_user_profile(user_id=user_id)
-
-    def _format_device_row(self, row: Optional[Dict[str, Any]], reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
-        """Formate et protège une ligne d'appareil en chiffrant/déchiffrant les identifiants au besoin."""
-        if not row:
-            return None
-        d = dict(row)
-        # S'assurer des champs standards
-        d["connected"] = bool(d.get("connected"))
-        d["is_active"] = bool(d.get("is_active", 1))
-        d["sync_status"] = d.get("sync_status") or ("connected" if d["connected"] else "disconnected")
-        d["last_sync_at"] = d.get("last_sync_at") or d.get("last_sync")
-
-        # Déchiffrement des credentials
-        enc_cred = d.get("encrypted_credentials")
-        if enc_cred:
-            creds = decrypt_credentials(enc_cred)
-        elif d.get("api_key"):
-            creds = {"api_key": d["api_key"]}
-        else:
-            creds = {}
-
-        if reveal_secrets:
-            d["credentials"] = creds
-        else:
-            # Masquer les clés pour éviter toute fuite dans les logs ou API publiques
-            d.pop("encrypted_credentials", None)
-            d.pop("api_key", None)
-            d["has_credentials"] = bool(creds)
-            if creds.get("api_key"):
-                raw_k = str(creds["api_key"])
-                d["api_key_masked"] = f"{raw_k[:4]}...{raw_k[-4:]}" if len(raw_k) > 8 else "***"
-        return d
-
-    def get_user_devices(self, user_id: int = 1, reveal_secrets: bool = False) -> List[Dict[str, Any]]:
-        """Récupère les objets connectés associés à user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY id ASC", (user_id,))
-            rows = cursor.fetchall()
-        return [self._format_device_row(r, reveal_secrets=reveal_secrets) for r in rows]
-
-    def get_user_device(self, device_id: str, user_id: int = 1, reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
-        """Récupère un objet connecté spécifique pour un user_id."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1", (user_id, device_id))
-            row = cursor.fetchone()
-        return self._format_device_row(row, reveal_secrets=reveal_secrets)
-
-    def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
-        """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
-            deleted = cursor.rowcount > 0
-            conn.commit()
-        return deleted
-
-    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
-        """Met à jour le statut temps réel et l'horodatage de dernière synchronisation."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE user_devices
-                SET sync_status = ?, last_sync = ?, last_sync_at = ?, updated_at = ?
-                WHERE user_id = ? AND device_id = ?
-            """, (sync_status, now_str, now_str, now_str, user_id, device_id))
-            conn.commit()
-            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
-            row = cursor.fetchone()
-        return self._format_device_row(row, reveal_secrets=False)
-
-    def update_user_device(
-        self,
-        device_id: str,
-        name: str,
-        device_type: str,
-        connected: bool,
-        auth_type: str = "connected",
-        api_key: Optional[str] = None,
-        credentials: Optional[Dict[str, Any]] = None,
-        account_email: Optional[str] = None,
-        is_active: bool = True,
-        sync_status: Optional[str] = None,
-        user_id: int = 1
-    ) -> Dict[str, Any]:
-        """Enregistre ou met à jour un objet connecté pour user_id avec chiffrement au repos."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        if sync_status is None:
-            sync_status = "connected" if connected else "disconnected"
-
-        # Préparation des credentials à chiffrer
-        creds_to_encrypt = dict(credentials) if credentials else {}
-        if api_key and "api_key" not in creds_to_encrypt:
-            creds_to_encrypt["api_key"] = api_key
-
-        encrypted_credentials = encrypt_credentials(creds_to_encrypt) if creds_to_encrypt else None
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO user_devices (
-                        user_id, device_id, name, device_type, connected, auth_type,
-                        api_key, encrypted_credentials, account_email, is_active,
-                        last_sync, last_sync_at, sync_status, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, device_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        device_type = EXCLUDED.device_type,
-                        connected = EXCLUDED.connected,
-                        auth_type = EXCLUDED.auth_type,
-                        api_key = COALESCE(EXCLUDED.api_key, user_devices.api_key),
-                        encrypted_credentials = COALESCE(EXCLUDED.encrypted_credentials, user_devices.encrypted_credentials),
-                        account_email = COALESCE(EXCLUDED.account_email, user_devices.account_email),
-                        is_active = EXCLUDED.is_active,
-                        last_sync = EXCLUDED.last_sync,
-                        last_sync_at = EXCLUDED.last_sync_at,
-                        sync_status = EXCLUDED.sync_status,
-                        updated_at = EXCLUDED.updated_at
-                    RETURNING *;
-                """, (
-                    user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
-                    now_str, now_str, sync_status, now_str
-                ))
-                row = cursor.fetchone()
-            else:
-                cursor.execute("""
-                    INSERT INTO user_devices (
-                        user_id, device_id, name, device_type, connected, auth_type,
-                        api_key, encrypted_credentials, account_email, is_active,
-                        last_sync, last_sync_at, sync_status, updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, device_id) DO UPDATE SET
-                        name = excluded.name,
-                        device_type = excluded.device_type,
-                        connected = excluded.connected,
-                        auth_type = excluded.auth_type,
-                        api_key = COALESCE(excluded.api_key, user_devices.api_key),
-                        encrypted_credentials = COALESCE(excluded.encrypted_credentials, user_devices.encrypted_credentials),
-                        account_email = COALESCE(excluded.account_email, user_devices.account_email),
-                        is_active = excluded.is_active,
-                        last_sync = excluded.last_sync,
-                        last_sync_at = excluded.last_sync_at,
-                        sync_status = excluded.sync_status,
-                        updated_at = excluded.updated_at
-                """, (
-                    user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
-                    now_str, now_str, sync_status, now_str
-                ))
-                conn.commit()
-                cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
-                row = cursor.fetchone()
-            conn.commit()
-        return self._format_device_row(row, reveal_secrets=False)
-
-    # ---------------------------------------------------------
-    # Google OAuth / GIS Sessions
-    # ---------------------------------------------------------
-
-    def get_google_config(self) -> Dict[str, Any]:
-        """Récupère la configuration Google Client ID."""
-        client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT google_client_id FROM google_auth_config ORDER BY id DESC LIMIT 1")
-            row = cursor.fetchone()
-            if row and row.get("google_client_id"):
-                client_id = row["google_client_id"]
-
-        return {
-            "google_client_id": client_id,
-            "is_configured": bool(client_id),
-            "scopes": [
-                "openid",
-                "email",
-                "profile",
-                "https://www.googleapis.com/auth/fitness.activity.read",
-                "https://www.googleapis.com/auth/fitness.body.read"
-            ],
-            "demo_fallback_account": "sebastienlamoliate@gmail.com"
-        }
-
-    def set_google_client_id(self, client_id: str) -> Dict[str, Any]:
-        """Enregistre ou met à jour le Google Client ID."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM google_auth_config")
-            cursor.execute("""
-                INSERT INTO google_auth_config (google_client_id, updated_at)
-                VALUES (?, ?)
-            """, (client_id.strip(), now_str))
-            conn.commit()
-        return self.get_google_config()
-
-    def login_google_user(self, email: str, name: str, picture: str = "", google_sub: str = "", auth_method: str = "google") -> Dict[str, Any]:
-        """Enregistre la session Google, synchronise le compte et lie le profil utilisateur."""
-        now_str = datetime.now(timezone.utc).isoformat()
-        user = self.get_or_create_user(
-            email=email,
-            name=name,
-            picture=picture,
-            auth_provider="google",
-            google_sub=google_sub
-        )
-
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE google_sessions SET is_active = 0")
-            if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO google_sessions (email, name, picture, google_sub, auth_method, is_active, last_login)
-                    VALUES (?, ?, ?, ?, ?, 1, ?)
-                    ON CONFLICT(email) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        picture = EXCLUDED.picture,
-                        google_sub = EXCLUDED.google_sub,
-                        auth_method = EXCLUDED.auth_method,
-                        is_active = 1,
-                        last_login = EXCLUDED.last_login
-                """, (email, name, picture, google_sub, auth_method, now_str))
-            else:
-                cursor.execute("""
-                    INSERT INTO google_sessions (email, name, picture, google_sub, auth_method, is_active, last_login)
-                    VALUES (?, ?, ?, ?, ?, 1, ?)
-                    ON CONFLICT(email) DO UPDATE SET
-                        name = excluded.name,
-                        picture = excluded.picture,
-                        google_sub = excluded.google_sub,
-                        auth_method = excluded.auth_method,
-                        is_active = 1,
-                        last_login = excluded.last_login
-                """, (email, name, picture, google_sub, auth_method, now_str))
-            conn.commit()
-
-        self.update_user_profile({
-            "google_email": email,
-            "google_name": name,
-            "google_picture": picture,
-            "google_sub": google_sub
-        }, user_id=user["id"])
-
-        sess = self.get_google_session()
-        sess["user_id"] = user["id"]
-        sess["uuid"] = user["uuid"]
-        return sess
-
-    def get_google_session(self) -> Dict[str, Any]:
-        """Récupère la session active Google."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM google_sessions WHERE is_active = 1 ORDER BY last_login DESC LIMIT 1")
-            row = cursor.fetchone()
-
-        if row:
-            session_data = dict(row)
-            # Récupérer l'ID utilisateur correspondant
-            user_row = None
-            with self.get_connection() as conn2:
-                cur2 = conn2.cursor()
-                cur2.execute("SELECT id, uuid FROM users WHERE email = ?", (session_data["email"],))
-                user_row = cur2.fetchone()
-
-            return {
-                "is_authenticated": True,
-                "user_id": user_row["id"] if user_row else 1,
-                "uuid": user_row["uuid"] if user_row else "00000000-0000-4000-8000-000000000001",
-                "email": session_data["email"],
-                "name": session_data["name"],
-                "picture": session_data["picture"],
-                "google_sub": session_data["google_sub"],
-                "auth_method": session_data["auth_method"],
-                "last_login": session_data["last_login"]
-            }
-
-        return {
-            "is_authenticated": False,
-            "user_id": None,
-            "uuid": None,
-            "email": None,
-            "name": None,
-            "picture": None,
-            "google_sub": None
-        }
-
-    def logout_google_user(self) -> Dict[str, Any]:
-        """Déconnecte la session active Google."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE google_sessions SET is_active = 0")
-            conn.commit()
-        return {"status": "success", "message": "Session Google fermée avec succès"}
 
     # ---------------------------------------------------------
     # Données Démo & Initialisation
@@ -2577,7 +855,8 @@ class Database:
             except Exception:
                 pass
 
-    def _seed_demo_data_if_empty(self, user_id: int = 1):
+
+    def _seed_demo_data_if_empty(self, user_id: int):
         """Pré-charge 30 jours d'historique réaliste si la table weights est vide pour cet utilisateur."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2701,11 +980,12 @@ class Database:
                     ]
                 ), user_id=user_id)
 
+
     # ---------------------------------------------------------
     # Sauvegarde / Export / Nettoyage
     # ---------------------------------------------------------
 
-    def export_full_backup(self, user_id: int = 1) -> Dict[str, Any]:
+    def export_full_backup(self, user_id: int) -> Dict[str, Any]:
         """Exporte l'intégralité du profil et de l'historique de l'utilisateur."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2762,7 +1042,8 @@ class Database:
             "saved_meals": saved_meals_list
         }
 
-    def import_full_backup(self, data: Dict[str, Any], overwrite: bool = False, user_id: int = 1) -> Dict[str, Any]:
+
+    def import_full_backup(self, data: Dict[str, Any], overwrite: bool = False, *, user_id: int) -> Dict[str, Any]:
         """Restaure ou synchronise des données de sauvegarde JSON pour user_id."""
         imported_counts = {"weights": 0, "activities": 0, "meals": 0, "devices": 0}
 
@@ -2865,7 +1146,8 @@ class Database:
             "message": f"Restauration terminée : {imported_counts['weights']} pesées, {imported_counts['activities']} activités, {imported_counts['meals']} repas."
         }
 
-    def clear_all_history(self, keep_profile: bool = True, user_id: int = 1):
+
+    def clear_all_history(self, keep_profile: bool = True, *, user_id: int):
         """Efface l'historique pour un utilisateur spécifique."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2881,7 +1163,174 @@ class Database:
                 cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))
             conn.commit()
 
-    def reset_demo_data(self, user_id: int = 1):
+
+    def reset_demo_data(self, user_id: int):
         """Réinitialise et recharge le jeu complet de démonstration sur 30 jours pour user_id."""
         self.clear_all_history(keep_profile=True, user_id=user_id)
         self._seed_demo_data_if_empty(user_id=user_id)
+
+    # =====================================================================
+    # Délégation vers les repositories (compatibilité de l'API historique)
+    # =====================================================================
+
+    def _ensure_default_user(self) -> Dict[str, Any]:
+        return self.users._ensure_default_user()
+
+    def get_or_create_user(self, email: str, name: Optional[str]=None, picture: Optional[str]=None, auth_provider: str='google', google_sub: Optional[str]=None, password_hash: Optional[str]=None) -> Dict[str, Any]:
+        return self.users.get_or_create_user(email=email, name=name, picture=picture, auth_provider=auth_provider, google_sub=google_sub, password_hash=password_hash)
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+        return self.users.get_user_by_id(user_id=user_id)
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        return self.users.get_user_by_email(email=email)
+
+    def calculate_7d_trend(self, target_date: date, new_weight_kg: float, user_id: int) -> float:
+        return self.weights.calculate_7d_trend(target_date=target_date, new_weight_kg=new_weight_kg, user_id=user_id)
+
+    def insert_weight(self, entry: WeightEntry, user_id: int) -> WeightEntry:
+        return self.weights.insert_weight(entry=entry, user_id=user_id)
+
+    def get_weights(self, limit: int=30, *, user_id: int) -> List[WeightEntry]:
+        return self.weights.get_weights(limit=limit, user_id=user_id)
+
+    def get_weight_by_id(self, weight_id: int, user_id: int) -> Optional[WeightEntry]:
+        return self.weights.get_weight_by_id(weight_id=weight_id, user_id=user_id)
+
+    def update_weight(self, weight_id: int, entry: WeightEntry, user_id: int) -> Optional[WeightEntry]:
+        return self.weights.update_weight(weight_id=weight_id, entry=entry, user_id=user_id)
+
+    def delete_weight(self, weight_id: int, user_id: int) -> bool:
+        return self.weights.delete_weight(weight_id=weight_id, user_id=user_id)
+
+    def insert_activity(self, entry: ActivityEntry, user_id: int) -> ActivityEntry:
+        return self.weights.insert_activity(entry=entry, user_id=user_id)
+
+    def get_activities(self, limit: int=30, *, user_id: int) -> List[ActivityEntry]:
+        return self.weights.get_activities(limit=limit, user_id=user_id)
+
+    def insert_meal(self, entry: MealEntry, user_id: int) -> MealEntry:
+        return self.meals.insert_meal(entry=entry, user_id=user_id)
+
+    def get_meals_for_date(self, target_date: date, user_id: int) -> List[MealEntry]:
+        return self.meals.get_meals_for_date(target_date=target_date, user_id=user_id)
+
+    def get_meals(self, limit: int=50, *, user_id: int) -> List[MealEntry]:
+        return self.meals.get_meals(limit=limit, user_id=user_id)
+
+    def get_meal_by_id(self, meal_id: int, user_id: int) -> Optional[MealEntry]:
+        return self.meals.get_meal_by_id(meal_id=meal_id, user_id=user_id)
+
+    def update_meal(self, meal_id: int, entry: MealEntry, user_id: int) -> Optional[MealEntry]:
+        return self.meals.update_meal(meal_id=meal_id, entry=entry, user_id=user_id)
+
+    def delete_meal(self, meal_id: int, user_id: int) -> bool:
+        return self.meals.delete_meal(meal_id=meal_id, user_id=user_id)
+
+    def insert_saved_meal(self, saved_meal: SavedMeal, user_id: int) -> SavedMeal:
+        return self.meals.insert_saved_meal(saved_meal=saved_meal, user_id=user_id)
+
+    def get_saved_meals(self, meal_type: Optional[str]=None, is_favorite: Optional[bool]=None, *, user_id: int) -> List[SavedMeal]:
+        return self.meals.get_saved_meals(meal_type=meal_type, is_favorite=is_favorite, user_id=user_id)
+
+    def get_saved_meal_by_id(self, meal_id: int, user_id: int) -> Optional[SavedMeal]:
+        return self.meals.get_saved_meal_by_id(meal_id=meal_id, user_id=user_id)
+
+    def update_saved_meal(self, meal_id: int, saved_meal: SavedMeal, user_id: int) -> Optional[SavedMeal]:
+        return self.meals.update_saved_meal(meal_id=meal_id, saved_meal=saved_meal, user_id=user_id)
+
+    def delete_saved_meal(self, meal_id: int, user_id: int) -> bool:
+        return self.meals.delete_saved_meal(meal_id=meal_id, user_id=user_id)
+
+    def insert_food_item(self, item: CatalogItem, user_id: int) -> CatalogItem:
+        return self.meals.insert_food_item(item=item, user_id=user_id)
+
+    def get_food_items(self, item_type: Optional[str]=None, query: Optional[str]=None, *, user_id: int) -> List[CatalogItem]:
+        return self.meals.get_food_items(item_type=item_type, query=query, user_id=user_id)
+
+    def get_food_item_by_id(self, item_id: int, user_id: int) -> Optional[CatalogItem]:
+        return self.meals.get_food_item_by_id(item_id=item_id, user_id=user_id)
+
+    def update_food_item(self, item_id: int, data: Dict[str, Any], user_id: int) -> Optional[CatalogItem]:
+        return self.meals.update_food_item(item_id=item_id, data=data, user_id=user_id)
+
+    def delete_food_item(self, item_id: int, user_id: int) -> bool:
+        return self.meals.delete_food_item(item_id=item_id, user_id=user_id)
+
+    def _seed_nutrition_benefits(self):
+        return self.meals._seed_nutrition_benefits()
+
+    def get_all_nutrition_benefits(self) -> List[NutritionBenefitItem]:
+        return self.meals.get_all_nutrition_benefits()
+
+    def get_food_item_benefits(self, food_item_id: int) -> List[AssociatedBenefit]:
+        return self.meals.get_food_item_benefits(food_item_id=food_item_id)
+
+    def set_food_item_benefits(self, food_item_id: int, benefits_data: List[Dict[str, Any]]) -> List[AssociatedBenefit]:
+        return self.meals.set_food_item_benefits(food_item_id=food_item_id, benefits_data=benefits_data)
+
+    def get_or_create_meal_log(self, date_val: date, meal_type: str, user_id: int) -> MealLog:
+        return self.meals.get_or_create_meal_log(date_val=date_val, meal_type=meal_type, user_id=user_id)
+
+    def _build_meal_log(self, row: Dict[str, Any], user_id: int) -> MealLog:
+        return self.meals._build_meal_log(row=row, user_id=user_id)
+
+    def get_meal_logs_for_date(self, target_date: date, user_id: int) -> List[MealLog]:
+        return self.meals.get_meal_logs_for_date(target_date=target_date, user_id=user_id)
+
+    def add_item_to_meal_log(self, date_val: date, meal_type: str, name: str, quantity: float, unit: str, calories: float, protein_g: float=0.0, carbs_g: float=0.0, fat_g: float=0.0, fiber_g: float=0.0, food_item_id: Optional[int]=None, *, user_id: int) -> MealLog:
+        return self.meals.add_item_to_meal_log(date_val=date_val, meal_type=meal_type, name=name, quantity=quantity, unit=unit, calories=calories, protein_g=protein_g, carbs_g=carbs_g, fat_g=fat_g, fiber_g=fiber_g, food_item_id=food_item_id, user_id=user_id)
+
+    def delete_meal_log_item(self, item_id: int, user_id: int) -> Optional[MealLog]:
+        return self.meals.delete_meal_log_item(item_id=item_id, user_id=user_id)
+
+    def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int):
+        return self.meals._recalculate_meal_log_totals(meal_log_id=meal_log_id, user_id=user_id)
+
+    def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int):
+        return self.meals._sync_meal_log_to_meals(meal_log_id=meal_log_id, user_id=user_id)
+
+    def sync_all_meal_logs_to_meals(self, user_id: Optional[int]=None):
+        return self.meals.sync_all_meal_logs_to_meals(user_id=user_id)
+
+    def _get_meal_log_by_id(self, meal_log_id: int, user_id: int) -> MealLog:
+        return self.meals._get_meal_log_by_id(meal_log_id=meal_log_id, user_id=user_id)
+
+    def get_user_profile(self, user_id: int) -> Dict[str, Any]:
+        return self.users.get_user_profile(user_id=user_id)
+
+    def update_user_profile(self, data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
+        return self.users.update_user_profile(data=data, user_id=user_id)
+
+    def _format_device_row(self, row: Optional[Dict[str, Any]], reveal_secrets: bool=False) -> Optional[Dict[str, Any]]:
+        return self.devices._format_device_row(row=row, reveal_secrets=reveal_secrets)
+
+    def get_user_devices(self, user_id: int, reveal_secrets: bool=False) -> List[Dict[str, Any]]:
+        return self.devices.get_user_devices(user_id=user_id, reveal_secrets=reveal_secrets)
+
+    def get_user_device(self, device_id: str, user_id: int, reveal_secrets: bool=False) -> Optional[Dict[str, Any]]:
+        return self.devices.get_user_device(device_id=device_id, user_id=user_id, reveal_secrets=reveal_secrets)
+
+    def delete_user_device(self, device_id: str, user_id: int) -> bool:
+        return self.devices.delete_user_device(device_id=device_id, user_id=user_id)
+
+    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int) -> Optional[Dict[str, Any]]:
+        return self.devices.update_device_sync_status(device_id=device_id, sync_status=sync_status, user_id=user_id)
+
+    def update_user_device(self, device_id: str, name: str, device_type: str, connected: bool, auth_type: str='connected', api_key: Optional[str]=None, credentials: Optional[Dict[str, Any]]=None, account_email: Optional[str]=None, is_active: bool=True, sync_status: Optional[str]=None, *, user_id: int) -> Dict[str, Any]:
+        return self.devices.update_user_device(device_id=device_id, name=name, device_type=device_type, connected=connected, auth_type=auth_type, api_key=api_key, credentials=credentials, account_email=account_email, is_active=is_active, sync_status=sync_status, user_id=user_id)
+
+    def get_google_config(self) -> Dict[str, Any]:
+        return self.users.get_google_config()
+
+    def set_google_client_id(self, client_id: str) -> Dict[str, Any]:
+        return self.users.set_google_client_id(client_id=client_id)
+
+    def login_google_user(self, email: str, name: str, picture: str='', google_sub: str='', auth_method: str='google') -> Dict[str, Any]:
+        return self.users.login_google_user(email=email, name=name, picture=picture, google_sub=google_sub, auth_method=auth_method)
+
+    def get_google_session(self) -> Dict[str, Any]:
+        return self.users.get_google_session()
+
+    def logout_google_user(self) -> Dict[str, Any]:
+        return self.users.logout_google_user()

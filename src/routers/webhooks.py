@@ -44,16 +44,19 @@ def handle_health_webhook(payload: Dict[str, Any], token: Optional[str] = Query(
     weight_entry, act_entry = connector.process_webhook_payload(payload)
     saved_weight = None
     saved_act = None
+    # Webhook sans contexte utilisateur : cible explicitement le compte principal (user_id obligatoire)
+    user_id = db._ensure_default_user()["id"]
 
     if weight_entry:
-        saved_weight = db.insert_weight(weight_entry).model_dump()
+        saved_weight = db.insert_weight(weight_entry, user_id=user_id).model_dump()
     if act_entry:
-        saved_act = db.insert_activity(act_entry).model_dump()
+        saved_act = db.insert_activity(act_entry, user_id=user_id).model_dump()
 
     # Mettre à jour l'état de l'appareil associé
     source_name = payload.get("source", "health_connect")
     dev_id = "ringconn" if "ring" in source_name.lower() else ("withings" if "withings" in source_name.lower() else "health_connect")
     db.update_user_device(
+        user_id=user_id,
         device_id=dev_id,
         name=dev_id.replace("_", " ").title(),
         device_type="ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator"),

@@ -1,4 +1,4 @@
-"""Tests unitaires pour l'architecture IoT Santé et les connecteurs."""
+﻿"""Tests unitaires pour l'architecture IoT SantÃ© et les connecteurs."""
 
 import os
 import tempfile
@@ -16,7 +16,7 @@ from src.connectors.registry import get_connector, load_devices_config
 
 @pytest.fixture
 def temp_db():
-    """Crée une base de données temporaire pour chaque test."""
+    """CrÃ©e une base de donnÃ©es temporaire pour chaque test."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         temp_path = f.name
     # Supprimer le fichier pour tester l'initialisation et le seed
@@ -38,7 +38,7 @@ def temp_db():
 
 
 def test_models_validation():
-    """Vérifie la création et validation des modèles de données."""
+    """VÃ©rifie la crÃ©ation et validation des modÃ¨les de donnÃ©es."""
     today = date.today()
     weight = WeightEntry(
         date=today,
@@ -84,39 +84,39 @@ def test_models_validation():
 
 
 def test_db_auto_seed_and_trend(temp_db):
-    """Vérifie que la base démarre vierge et que reset_demo_data calcule la moyenne mobile sur 7 jours."""
-    assert len(temp_db.get_weights(limit=50)) == 0
-    temp_db.reset_demo_data()
-    weights = temp_db.get_weights(limit=50)
+    """VÃ©rifie que la base dÃ©marre vierge et que reset_demo_data calcule la moyenne mobile sur 7 jours."""
+    assert len(temp_db.get_weights(limit=50, user_id=1)) == 0
+    temp_db.reset_demo_data(user_id=1)
+    weights = temp_db.get_weights(limit=50, user_id=1)
     assert len(weights) == 30
-    # Vérifie que la tendance est bien calculée pour chaque entrée
+    # VÃ©rifie que la tendance est bien calculÃ©e pour chaque entrÃ©e
     for w in weights:
         assert w.trend_7d_kg is not None
         assert 70.0 < w.trend_7d_kg < 90.0
 
-    activities = temp_db.get_activities(limit=50)
+    activities = temp_db.get_activities(limit=50, user_id=1)
     assert len(activities) == 30
     assert activities[0].steps > 0
     assert activities[0].total_burned_kcal > 0
 
 
 def test_db_insert_and_custom_trend(temp_db):
-    """Vérifie l'insertion et la mise à jour de pesée avec calcul de tendance glissante 7j."""
+    """VÃ©rifie l'insertion et la mise Ã  jour de pesÃ©e avec calcul de tendance glissante 7j."""
     tomorrow = date.today() + timedelta(days=1)
     new_entry = WeightEntry(
         date=tomorrow,
         weight_kg=79.5,
         source="manual"
     )
-    saved = temp_db.insert_weight(new_entry)
+    saved = temp_db.insert_weight(new_entry, user_id=1)
     assert saved.id is not None
     assert saved.trend_7d_kg is not None
-    # La tendance doit être une moyenne cohérente
+    # La tendance doit Ãªtre une moyenne cohÃ©rente
     assert round(saved.trend_7d_kg, 1) > 75.0
 
 
 def test_withings_connector_demo_mode():
-    """Teste le WithingsScaleConnector en mode démo (sans identifiants)."""
+    """Teste le WithingsScaleConnector en mode dÃ©mo (sans identifiants)."""
     connector = WithingsScaleConnector()
     assert not connector.is_configured
     
@@ -129,7 +129,7 @@ def test_withings_connector_demo_mode():
 
 
 def test_withings_connector_parsing():
-    """Teste le parsing d'une trame réelle Withings API getmeas."""
+    """Teste le parsing d'une trame rÃ©elle Withings API getmeas."""
     connector = WithingsScaleConnector(config={"client_id": "test_id", "access_token": "test_tok", "user_height_m": 1.80})
     assert connector.is_configured
 
@@ -151,7 +151,7 @@ def test_withings_connector_parsing():
 
 
 def test_oura_connector_demo_mode():
-    """Teste le connecteur Oura en mode démo."""
+    """Teste le connecteur Oura en mode dÃ©mo."""
     connector = OuraRingConnector()
     assert not connector.is_configured
 
@@ -208,7 +208,7 @@ def test_mobile_webhook_connector():
     assert connector.authenticate_request("my_secret_token")
     assert not connector.authenticate_request("bad_token")
 
-    # Payload Apple Santé combinant Pesée et Activité
+    # Payload Apple SantÃ© combinant PesÃ©e et ActivitÃ©
     payload = {
         "date": "2026-10-16",
         "source": "apple_health",
@@ -237,7 +237,7 @@ def test_mobile_webhook_connector():
 
 
 def test_template_and_registry():
-    """Teste le registre déclaratif et le connecteur template."""
+    """Teste le registre dÃ©claratif et le connecteur template."""
     config = load_devices_config()
     assert "devices" in config
     assert "withings" in config["devices"]
@@ -258,10 +258,10 @@ def test_template_and_registry():
 
 
 def test_google_health_connect_demo_and_config():
-    """Teste le connecteur Google Health Connect en mode démo et configuré."""
+    """Teste le connecteur Google Health Connect en mode dÃ©mo et configurÃ©."""
     from src.connectors.health_connect import GoogleHealthConnectConnector
 
-    # Mode Démo sans tokens
+    # Mode DÃ©mo sans tokens
     demo_conn = GoogleHealthConnectConnector()
     assert not demo_conn.is_configured
     assert demo_conn.is_token_expired()
@@ -282,21 +282,21 @@ def test_google_health_connect_demo_and_config():
 
 
 def test_google_health_connect_token_refresh():
-    """Teste la logique de rafraîchissement automatique de token OAuth2."""
+    """Teste la logique de rafraÃ®chissement automatique de token OAuth2."""
     from src.connectors.health_connect import GoogleHealthConnectConnector
 
-    # Connecteur configuré avec refresh_token
+    # Connecteur configurÃ© avec refresh_token
     conn = GoogleHealthConnectConnector(config={
         "client_id": "google_test_client_id.apps.googleusercontent.com",
         "client_secret": "sec_test_123",
         "refresh_token": "1//test_refresh_token_abc456",
         "access_token": "ya29.expired_token",
-        "token_expiry": 1000  # Expiré
+        "token_expiry": 1000  # ExpirÃ©
     })
     assert conn.is_configured
     assert conn.is_token_expired()
 
-    # Rafraîchissement
+    # RafraÃ®chissement
     new_token = conn.refresh_access_token_if_needed()
     assert new_token is not None
     assert new_token != "ya29.expired_token"
@@ -358,7 +358,7 @@ def test_google_health_connect_aggregate_parsing():
 
 
 def test_google_health_connect_webhook_hmac_and_bearer():
-    """Teste la validation de sécurité HMAC-SHA256 et Bearer token de la passerelle Android."""
+    """Teste la validation de sÃ©curitÃ© HMAC-SHA256 et Bearer token de la passerelle Android."""
     import hashlib
     import hmac
     from src.connectors.health_connect import GoogleHealthConnectConnector

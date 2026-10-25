@@ -1,4 +1,4 @@
-"""Tests unitaires pour l'estimateur de calories par photo IA et le journal alimentaire."""
+﻿"""Tests unitaires pour l'estimateur de calories par photo IA et le journal alimentaire."""
 
 import os
 import tempfile
@@ -14,7 +14,7 @@ from src.vision_nutrition import LOCAL_NUTRITION_DATABASE, PhotoCalorieEstimator
 
 @pytest.fixture
 def temp_db():
-    """Crée une base de données temporaire pour chaque test."""
+    """CrÃ©e une base de donnÃ©es temporaire pour chaque test."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         temp_path = f.name
     if os.path.exists(temp_path):
@@ -34,7 +34,7 @@ def temp_db():
 
 
 def test_photo_calorie_estimator_local_lookup():
-    """Vérifie la résolution locale des ingrédients et calculs nutritionnels."""
+    """VÃ©rifie la rÃ©solution locale des ingrÃ©dients et calculs nutritionnels."""
     estimator = PhotoCalorieEstimator(api_key=None)
     assert not estimator.has_gemini_api
 
@@ -44,14 +44,14 @@ def test_photo_calorie_estimator_local_lookup():
     assert poulet["cal_100g"] == 120.0
     assert poulet["p"] == 26.0
 
-    # Recherche avec sous-chaîne
+    # Recherche avec sous-chaÃ®ne
     riz = estimator.lookup_ingredient("riz")
     assert riz is not None
     assert riz["c"] == 28.0
 
 
 def test_photo_calorie_estimator_description_and_scaling():
-    """Vérifie le découpage de texte et le multiplicateur de portion (0.5x à 2.0x)."""
+    """VÃ©rifie le dÃ©coupage de texte et le multiplicateur de portion (0.5x Ã  2.0x)."""
     estimator = PhotoCalorieEstimator(api_key=None)
 
     # 1. Portion 1.0x
@@ -68,7 +68,7 @@ def test_photo_calorie_estimator_description_and_scaling():
     # 2. Multiplicateur 1.5x
     res_1_5x = estimator.estimate_from_description(desc, portion_scale=1.5, meal_type="lunch")
     assert res_1_5x["portion_scale"] == 1.5
-    # Les calories doivent être proportionnelles (~1.5x)
+    # Les calories doivent Ãªtre proportionnelles (~1.5x)
     assert pytest.approx(res_1_5x["total_calories_kcal"], rel=0.05) == res_1x["total_calories_kcal"] * 1.5
     assert pytest.approx(res_1_5x["macros"]["protein_g"], rel=0.05) == res_1x["macros"]["protein_g"] * 1.5
 
@@ -77,7 +77,7 @@ def test_photo_calorie_estimator_description_and_scaling():
     assert res_0_5x["portion_scale"] == 0.5
     assert pytest.approx(res_0_5x["total_calories_kcal"], rel=0.05) == res_1x["total_calories_kcal"] * 0.5
 
-    # 4. Bornage au-delà des limites (doit être borné entre 0.5 et 2.0)
+    # 4. Bornage au-delÃ  des limites (doit Ãªtre bornÃ© entre 0.5 et 2.0)
     res_min = estimator.estimate_from_description(desc, portion_scale=0.1)
     assert res_min["portion_scale"] == 0.5
     res_max = estimator.estimate_from_description(desc, portion_scale=5.0)
@@ -85,7 +85,7 @@ def test_photo_calorie_estimator_description_and_scaling():
 
 
 def test_photo_calorie_estimator_openfoodfacts_fallback():
-    """Vérifie le mock de l'API OpenFoodFacts lors d'une recherche d'aliment inconnu en local."""
+    """VÃ©rifie le mock de l'API OpenFoodFacts lors d'une recherche d'aliment inconnu en local."""
     estimator = PhotoCalorieEstimator(api_key=None)
 
     mock_off_response = {
@@ -117,18 +117,18 @@ def test_photo_calorie_estimator_openfoodfacts_fallback():
 
 
 def test_photo_calorie_estimator_gemini_vision_mock():
-    """Vérifie le flux multimodal Gemini Vision avec simulation de réponse structurée."""
+    """VÃ©rifie le flux multimodal Gemini Vision avec simulation de rÃ©ponse structurÃ©e."""
     estimator = PhotoCalorieEstimator(api_key="mock_gemini_api_key_valid_12345")
     assert estimator.has_gemini_api
 
     mock_gemini_response_json = """
     {
       "items": [
-        {"name": "Saumon grillé", "portion_g": 140, "calories_kcal": 290, "protein_g": 28, "carbs_g": 0, "fat_g": 18, "fiber_g": 0, "confidence_score": 0.95},
+        {"name": "Saumon grillÃ©", "portion_g": 140, "calories_kcal": 290, "protein_g": 28, "carbs_g": 0, "fat_g": 18, "fiber_g": 0, "confidence_score": 0.95},
         {"name": "Quinoa cuit", "portion_g": 150, "calories_kcal": 180, "protein_g": 6.5, "carbs_g": 32, "fat_g": 2.8, "fiber_g": 4.2, "confidence_score": 0.90},
         {"name": "Asperges vertes", "portion_g": 100, "calories_kcal": 20, "protein_g": 2.2, "carbs_g": 3.8, "fat_g": 0.2, "fiber_g": 2.1, "confidence_score": 0.88}
       ],
-      "dietary_advice": "Excellente source d'acides gras oméga-3 et de protéines complètes.",
+      "dietary_advice": "Excellente source d'acides gras omÃ©ga-3 et de protÃ©ines complÃ¨tes.",
       "overall_confidence": 0.92
     }
     """
@@ -164,35 +164,35 @@ def test_photo_calorie_estimator_gemini_vision_mock():
         assert len(result["items"]) == 3
         assert result["total_calories_kcal"] == 490.0
         assert result["macros"]["protein_g"] == 36.7
-        assert "oméga-3" in result["dietary_advice"]
+        assert "omÃ©ga-3" in result["dietary_advice"]
 
 
 def test_nutrition_engine_log_and_daily_summary(temp_db):
-    """Vérifie l'enregistrement et l'agrégation quotidienne du journal des repas."""
+    """VÃ©rifie l'enregistrement et l'agrÃ©gation quotidienne du journal des repas."""
     engine = NutritionEngine(db=temp_db)
     today = date.today()
 
-    # Ajout d'un petit-déjeuner
+    # Ajout d'un petit-dÃ©jeuner
     breakfast_items = [
         FoodItem(name="Oeufs", portion_g=110, calories_kcal=157.0, protein_g=13.8, carbs_g=0.8, fat_g=10.4, fiber_g=0.0),
         FoodItem(name="Pain de campagne", portion_g=60, calories_kcal=159.0, protein_g=5.4, carbs_g=30.0, fat_g=0.9, fiber_g=2.4)
     ]
-    meal_1 = engine.log_meal(today, "breakfast", breakfast_items)
+    meal_1 = engine.log_meal(today, "breakfast", breakfast_items, user_id=1)
     assert meal_1.id is not None
     assert meal_1.total_calories_kcal == 316.0
 
-    # Ajout d'un déjeuner
+    # Ajout d'un dÃ©jeuner
     lunch_items = [
         FoodItem(name="Blanc de poulet", portion_g=150, calories_kcal=180.0, protein_g=39.0, carbs_g=0.0, fat_g=2.7, fiber_g=0.0),
         FoodItem(name="Riz basmati", portion_g=180, calories_kcal=234.0, protein_g=4.9, carbs_g=50.4, fat_g=0.5, fiber_g=0.7)
     ]
-    meal_2 = engine.log_meal(today, "lunch", lunch_items)
+    meal_2 = engine.log_meal(today, "lunch", lunch_items, user_id=1)
     assert meal_2.id is not None
 
-    # Récupération et résumé
-    summary = engine.get_daily_nutrition_summary(today)
-    # temp_db auto-seede déjà des repas pour today (si i<=6)
-    # vérifions que les totaux incluent nos ajouts
+    # RÃ©cupÃ©ration et rÃ©sumÃ©
+    summary = engine.get_daily_nutrition_summary(today, user_id=1)
+    # temp_db auto-seede dÃ©jÃ  des repas pour today (si i<=6)
+    # vÃ©rifions que les totaux incluent nos ajouts
     assert summary["meals_count"] >= 2
     assert summary["total_calories_kcal"] > 550.0
     assert summary["macros"]["protein_pct"] > 0.0
@@ -200,7 +200,7 @@ def test_nutrition_engine_log_and_daily_summary(temp_db):
 
 
 def test_nutrition_engine_metabolic_bmr_and_tdee():
-    """Vérifie la formule Mifflin-St Jeor et le calcul du TDEE."""
+    """VÃ©rifie la formule Mifflin-St Jeor et le calcul du TDEE."""
     # Homme: 80 kg, 178 cm, 35 ans
     # BMR = (10 * 80) + (6.25 * 178) - (5 * 35) + 5 = 800 + 1112.5 - 175 + 5 = 1742.5 kcal
     bmr_m = NutritionEngine.calculate_bmr_mifflin_st_jeor(80.0, 178.0, 35, gender="male")
@@ -217,7 +217,7 @@ def test_nutrition_engine_metabolic_bmr_and_tdee():
 
 
 def test_nutrition_engine_energy_balance(temp_db):
-    """Vérifie le calcul du bilan énergétique net et de la projection de poids."""
+    """VÃ©rifie le calcul du bilan Ã©nergÃ©tique net et de la projection de poids."""
     engine = NutritionEngine(db=temp_db)
     today = date.today()
 
@@ -226,7 +226,8 @@ def test_nutrition_engine_energy_balance(temp_db):
         user_weight_kg=80.0,
         user_height_cm=178.0,
         user_age=35,
-        gender="male"
+        gender="male",
+        user_id=1
     )
 
     assert "calories_intake_kcal" in balance
@@ -239,17 +240,17 @@ def test_nutrition_engine_energy_balance(temp_db):
 
 
 def test_db_meals_seed(temp_db):
-    """Vérifie que la base démarre vierge et que reset_demo_data charge les repas de test."""
-    assert len(temp_db.get_meals(limit=50)) == 0
-    temp_db.reset_demo_data()
-    meals = temp_db.get_meals(limit=50)
+    """VÃ©rifie que la base dÃ©marre vierge et que reset_demo_data charge les repas de test."""
+    assert len(temp_db.get_meals(limit=50, user_id=1)) == 0
+    temp_db.reset_demo_data(user_id=1)
+    meals = temp_db.get_meals(limit=50, user_id=1)
     assert len(meals) > 0
-    # Vérifie que les 4 types de repas sont représentés
+    # VÃ©rifie que les 4 types de repas sont reprÃ©sentÃ©s
     meal_types = {m.meal_type for m in meals}
     assert {"breakfast", "lunch", "dinner", "snack"}.issubset(meal_types)
 
-    # Vérifie qu'on peut récupérer les repas pour aujourd'hui
-    today_meals = temp_db.get_meals_for_date(date.today())
+    # VÃ©rifie qu'on peut rÃ©cupÃ©rer les repas pour aujourd'hui
+    today_meals = temp_db.get_meals_for_date(date.today(), user_id=1)
     assert len(today_meals) == 4
     total_day_cal = sum(m.total_calories_kcal for m in today_meals)
     assert 1500.0 < total_day_cal < 2500.0

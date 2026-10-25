@@ -34,6 +34,8 @@ def run_daily_sync():
     print("=" * 60)
 
     db = Database()
+    # Script batch sans contexte utilisateur : cible explicitement le compte principal
+    user_id = db._ensure_default_user()["id"]
     today = date.today()
     start_date = today - timedelta(days=2)  # Fenêtre de synchronisation sur 48h
     
@@ -47,7 +49,7 @@ def run_daily_sync():
     weights = withings_connector.sync_weights(start_date=start_date, end_date=today)
     print(f"Pesees recuperees : {len(weights)}")
     for entry in weights:
-        db.insert_weight(entry)
+        db.insert_weight(entry, user_id=user_id)
         print(f"  -> Enregistre : {entry.date} - {entry.weight_kg} kg (MG: {entry.body_fat_pct}%, MM: {entry.muscle_mass_kg} kg)")
 
     # 2. Synchronisation Oura Ring (Sommeil, HRV, pas, calories actives)
@@ -58,7 +60,7 @@ def run_daily_sync():
     activities = oura_connector.sync_activities(start_date=start_date, end_date=today)
     print(f"Activites recuperees : {len(activities)}")
     for act in activities:
-        db.insert_activity(act)
+        db.insert_activity(act, user_id=user_id)
         print(f"  -> Enregistre : {act.date} - {act.steps} pas, {act.active_calories_kcal} kcal actives, HRV: {act.hrv_ms} ms, Sommeil: {act.sleep_score}/100")
 
     print("\n" + "=" * 60)

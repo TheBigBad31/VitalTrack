@@ -30,7 +30,8 @@ class NutritionEngine:
         meal_type: MealType,
         items: List[FoodItem],
         photo_data_url: Optional[str] = None,
-        user_id: int = 1
+        *,
+        user_id: int
     ) -> MealEntry:
         """Enregistre un repas complet calculé à partir d'une liste d'aliments."""
         total_cal = round(sum(i.calories_kcal for i in items), 1)
@@ -52,11 +53,11 @@ class NutritionEngine:
         )
         return self.db.insert_meal(entry, user_id=user_id)
 
-    def get_meals_by_date(self, target_date: date, user_id: int = 1) -> List[MealEntry]:
+    def get_meals_by_date(self, target_date: date, user_id: int) -> List[MealEntry]:
         """Récupère tous les repas enregistrés pour une date donnée."""
         return self.db.get_meals_for_date(target_date, user_id=user_id)
 
-    def get_daily_nutrition_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
+    def get_daily_nutrition_summary(self, target_date: date, user_id: int) -> Dict[str, Any]:
         """Agrège tous les repas du jour en totaux et pourcentages de macros."""
         meals = self.get_meals_by_date(target_date, user_id=user_id)
 
@@ -160,7 +161,8 @@ class NutritionEngine:
         user_height_cm: float = 178.0,
         user_age: int = 35,
         gender: Literal["male", "female"] = "male",
-        user_id: int = 1
+        *,
+        user_id: int
     ) -> Dict[str, Any]:
         """Calcule le bilan énergétique net et la trajectoire de poids."""
         # 1. Calories ingérées (journal des repas)
