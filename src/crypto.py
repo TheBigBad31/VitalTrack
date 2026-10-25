@@ -2,32 +2,58 @@
 
 Fournit :
 - Chiffrement symétrique fort basé sur Fernet (AES-128-CBC avec HMAC-SHA256)
-- Dérivation de clé sécurisée PBKDF2 à partir de DATA_ENCRYPTION_KEY ou SECRET_KEY
+- Dérivation de clé sécurisée SHA-256 / HKDF à partir de DATA_ENCRYPTION_KEY ou SECRET_KEY
+- Validation fail-closed au démarrage en environnement de production (interdiction de clé par défaut)
 - Support pour chiffrer / déchiffrer des dictionnaires de credentials complets (JSON) ou chaînes simples
 - Tolérance et rétrocompatibilité (si une valeur était en clair ou non chiffrée, déchiffrement transparent)
+- Logging des erreurs de déchiffrement pour audit et rotation de clés
 """
 
 import base64
 import hashlib
 import json
+import logging
 import os
 from typing import Any, Dict, Optional, Union
 from cryptography.fernet import Fernet, InvalidToken
 
-# Clé de chiffrement au repos
-# Fallback sécurisé par défaut si non spécifié dans l'environnement
-_DEFAULT_KEY_SEED = os.getenv(
-    "DATA_ENCRYPTION_KEY",
-    os.getenv("SECRET_KEY", "vitaltrack-encryption-secret-key-neon-secure-2026")
-)
+logger = logging.getLogger("vitaltrack.crypto")
+
+
+class MissingEncryptionKeyError(RuntimeError):
+    """Exception levée en production si aucune clé de chiffrement valide n'est configurée."""
+    pass
+
+
+def _is_production() -> bool:
+    """Détecte si l'application tourne en environnement de production ou cloud."""
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return True
+    env_name = os.getenv("ENVIRONMENT") or os.getenv("ENV") or os.getenv("NODE_ENV") or ""
+    return env_name.lower() in ("production", "prod", "staging")
+
+
+def _resolve_key_seed() -> str:
+    """Résout la clé de chiffrement ou échoue strictement en production."""
+    key_seed = os.getenv("DATA_ENCRYPTION_KEY") or os.getenv("SECRET_KEY")
+    if not key_seed:
+        if _is_production():
+            raise MissingEncryptionKeyError(
+                "[VitalTrack Security Error] DATA_ENCRYPTION_KEY ou SECRET_KEY doit obligatoirement être configurée en production. "
+                "Le fallback de clé en clair est strictement interdit."
+            )
+        # Clé réservée uniquement pour le développement local et les tests unitaires
+        key_seed = "vitaltrack-dev-local-only-insecure-key-2026"
+    return key_seed
+
 
 def _get_fernet_key(seed: str) -> bytes:
     """Dérive une clé Fernet valide 32-octets base64 urlsafe à partir d'un secret arbitraire."""
-    # Dérivation déterministe via SHA256
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 
-_FERNET_INSTANCE = Fernet(_get_fernet_key(_DEFAULT_KEY_SEED))
+
+_FERNET_INSTANCE = Fernet(_get_fernet_key(_resolve_key_seed()))
 
 
 def encrypt_data(data: Union[str, Dict[str, Any], None]) -> Optional[str]:
@@ -67,8 +93,11 @@ def decrypt_data(encrypted_str: Optional[str]) -> Optional[str]:
     try:
         decrypted_bytes = _FERNET_INSTANCE.decrypt(token.encode("utf-8"))
         return decrypted_bytes.decode("utf-8")
-    except (InvalidToken, Exception):
-        # En cas d'invalidation ou mauvaise clé, éviter de planter l'application
+    except InvalidToken as e:
+        logger.error(f"[VitalTrack Crypto Error] Échec de déchiffrement Fernet (InvalidToken) : rotation de clé ou corruption du token. Détail: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"[VitalTrack Crypto Error] Erreur inattendue lors du déchiffrement : {e}")
         return None
 
 

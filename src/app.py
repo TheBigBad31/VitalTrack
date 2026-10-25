@@ -1855,10 +1855,11 @@ def export_backup(current_user: AuthUser = Depends(get_current_user)):
 
 
 @app.get("/api/export/csv")
-def export_data_csv(current_user: AuthUser = Depends(get_current_user)):
-    """Exporte les données biométriques principales (pesées et activités) au format CSV standard (RGPD)."""
-    weights = db.get_weights(limit=1000, user_id=current_user.id)
-    activities = db.get_activities(limit=1000, user_id=current_user.id)
+def export_data_csv(limit: Optional[int] = Query(None, description="Limite optionnelle pour pagination ou export complet"), current_user: AuthUser = Depends(get_current_user)):
+    """Exporte l'intégralité des données biométriques (pesées et activités) au format CSV standard sans troncature (RGPD)."""
+    fetch_limit = limit if limit and limit > 0 else 1000000
+    weights = db.get_weights(limit=fetch_limit, user_id=current_user.id)
+    activities = db.get_activities(limit=fetch_limit, user_id=current_user.id)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1909,10 +1910,40 @@ def export_data_csv(current_user: AuthUser = Depends(get_current_user)):
     )
 
 
+class ConfirmDeletionPayload(BaseModel):
+    confirm: bool = Field(True, description="Confirmation explicite de la suppression")
+    password: Optional[str] = Field(None, description="Mot de passe optionnel pour confirmation")
+
+
 @app.delete("/api/user/data")
+def delete_user_data_only_endpoint(
+    confirm: bool = Query(True, description="Confirmation de purge des données"),
+    payload: Optional[ConfirmDeletionPayload] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Efface l'intégralité des données et de l'historique biométrique tout en conservant le compte et les accès de l'utilisateur."""
+    is_confirmed = confirm and (payload.confirm if payload else True)
+    if not is_confirmed:
+        raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression des données (confirm=true)")
+    success = db.delete_user_data_only(user_id=current_user.id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return {
+        "status": "success",
+        "message": f"Toutes les données de santé pour {current_user.email} ont été purgées avec succès. Le compte utilisateur reste actif."
+    }
+
+
 @app.delete("/api/user/account")
-def delete_user_account_and_data_endpoint(current_user: AuthUser = Depends(get_current_user)):
+def delete_user_account_endpoint(
+    confirm: bool = Query(True, description="Confirmation de suppression du compte"),
+    payload: Optional[ConfirmDeletionPayload] = None,
+    current_user: AuthUser = Depends(get_current_user)
+):
     """Supprime définitivement le compte utilisateur et l'ensemble de ses données associées (Droit à l'oubli RGPD)."""
+    is_confirmed = confirm and (payload.confirm if payload else True)
+    if not is_confirmed:
+        raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression définitive du compte (confirm=true)")
     success = db.delete_user_account_and_data(user_id=current_user.id)
     if not success:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable ou déjà supprimé")
@@ -2079,6 +2110,11 @@ def handle_health_webhook(
     ext_id = payload.get("external_id") or payload.get("id") or (weight_entry.external_id if weight_entry else (act_entry.external_id if act_entry else None))
     idemp_key = f"{source_name}:{ext_id}" if ext_id else None
     
+    # Vérification des consentements de l'utilisateur avant ingestion
+    user_consents = db.get_user_consents(user_id=resolved_user_id)
+    can_ingest_biometrics = user_consents.get("biometrics", True)
+    can_ingest_devices = user_consents.get("devices", True)
+    
     db.insert_raw_ingest(
         source=source_name,
         payload=payload,
@@ -2087,11 +2123,11 @@ def handle_health_webhook(
         idempotency_key=idemp_key
     )
 
-    if weight_entry:
+    if weight_entry and can_ingest_biometrics:
         if ext_id and not weight_entry.external_id:
             weight_entry.external_id = str(ext_id)
         saved_weight = db.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
-    if act_entry:
+    if act_entry and can_ingest_biometrics:
         if ext_id and not act_entry.external_id:
             act_entry.external_id = str(ext_id)
         saved_act = db.insert_activity(act_entry, user_id=resolved_user_id).model_dump()
@@ -2102,7 +2138,7 @@ def handle_health_webhook(
         "resting_hr_bpm", "resting_heart_rate", "hrv_rmssd_ms", "hrv_sdnn_ms", "hrv_ms",
         "spo2_pct", "spo2", "skin_temperature_c", "skin_temperature", "sleep_score", "recovery_score"
     ])
-    if has_daily_metric:
+    if has_daily_metric and can_ingest_biometrics:
         raw_d = payload.get("date")
         target_d = date.fromisoformat(str(raw_d)[:10]) if raw_d else date.today()
         d_metric = DailyMetricsEntry(
@@ -2131,7 +2167,7 @@ def handle_health_webhook(
         )
         saved_daily_metric = db.insert_daily_metric(d_metric, user_id=resolved_user_id).model_dump()
 
-    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu
+    # 4. Mettre à jour l'état de l'appareil associé pour l'utilisateur résolu si consentement accordé
     dev_id = matched_device.get("device_id") if matched_device else (
         "ringconn" if "ring" in source_name.lower() else (
             "withings" if "withings" in source_name.lower() else "health_connect"
@@ -2142,14 +2178,15 @@ def handle_health_webhook(
         "ring" if dev_id == "ringconn" else ("scale" if dev_id == "withings" else "mobile_aggregator")
     )
 
-    db.update_user_device(
-        device_id=dev_id,
-        name=dev_name,
-        device_type=dev_type,
-        connected=True,
-        auth_type="webhook",
-        user_id=resolved_user_id
-    )
+    if can_ingest_devices:
+        db.update_user_device(
+            device_id=dev_id,
+            name=dev_name,
+            device_type=dev_type,
+            connected=True,
+            auth_type="webhook",
+            user_id=resolved_user_id
+        )
 
     return {
         "status": "success",

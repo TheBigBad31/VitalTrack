@@ -214,10 +214,18 @@ def test_sleep_sessions_and_intraday_retention():
         inserted = db.insert_intraday_samples(samples, user_id=user_id)
         assert inserted == 2
 
-        # Purge de rétention 60 jours
+        # Purge et agrégation de rétention 60 jours
         purge_res = db.purge_and_aggregate_intraday(retention_days=60, user_id=user_id)
         assert purge_res["status"] == "success"
         assert purge_res["purged_samples"] >= 1
+        assert purge_res["aggregated_days"] >= 1
+
+        # Vérifier que l'agrégat a bien été sauvegardé dans daily_metrics
+        daily_metrics = db.get_daily_metrics(limit=10, user_id=user_id)
+        agg_date_str = "2026-08-01"
+        matched_agg = [m for m in daily_metrics if m.date.isoformat() == agg_date_str]
+        assert len(matched_agg) > 0
+        assert matched_agg[0].resting_hr_bpm == 62
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -241,7 +249,7 @@ def test_encryption_at_rest_and_rgpd_endpoints():
     assert "daily_metrics" in export_data
     assert export_data["version"] == "3.0"
 
-    # 2. Export CSV
+    # 2. Export CSV (sans limite)
     resp_csv = client.get("/api/export/csv")
     assert resp_csv.status_code == 200
     assert "text/csv" in resp_csv.headers["content-type"]
@@ -255,3 +263,16 @@ def test_encryption_at_rest_and_rgpd_endpoints():
     resp_c_post = client.post("/api/user/consents", json={"category": "analytics", "consented": False})
     assert resp_c_post.status_code == 200
     assert resp_c_post.json()["consent"]["consented"] is False
+
+    # 4. Suppression de données biométriques uniquement (sans supprimer le compte)
+    resp_del_data = client.delete("/api/user/data?confirm=true")
+    assert resp_del_data.status_code == 200
+    assert "purgées avec succès" in resp_del_data.json()["message"]
+
+    # 5. Droit à l'oubli complet avec confirmation
+    resp_del_unconfirmed = client.delete("/api/user/account?confirm=false")
+    assert resp_del_unconfirmed.status_code == 400
+
+    resp_del_account = client.delete("/api/user/account?confirm=true")
+    assert resp_del_account.status_code == 200
+    assert "définitivement supprimés" in resp_del_account.json()["message"]

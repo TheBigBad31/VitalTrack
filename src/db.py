@@ -3888,14 +3888,90 @@ class Database:
         return results
 
     def purge_and_aggregate_intraday(self, retention_days: int = 60, user_id: Optional[int] = None) -> Dict[str, Any]:
-        """Politique de rétention configurable (30 à 90 jours) : agrège puis purge les anciens échantillons intraday."""
+        """Politique de rétention configurable (30 à 90 jours) : agrège d'abord vers daily_metrics puis purge dans la même transaction."""
         days = max(30, min(90, int(retention_days)))
         cutoff_date = (date.today() - timedelta(days=days)).isoformat()
         cutoff_iso = f"{cutoff_date}T00:00:00"
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Supprimer les anciens échantillons au-delà du seuil de rétention
+            
+            # 1. Sélectionner et agréger les données à purger par (user_id, date, source)
+            # Groupement par date extraite de timestamp (10 premiers caractères : YYYY-MM-DD)
+            query_agg = """
+                SELECT 
+                    user_id,
+                    SUBSTR(timestamp, 1, 10) AS sample_date,
+                    source,
+                    metric_type,
+                    AVG(value) AS avg_val,
+                    MIN(value) AS min_val,
+                    MAX(value) AS max_val,
+                    SUM(value) AS sum_val,
+                    COUNT(*) AS count_val
+                FROM intraday_samples
+                WHERE timestamp < ?
+            """
+            params: List[Any] = [cutoff_iso]
+            if user_id:
+                query_agg += " AND user_id = ?"
+                params.append(user_id)
+            query_agg += " GROUP BY user_id, SUBSTR(timestamp, 1, 10), source, metric_type"
+            
+            cursor.execute(query_agg, tuple(params))
+            agg_rows = cursor.fetchall()
+            
+            # Organiser les résumés par clé (u_id, s_date, src)
+            summaries: Dict[Tuple[int, str, str], Dict[str, Any]] = {}
+            for r in agg_rows:
+                key = (r["user_id"], r["sample_date"], r["source"])
+                if key not in summaries:
+                    summaries[key] = {
+                        "steps": 0,
+                        "resting_hr": None,
+                        "spo2": None
+                    }
+                m_type = r["metric_type"]
+                if m_type in ("steps", "steps_hourly"):
+                    summaries[key]["steps"] = int(r["sum_val"] or 0)
+                elif m_type in ("hr", "heart_rate"):
+                    summaries[key]["resting_hr"] = round(float(r["avg_val"] or 0))
+                elif m_type in ("spo2", "spo2_pct"):
+                    summaries[key]["spo2"] = round(float(r["avg_val"] or 0), 1)
+
+            # Insérer / fusionner dans daily_metrics pour chaque groupe
+            now_str = datetime.now(timezone.utc).isoformat()
+            aggregated_count = 0
+            for (u_id, s_date, src), data in summaries.items():
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO daily_metrics (
+                            user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                            resting_hr_bpm, spo2_pct, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, date, source) DO UPDATE SET
+                            steps = CASE WHEN daily_metrics.steps = 0 THEN EXCLUDED.steps ELSE daily_metrics.steps END,
+                            resting_hr_bpm = COALESCE(daily_metrics.resting_hr_bpm, EXCLUDED.resting_hr_bpm),
+                            spo2_pct = COALESCE(daily_metrics.spo2_pct, EXCLUDED.spo2_pct),
+                            updated_at = EXCLUDED.updated_at;
+                    """, (u_id, s_date, src, data["steps"], data["resting_hr"], data["spo2"], now_str, now_str))
+                else:
+                    cursor.execute("""
+                        INSERT INTO daily_metrics (
+                            user_id, date, source, steps, active_calories_kcal, total_calories_kcal,
+                            resting_hr_bpm, spo2_pct, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, date, source) DO UPDATE SET
+                            steps = CASE WHEN daily_metrics.steps = 0 THEN excluded.steps ELSE daily_metrics.steps END,
+                            resting_hr_bpm = COALESCE(daily_metrics.resting_hr_bpm, excluded.resting_hr_bpm),
+                            spo2_pct = COALESCE(daily_metrics.spo2_pct, excluded.spo2_pct),
+                            updated_at = excluded.updated_at;
+                    """, (u_id, s_date, src, data["steps"], data["resting_hr"], data["spo2"], now_str, now_str))
+                aggregated_count += 1
+
+            # 2. Supprimer les anciens échantillons au-delà du seuil de rétention
             if user_id:
                 cursor.execute(
                     "DELETE FROM intraday_samples WHERE user_id = ? AND timestamp < ?",
@@ -3904,12 +3980,15 @@ class Database:
             else:
                 cursor.execute("DELETE FROM intraday_samples WHERE timestamp < ?", (cutoff_iso,))
             deleted = cursor.rowcount if hasattr(cursor, "rowcount") else 0
+            
+            # Commit atomique de l'agrégation et de la suppression
             conn.commit()
 
         return {
             "status": "success",
             "retention_days": days,
             "cutoff_timestamp": cutoff_iso,
+            "aggregated_days": aggregated_count,
             "purged_samples": deleted
         }
 
@@ -4035,6 +4114,31 @@ class Database:
             for r in cursor.fetchall():
                 consents[r["category"]] = bool(r["consented"])
         return consents
+
+    def delete_user_data_only(self, user_id: int) -> bool:
+        """Supprime l'intégralité des données biométriques et historiques tout en conservant le compte utilisateur et son profil."""
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM daily_metrics WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM workouts WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM sleep_stages WHERE sleep_session_id IN (SELECT id FROM sleep_sessions WHERE user_id = ?)", (user_id,))
+            cursor.execute("DELETE FROM sleep_sessions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM intraday_samples WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
+            conn.commit()
+        return True
 
     def delete_user_account_and_data(self, user_id: int) -> bool:
         """Supprime définitivement un compte utilisateur et l'intégralité de ses données (Droit à l'oubli RGPD)."""
