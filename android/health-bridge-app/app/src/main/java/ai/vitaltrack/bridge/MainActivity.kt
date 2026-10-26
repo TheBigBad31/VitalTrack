@@ -879,6 +879,7 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
         val lastSyncIso = prefs.getString("last_sync_timestamp", null)
         val metricsCount = prefs.getInt("last_sync_metrics_count", -1)
+        val lastSyncError = prefs.getString("last_sync_error", null)
 
         if (!lastSyncIso.isNullOrBlank()) {
             try {
@@ -889,6 +890,8 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 lastSyncTimeText.text = lastSyncIso
             }
+        } else if (!lastSyncError.isNullOrBlank()) {
+            lastSyncTimeText.text = "Erreur: $lastSyncError"
         } else {
             lastSyncTimeText.text = "Aucune synchro récente"
         }
@@ -924,12 +927,16 @@ class MainActivity : AppCompatActivity() {
                         syncNowBtn.text = "Synchroniser maintenant"
                         refreshSyncHistory()
                         updateConnectionStatus()
-                        Toast.makeText(this, "Synchronisation réussie !", Toast.LENGTH_SHORT).show()
+                        val mCount = workInfo.outputData.getInt("metrics_count", -1)
+                        val msg = if (mCount >= 0) "✓ Synchronisation réussie ($mCount métriques envoyées)" else "✓ Synchronisation réussie !"
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                     }
                     WorkInfo.State.FAILED -> {
                         syncNowBtn.isEnabled = true
                         syncNowBtn.text = "Synchroniser maintenant"
-                        Toast.makeText(this, "Erreur lors de la synchronisation", Toast.LENGTH_LONG).show()
+                        refreshSyncHistory()
+                        val errMsg = workInfo.outputData.getString("error_message") ?: "Erreur réseau ou permissions"
+                        Toast.makeText(this, "Échec : $errMsg", Toast.LENGTH_LONG).show()
                     }
                     WorkInfo.State.CANCELLED -> {
                         syncNowBtn.isEnabled = true

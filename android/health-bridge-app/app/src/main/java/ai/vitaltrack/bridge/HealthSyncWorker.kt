@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.WorkerParameters
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -353,24 +354,46 @@ class HealthSyncWorker(
                 .build()
 
             httpClient.newCall(request).execute().use { response ->
+                val respBody = response.body?.string() ?: ""
+                val editor = prefs.edit()
+                editor.putInt("last_http_code", response.code)
+                editor.putString("last_sync_attempt", now.toString())
                 if (response.isSuccessful) {
-                    Log.i(TAG, "Ingestion VitalTrack réussie: ${response.code}")
-                    val editor = prefs.edit()
+                    Log.i(TAG, "Ingestion VitalTrack réussie: ${response.code} - $respBody")
                     editor.putString("last_sync_timestamp", now.toString())
                     editor.putInt("last_sync_metrics_count", metricsCount)
+                    editor.remove("last_sync_error")
                     if (isFirstSync) {
                         editor.putBoolean("has_completed_first_sync", true)
                     }
                     editor.apply()
-                    Result.success()
+                    val output = Data.Builder()
+                        .putInt("metrics_count", metricsCount)
+                        .putInt("http_code", response.code)
+                        .build()
+                    Result.success(output)
                 } else {
-                    Log.e(TAG, "Erreur serveur VitalTrack HTTP: ${response.code}")
-                    Result.retry()
+                    Log.e(TAG, "Erreur serveur VitalTrack HTTP: ${response.code} - $respBody")
+                    editor.putString("last_sync_error", "HTTP ${response.code}: ${respBody.take(100)}")
+                    editor.apply()
+                    val output = Data.Builder()
+                        .putInt("http_code", response.code)
+                        .putString("error_message", "HTTP ${response.code}: ${respBody.take(100)}")
+                        .build()
+                    Result.failure(output)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Erreur synchronisation Health Connect", e)
-            Result.retry()
+            val prefs = applicationContext.getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("last_sync_attempt", Instant.now().toString())
+                .putString("last_sync_error", e.message?.take(100) ?: "Exception réseau/locale")
+                .apply()
+            val output = Data.Builder()
+                .putString("error_message", e.message?.take(100) ?: "Exception")
+                .build()
+            Result.failure(output)
         }
     }
 
