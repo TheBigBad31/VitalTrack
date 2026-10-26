@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
             if (granted.containsAll(permissions)) {
                 Toast.makeText(this, "Toutes les autorisations Health Connect accordées", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Certaines autorisations n'ont pas été accordées", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Autorisations partielles accordées (${granted.size}/${permissions.size})", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -66,15 +66,19 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(descView)
 
+        val defaultUrl = "https://vital-track-one.vercel.app/api/webhooks/health-connect"
+        val savedUrl = prefs.getString("webhook_url", null) ?: defaultUrl
+        val savedToken = prefs.getString("device_token", null) ?: ""
+
         val urlInput = EditText(this).apply {
-            hint = "URL Webhook (ex: https://vitaltrack.vercel.app/api/webhook/health)"
-            setText(prefs.getString("webhook_url", "https://vitaltrack.vercel.app/api/webhook/health"))
+            hint = "URL Webhook (ex: $defaultUrl)"
+            setText(savedUrl)
         }
         layout.addView(urlInput)
 
         val tokenInput = EditText(this).apply {
             hint = "Jeton d'appareil individuel (X-Webhook-Token)"
-            setText(prefs.getString("device_token", ""))
+            setText(savedToken)
         }
         layout.addView(tokenInput)
 
@@ -111,6 +115,15 @@ class MainActivity : AppCompatActivity() {
         val btnSyncNow = Button(this).apply {
             text = "3. Synchroniser maintenant (Test immédiat)"
             setOnClickListener {
+                val url = urlInput.text.toString().trim()
+                val tok = tokenInput.text.toString().trim()
+                if (url.isNotEmpty() && tok.isNotEmpty()) {
+                    prefs.edit()
+                        .putString("webhook_url", url)
+                        .putString("device_token", tok)
+                        .apply()
+                }
+
                 val inputData = Data.Builder()
                     .putBoolean("is_catchup", true)
                     .build()
@@ -120,7 +133,7 @@ class MainActivity : AppCompatActivity() {
                     .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .build()
                 WorkManager.getInstance(applicationContext).enqueue(oneTimeWork)
-                Toast.makeText(this@MainActivity, "Rattrapage 7 jours lancé !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Synchronisation lancée ! Vérifiez vos métriques.", Toast.LENGTH_SHORT).show()
             }
         }
         layout.addView(btnSyncNow)

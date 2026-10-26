@@ -23,6 +23,10 @@ import java.util.concurrent.TimeUnit
 /**
  * Worker d'arrière-plan Android pour lire Health Connect (RingConn, Withings, Podomètre Xiaomi)
  * et pousser un lot incrémental JSON vers le webhook VitalTrack sécurisé.
+ * 
+ * Tolérant aux pannes : chaque type de métrique Health Connect est isolé dans son propre try-catch
+ * pour éviter qu'une permission manquante ou une exception sur un type (ex: BoneMass) ne bloque
+ * toute la synchronisation des pas, poids, sommeil ou rythme cardiaque.
  */
 class HealthSyncWorker(
     appContext: Context,
@@ -64,209 +68,257 @@ class HealthSyncWorker(
             payload.put("is_catchup", isCatchup)
 
             // 1. Sommeil (Sessions & Stages)
-            val sleepSessions = JSONArray()
-            val sleepResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = SleepSessionRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val sleepSessions = JSONArray()
+                val sleepResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = SleepSessionRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            for (rec in sleepResp.records) {
-                val sObj = JSONObject()
-                sObj.put("id", rec.metadata.id)
-                sObj.put("external_id", rec.metadata.id)
-                sObj.put("start_time", rec.startTime.toString())
-                sObj.put("end_time", rec.endTime.toString())
-                sObj.put("date", rec.endTime.atZone(ZoneId.systemDefault()).toLocalDate().toString())
-                val durMin = ChronoUnit.MINUTES.between(rec.startTime, rec.endTime)
-                sObj.put("duration_minutes", durMin)
-                sObj.put("title", rec.title ?: "Sommeil")
+                for (rec in sleepResp.records) {
+                    val sObj = JSONObject()
+                    sObj.put("id", rec.metadata.id)
+                    sObj.put("external_id", rec.metadata.id)
+                    sObj.put("start_time", rec.startTime.toString())
+                    sObj.put("end_time", rec.endTime.toString())
+                    sObj.put("date", rec.endTime.atZone(ZoneId.systemDefault()).toLocalDate().toString())
+                    val durMin = ChronoUnit.MINUTES.between(rec.startTime, rec.endTime)
+                    sObj.put("duration_minutes", durMin)
+                    sObj.put("title", rec.title ?: "Sommeil")
 
-                val stages = JSONArray()
-                var deepMin = 0L
-                var lightMin = 0L
-                var remMin = 0L
-                var awakeMin = 0L
+                    val stages = JSONArray()
+                    var deepMin = 0L
+                    var lightMin = 0L
+                    var remMin = 0L
+                    var awakeMin = 0L
 
-                for (st in rec.stages) {
-                    val stObj = JSONObject()
-                    val stageStr = mapSleepStage(st.stage)
-                    stObj.put("stage", stageStr)
-                    stObj.put("start_time", st.startTime.toString())
-                    stObj.put("end_time", st.endTime.toString())
-                    val stageDurSec = ChronoUnit.SECONDS.between(st.startTime, st.endTime)
-                    stObj.put("duration_seconds", stageDurSec)
-                    stages.put(stObj)
+                    for (st in rec.stages) {
+                        val stObj = JSONObject()
+                        val stageStr = mapSleepStage(st.stage)
+                        stObj.put("stage", stageStr)
+                        stObj.put("start_time", st.startTime.toString())
+                        stObj.put("end_time", st.endTime.toString())
+                        val stageDurSec = ChronoUnit.SECONDS.between(st.startTime, st.endTime)
+                        stObj.put("duration_seconds", stageDurSec)
+                        stages.put(stObj)
 
-                    val stageDurMin = ChronoUnit.MINUTES.between(st.startTime, st.endTime)
-                    when (stageStr) {
-                        "deep" -> deepMin += stageDurMin
-                        "light" -> lightMin += stageDurMin
-                        "rem" -> remMin += stageDurMin
-                        "awake" -> awakeMin += stageDurMin
+                        val stageDurMin = ChronoUnit.MINUTES.between(st.startTime, st.endTime)
+                        when (stageStr) {
+                            "deep" -> deepMin += stageDurMin
+                            "light" -> lightMin += stageDurMin
+                            "rem" -> remMin += stageDurMin
+                            "awake" -> awakeMin += stageDurMin
+                        }
                     }
+                    sObj.put("stages", stages)
+                    sObj.put("deep_minutes", deepMin)
+                    sObj.put("light_minutes", lightMin)
+                    sObj.put("rem_minutes", remMin)
+                    sObj.put("awake_minutes", awakeMin)
+                    sleepSessions.put(sObj)
                 }
-                sObj.put("stages", stages)
-                sObj.put("deep_minutes", deepMin)
-                sObj.put("light_minutes", lightMin)
-                sObj.put("rem_minutes", remMin)
-                sObj.put("awake_minutes", awakeMin)
-                sleepSessions.put(sObj)
-            }
-            if (sleepSessions.length() > 0) {
-                payload.put("sleep_sessions", sleepSessions)
+                if (sleepSessions.length() > 0) {
+                    payload.put("sleep_sessions", sleepSessions)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire le sommeil depuis Health Connect", e)
             }
 
             // 2. Échantillons FC (HeartRate)
-            val hrSamples = JSONArray()
-            val hrResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = HeartRateRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val hrSamples = JSONArray()
+                val hrResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = HeartRateRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            for (rec in hrResp.records) {
-                for (sample in rec.samples) {
-                    val samp = JSONObject()
-                    samp.put("metric_type", "hr")
-                    samp.put("timestamp", sample.time.toString())
-                    samp.put("value", sample.beatsPerMinute)
-                    samp.put("unit", "bpm")
-                    hrSamples.put(samp)
+                for (rec in hrResp.records) {
+                    for (sample in rec.samples) {
+                        val samp = JSONObject()
+                        samp.put("metric_type", "hr")
+                        samp.put("timestamp", sample.time.toString())
+                        samp.put("value", sample.beatsPerMinute)
+                        samp.put("unit", "bpm")
+                        hrSamples.put(samp)
+                    }
                 }
-            }
-            if (hrSamples.length() > 0) {
-                payload.put("intraday_samples", hrSamples)
+                if (hrSamples.length() > 0) {
+                    payload.put("intraday_samples", hrSamples)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire les échantillons FC depuis Health Connect", e)
             }
 
             // 3. Pas (Steps)
-            val stepsResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = StepsRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val stepsResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = StepsRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            var totalSteps = 0L
-            for (rec in stepsResp.records) {
-                totalSteps += rec.count
+                var totalSteps = 0L
+                for (rec in stepsResp.records) {
+                    totalSteps += rec.count
+                }
+                payload.put("steps", totalSteps)
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire les pas depuis Health Connect", e)
             }
-            payload.put("steps", totalSteps)
 
             // 4. Calories actives
-            val calResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = ActiveCaloriesBurnedRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val calResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = ActiveCaloriesBurnedRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            var totalActiveCal = 0.0
-            for (rec in calResp.records) {
-                totalActiveCal += rec.energy.inKilocalories
+                var totalActiveCal = 0.0
+                for (rec in calResp.records) {
+                    totalActiveCal += rec.energy.inKilocalories
+                }
+                payload.put("active_calories_kcal", totalActiveCal)
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire les calories brûlées depuis Health Connect", e)
             }
-            payload.put("active_calories_kcal", totalActiveCal)
 
-            // 5. Poids & Composition corporelle Withings
-            val weightResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = WeightRecord::class,
-                    timeRangeFilter = timeRange
+            // 5. Poids & Composition corporelle (Withings)
+            try {
+                val weightResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = WeightRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            weightResp.records.lastOrNull()?.let { lastWeight ->
-                payload.put("weight_kg", lastWeight.weight.inKilograms)
-                payload.put("weight_external_id", lastWeight.metadata.id)
-                payload.put("date", lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString())
+                weightResp.records.lastOrNull()?.let { lastWeight ->
+                    payload.put("weight_kg", lastWeight.weight.inKilograms)
+                    payload.put("weight_external_id", lastWeight.metadata.id)
+                    payload.put("date", lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString())
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire le poids depuis Health Connect", e)
             }
 
             // BodyFatRecord (Withings / Health Connect)
-            val bodyFatResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = BodyFatRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val bodyFatResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = BodyFatRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            bodyFatResp.records.lastOrNull()?.let { lastFat ->
-                payload.put("body_fat_pct", lastFat.percentage.value)
+                bodyFatResp.records.lastOrNull()?.let { lastFat ->
+                    payload.put("body_fat_pct", lastFat.percentage.value)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire la masse grasse depuis Health Connect", e)
             }
 
             // LeanBodyMassRecord (Masse musculaire en kg)
-            val leanMassResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = LeanBodyMassRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val leanMassResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = LeanBodyMassRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            leanMassResp.records.lastOrNull()?.let { lastLean ->
-                payload.put("muscle_mass_kg", lastLean.mass.inKilograms)
+                leanMassResp.records.lastOrNull()?.let { lastLean ->
+                    payload.put("muscle_mass_kg", lastLean.mass.inKilograms)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire la masse musculaire depuis Health Connect", e)
             }
 
             // BoneMassRecord (Masse osseuse en kg si présent)
-            val boneMassResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = BoneMassRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val boneMassResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = BoneMassRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            boneMassResp.records.lastOrNull()?.let { lastBone ->
-                payload.put("bone_mass_kg", lastBone.mass.inKilograms)
+                boneMassResp.records.lastOrNull()?.let { lastBone ->
+                    payload.put("bone_mass_kg", lastBone.mass.inKilograms)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire la masse osseuse depuis Health Connect", e)
             }
 
             // 6. Biométrie RingConn Gen 3 (HRV RMSSD, FC repos, SpO2)
-            val hrvResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = HeartRateVariabilityRmssdRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val hrvResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = HeartRateVariabilityRmssdRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            hrvResp.records.lastOrNull()?.let { lastHrv ->
-                payload.put("hrv_ms", lastHrv.heartRateVariabilityMillis)
-                payload.put("hrv_rmssd_ms", lastHrv.heartRateVariabilityMillis)
+                hrvResp.records.lastOrNull()?.let { lastHrv ->
+                    payload.put("hrv_ms", lastHrv.heartRateVariabilityMillis)
+                    payload.put("hrv_rmssd_ms", lastHrv.heartRateVariabilityMillis)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire le HRV depuis Health Connect", e)
             }
 
-            val rhrResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = RestingHeartRateRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val rhrResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = RestingHeartRateRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            rhrResp.records.lastOrNull()?.let { lastRhr ->
-                payload.put("resting_hr_bpm", lastRhr.beatsPerMinute)
+                rhrResp.records.lastOrNull()?.let { lastRhr ->
+                    payload.put("resting_hr_bpm", lastRhr.beatsPerMinute)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire la FC de repos depuis Health Connect", e)
             }
 
-            val spo2Resp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = OxygenSaturationRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val spo2Resp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = OxygenSaturationRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            spo2Resp.records.lastOrNull()?.let { lastSpo2 ->
-                payload.put("spo2_pct", lastSpo2.percentage.value)
+                spo2Resp.records.lastOrNull()?.let { lastSpo2 ->
+                    payload.put("spo2_pct", lastSpo2.percentage.value)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire la SpO2 depuis Health Connect", e)
             }
 
             // 7. Séances d'entraînement (ExerciseSessionRecord / Workouts)
-            val exerciseResp = healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = ExerciseSessionRecord::class,
-                    timeRangeFilter = timeRange
+            try {
+                val exerciseResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = ExerciseSessionRecord::class,
+                        timeRangeFilter = timeRange
+                    )
                 )
-            )
-            val workoutsArray = JSONArray()
-            for (ex in exerciseResp.records) {
-                val wObj = JSONObject()
-                wObj.put("id", ex.metadata.id)
-                wObj.put("external_id", ex.metadata.id)
-                wObj.put("workout_type", mapExerciseType(ex.exerciseType))
-                wObj.put("start_time", ex.startTime.toString())
-                wObj.put("end_time", ex.endTime.toString())
-                val durMin = ChronoUnit.MINUTES.between(ex.startTime, ex.endTime)
-                wObj.put("duration_minutes", durMin)
-                if (!ex.title.isNullOrBlank()) {
-                    wObj.put("notes", ex.title)
+                val workoutsArray = JSONArray()
+                for (ex in exerciseResp.records) {
+                    val wObj = JSONObject()
+                    wObj.put("id", ex.metadata.id)
+                    wObj.put("external_id", ex.metadata.id)
+                    wObj.put("workout_type", mapExerciseType(ex.exerciseType))
+                    wObj.put("start_time", ex.startTime.toString())
+                    wObj.put("end_time", ex.endTime.toString())
+                    val durMin = ChronoUnit.MINUTES.between(ex.startTime, ex.endTime)
+                    wObj.put("duration_minutes", durMin)
+                    if (!ex.title.isNullOrBlank()) {
+                        wObj.put("notes", ex.title)
+                    }
+                    workoutsArray.put(wObj)
                 }
-                workoutsArray.put(wObj)
-            }
-            if (workoutsArray.length() > 0) {
-                payload.put("workouts", workoutsArray)
+                if (workoutsArray.length() > 0) {
+                    payload.put("workouts", workoutsArray)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Impossible de lire les séances de sport depuis Health Connect", e)
             }
 
             // 8. Envoi au Webhook VitalTrack avec Token individuel
