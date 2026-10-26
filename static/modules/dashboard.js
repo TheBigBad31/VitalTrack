@@ -191,25 +191,8 @@
 
       document.getElementById('summary-recommendation').innerText = s.recommendation || "Poursuivez sur cette trajectoire régulière pour atteindre votre objectif de composition corporelle.";
 
-      // Données en direct du bandeau Santé Connect
-      const latestAct = (currentData.activities_history && currentData.activities_history.length > 0)
-        ? currentData.activities_history[currentData.activities_history.length - 1]
-        : null;
-      const hcStepsEl = document.getElementById('live-hc-steps');
-      const hcCalsEl = document.getElementById('live-hc-cals');
-      const hcHrEl = document.getElementById('live-hc-hr');
-      const hcHrvEl = document.getElementById('live-hc-hrv');
-      const hcSleepEl = document.getElementById('live-hc-sleep');
-      if (hcStepsEl && latestAct) {
-        hcStepsEl.innerText = `${(latestAct.steps || s.steps || 0).toLocaleString()} pas`;
-        if (hcCalsEl) hcCalsEl.innerText = `${latestAct.active_calories_kcal || 0} kcal`;
-        const hrVal = latestAct.resting_hr_bpm || s.resting_hr_bpm;
-        if (hcHrEl) hcHrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
-        const hrvVal = latestAct.hrv_ms || s.hrv_ms;
-        if (hcHrvEl) hcHrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
-        const scVal = latestAct.sleep_score || s.sleep_score;
-        if (hcSleepEl) hcSleepEl.innerText = scVal ? `${scVal} / 100` : '--';
-      }
+      // Actualiser le bandeau dynamique de synchronisation Santé Connect / Objets
+      renderLiveSyncBanner();
 
       // Donut Macros
       const m = s.macros || {};
@@ -1254,6 +1237,152 @@
     window.renderSummaryRings = renderSummaryRings;
 
     // 5. Rendu Vue Hub Objets Connectés (Uniquement les appareils ajoutés/connectés par l'utilisateur)
+        function formatRelativeTime(isoString) {
+      if (!isoString) return null;
+      try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return null;
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 1) return "À l'instant";
+        if (diffMins === 1) return "Il y a 1 minute";
+        if (diffMins < 60) return `Il y a ${diffMins} minutes`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours === 1) return "Il y a 1 heure";
+        if (diffHours < 24) return `Il y a ${diffHours} heures`;
+        const diffDays = Math.floor(diffHours / 24);
+        if (diffDays === 1) return "Hier";
+        return `Il y a ${diffDays} jours`;
+      } catch (e) {
+        return null;
+      }
+    }
+
+        function renderLiveSyncBanner() {
+      const banner = document.getElementById('banner-health-connect-live');
+      if (!banner) return;
+
+      const titleEl = document.getElementById('live-hc-title');
+      const badgeEl = document.getElementById('live-hc-status-badge');
+      const statusTextEl = document.getElementById('live-hc-status-text');
+      const iconEl = document.getElementById('live-hc-icon');
+      const iconContainerEl = document.getElementById('live-hc-icon-container');
+      const stepsEl = document.getElementById('live-hc-steps');
+      const calsEl = document.getElementById('live-hc-cals');
+      const hrEl = document.getElementById('live-hc-hr');
+      const hrvEl = document.getElementById('live-hc-hrv');
+      const sleepEl = document.getElementById('live-hc-sleep');
+      const syncBtn = document.getElementById('live-hc-sync-btn');
+      const syncTxt = document.getElementById('live-hc-sync-txt');
+
+      const s = currentData.summary || {};
+      const allDevices = currentData.devices || [];
+      const connectedDevices = allDevices.filter(d => Boolean(d.connected || d.status === 'connected'));
+
+      // Trouver l'appareil prioritaire (Health Connect > RingConn > Oura > premier connecté)
+      let activeDevice = connectedDevices.find(d => (d.id || d.device_id) === 'health_connect')
+        || connectedDevices.find(d => ['ringconn', 'oura'].includes(d.id || d.device_id))
+        || connectedDevices[0]
+        || null;
+
+      const latestAct = (currentData.activities_history && currentData.activities_history.length > 0)
+        ? currentData.activities_history[currentData.activities_history.length - 1]
+        : null;
+
+      const stepsVal = latestAct ? (latestAct.steps || s.steps) : s.steps;
+      const calsVal = latestAct ? (latestAct.active_calories_kcal || 0) : null;
+      const hrVal = latestAct ? (latestAct.resting_hr_bpm || s.resting_hr_bpm) : s.resting_hr_bpm;
+      const hrvVal = latestAct ? (latestAct.hrv_ms || s.hrv_ms) : s.hrv_ms;
+      const sleepVal = latestAct ? (latestAct.sleep_score || s.sleep_score) : s.sleep_score;
+
+      if (stepsEl) stepsEl.innerText = stepsVal !== null && stepsVal !== undefined ? `${stepsVal.toLocaleString()} pas` : '-- pas';
+      if (calsEl) calsEl.innerText = calsVal !== null && calsVal !== undefined ? `${calsVal} kcal` : '-- kcal';
+      if (hrEl) hrEl.innerText = hrVal ? `${hrVal} BPM` : '--';
+      if (hrvEl) hrvEl.innerText = hrvVal ? `${hrvVal} ms` : '--';
+      if (sleepEl) sleepEl.innerText = sleepVal ? `${sleepVal} / 100` : '--';
+
+      // 1. Cas : Aucun appareil connecté
+      if (!activeDevice && connectedDevices.length === 0) {
+        if (titleEl) titleEl.innerText = "Synchronisation appareils : Aucune passerelle connectée";
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span><span id="live-hc-status-text">Non connecté</span>';
+        }
+        if (iconEl) iconEl.setAttribute('data-lucide', 'link-2');
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-slate-800/60 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0";
+        if (syncTxt) syncTxt.innerText = "Connecter";
+        if (syncBtn) {
+          syncBtn.onclick = () => openConnectWizardModal('health_connect');
+          syncBtn.title = "Ouvrir l'assistant de connexion d'appareils";
+        }
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-slate-900/60 via-[#151D2A] to-[#151D2A] border border-slate-700/50 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+        return;
+      }
+
+      // 2. Cas : Appareil connecté
+      const devId = activeDevice.id || activeDevice.device_id;
+      const devName = activeDevice.name || (devId === 'health_connect' ? 'Google Santé Connect (Android)' : (devId === 'withings' ? 'Withings' : devId));
+      if (titleEl) titleEl.innerText = `Données en direct : ${devName}`;
+
+      let iconName = 'smartphone';
+      if (activeDevice.device_type === 'ring' || devId === 'ringconn' || devId === 'oura') iconName = 'circle-dot';
+      else if (activeDevice.device_type === 'scale' || devId === 'withings') iconName = 'scale';
+      if (iconEl) iconEl.setAttribute('data-lucide', iconName);
+
+      if (syncBtn) {
+        syncBtn.onclick = () => triggerSyncFromBanner(devId);
+        syncBtn.title = `Lancer la synchronisation immédiate de ${devName}`;
+      }
+      if (syncTxt) syncTxt.innerText = "Synchroniser";
+
+      const lastSyncRaw = activeDevice.last_sync_at || activeDevice.last_sync;
+      const syncStatus = (activeDevice.sync_status || activeDevice.status || 'connected').toLowerCase();
+      const relativeTime = formatRelativeTime(lastSyncRaw);
+
+      if (syncStatus === 'error' || syncStatus === 'failed') {
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span><span id="live-hc-status-text">Erreur de synchronisation ⚠</span>';
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-rose-950/30 via-[#151D2A] to-[#151D2A] border border-rose-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      } else if (!lastSyncRaw || syncStatus === 'waiting_first_sync') {
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span id="live-hc-status-text">En attente du 1er envoi depuis votre téléphone</span>';
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 via-[#151D2A] to-[#151D2A] border border-amber-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      } else {
+        const syncLabel = relativeTime ? `Synchronisé ${relativeTime.toLowerCase()} ✓` : 'Synchronisé ✓';
+        if (badgeEl) {
+          badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1";
+          badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span id="live-hc-status-text">${syncLabel}</span>`;
+        }
+        if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0";
+        banner.className = "p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
+      }
+
+      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+    }
+
+    async function triggerSyncFromBanner(deviceId) {
+      const syncIcon = document.getElementById('live-hc-sync-icon');
+      const syncTxt = document.getElementById('live-hc-sync-txt');
+      if (syncIcon) syncIcon.classList.add('animate-spin');
+      if (syncTxt) syncTxt.innerText = "Synchronisation...";
+
+      const targetId = deviceId || 'health_connect';
+      try {
+        await triggerDeviceSync(targetId);
+      } finally {
+        if (syncIcon) syncIcon.classList.remove('animate-spin');
+        if (syncTxt) syncTxt.innerText = "Synchroniser";
+      }
+    }
+
     function renderDevicesView() {
       const grid = document.getElementById('devices-grid');
       if (!grid) return;
@@ -1326,6 +1455,20 @@
           }
         }
 
+        // Détermination fine du badge et statut de synchronisation
+        const isWaitingFirstSync = (devId === 'health_connect' && (!lastSyncVal || d.sync_status === 'waiting_first_sync'));
+        const syncBadgeHtml = isWaitingFirstSync
+          ? `<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1"><span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>En attente du 1er envoi</span></span>`
+          : `<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1"><span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Synchronisé ✓</span></span>`;
+
+        const syncStatusDesc = isWaitingFirstSync
+          ? `<span class="text-amber-400 font-medium">En attente du 1er envoi depuis votre téléphone</span>`
+          : `<span class="text-emerald-400 font-medium">Flux actif dans votre profil</span>`;
+
+        const lastSyncLabel = lastSyncVal
+          ? (typeof formatRelativeTime === 'function' && formatRelativeTime(lastSyncVal) ? formatRelativeTime(lastSyncVal) : lastSyncVal.slice(0, 16).replace('T', ' '))
+          : (isWaitingFirstSync ? 'Aucune donnée reçue' : 'Enregistré');
+
         return `
           <div class="bg-[#0B0F17] hover:bg-[#111826] border border-[#1F2A3C] hover:border-brand-500/50 rounded-2xl p-4 flex flex-col justify-between space-y-4 transition-all group">
             <div class="flex items-start justify-between">
@@ -1338,7 +1481,7 @@
                   <span class="text-[10px] text-brand-400 font-medium">${devId === 'health_connect' ? 'Passerelle Android Santé Connect' : (devId === 'withings' ? 'Balance Wi-Fi & Impédancemètre' : d.device_type)}</span>
                 </div>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Connecté 🔒</span>
+              ${syncBadgeHtml}
             </div>
 
             ${metricsSnippet}
@@ -1346,11 +1489,11 @@
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Dernière synchronisation :</span>
-                <span class="text-slate-200 font-medium">${lastSyncVal ? lastSyncVal.slice(0, 16).replace('T', ' ') : 'Enregistré'}</span>
+                <span class="text-slate-200 font-medium">${lastSyncLabel}</span>
               </div>
               <div class="flex justify-between py-1">
                 <span class="text-slate-400">Statut liaison :</span>
-                <span class="text-emerald-400 font-medium">Actif dans votre profil</span>
+                ${syncStatusDesc}
               </div>
             </div>
 
@@ -2170,7 +2313,7 @@
       } else if (deviceId === 'health_connect') {
         actionText.innerText = "Activer la passerelle Google Health Connect";
         container.innerHTML = `
-          <div class="space-y-2.5">
+          <div class="space-y-3.5">
             <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
               <i data-lucide="smartphone" class="w-4 h-4"></i>
               <span>Passerelle Universelle Android Google Health Connect</span>
@@ -2178,31 +2321,96 @@
             <p class="text-xs text-slate-300">
               Centralise toutes vos applications de santé sur smartphone (RingConn, balances connectées, trackers) et les pousse vers le webhook VitalTrack.
             </p>
-            <div class="p-2.5 rounded-lg bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-1.5">
-              <div class="flex justify-between items-center">
-                <span class="text-slate-400">Endpoint Webhook :</span>
-                <div class="flex items-center space-x-1 font-mono text-brand-400 text-[10px]">
-                  <span>/api/webhooks/health-connect</span>
-                  <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white underline text-[10px]">Copier</button>
-                </div>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Statut :</span>
-                <span class="text-emerald-400 font-bold">Prêt pour réception continue</span>
+
+            <!-- Téléchargements directs : APK & Profil MacroDroid -->
+            <div class="p-3 rounded-xl bg-gradient-to-r from-indigo-950/40 to-[#151D2A] border border-indigo-500/30 space-y-2">
+              <span class="text-[11px] font-bold text-indigo-300 flex items-center space-x-1.5">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>Applications & Profils Android à installer :</span>
+              </span>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                <a href="/static/downloads/vitaltrack-health-bridge.apk" download="vitaltrack-health-bridge.apk" class="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/25 transition-transform active:scale-95 text-center cursor-pointer">
+                  <i data-lucide="smartphone" class="w-4 h-4"></i>
+                  <span>Télécharger l'APK Android</span>
+                </a>
+                <a href="/static/downloads/macrodroid_health_connect_profile.json" download="macrodroid_health_connect_profile.json" class="py-2 px-3 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-600 text-slate-200 font-semibold text-xs flex items-center justify-center space-x-2 transition-colors text-center cursor-pointer">
+                  <i data-lucide="file-json" class="w-4 h-4 text-amber-400"></i>
+                  <span>Profil MacroDroid (.json)</span>
+                </a>
               </div>
             </div>
-            <div class="pt-1 flex flex-col sm:flex-row gap-2">
-              <a href="/api/downloads/android-bridge" download="vitaltrack-health-bridge.apk" class="flex-1 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors text-center">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>Télécharger l'APK Android</span>
-              </a>
-              <button type="button" onclick="testHealthConnectIngestion()" class="flex-1 py-2 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+
+            <!-- Configuration Webhook & Jeton Secret -->
+            <div class="p-3 rounded-xl bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-2.5">
+              <!-- Endpoint Webhook -->
+              <div class="space-y-1">
+                <div class="flex justify-between items-center text-slate-400">
+                  <span class="font-medium">URL du Webhook :</span>
+                  <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); if (typeof showToast === 'function') showToast('URL Webhook copiée !', 'success'); else alert('URL Webhook copiée !');" class="text-brand-400 hover:text-brand-300 flex items-center space-x-1 text-[11px] font-semibold underline cursor-pointer">
+                    <i data-lucide="copy" class="w-3 h-3"></i>
+                    <span>Copier l'URL</span>
+                  </button>
+                </div>
+                <div class="p-2 rounded-lg bg-[#0B0F17] font-mono text-[10px] text-brand-400 break-all border border-[#1F2A3C]/70 select-all">
+                  ${window.location.origin}/api/webhooks/health-connect
+                </div>
+              </div>
+
+              <!-- Jeton Secret X-Webhook-Token -->
+              <div class="space-y-1 pt-1.5 border-t border-[#1F2A3C]/60">
+                <div class="flex justify-between items-center text-slate-400">
+                  <span class="font-medium">Jeton Secret (<code>X-Webhook-Token</code>) :</span>
+                  <div class="flex items-center space-x-2">
+                    <button type="button" onclick="generateDeviceToken('health_connect')" class="text-indigo-400 hover:text-indigo-300 font-semibold text-[11px] underline cursor-pointer" title="Régénérer un nouveau jeton d'appareil">
+                      Régénérer
+                    </button>
+                    <button type="button" onclick="toggleTokenVisibility('health_connect')" id="wiz-token-toggle-health_connect" class="text-slate-400 hover:text-white flex items-center space-x-1 text-[11px] cursor-pointer">
+                      <i data-lucide="eye" id="wiz-token-eye-icon-health_connect" class="w-3 h-3"></i>
+                      <span id="wiz-token-eye-text-health_connect">Révéler</span>
+                    </button>
+                    <button type="button" onclick="copyTokenToClipboard('health_connect')" class="text-brand-400 hover:text-brand-300 flex items-center space-x-1 text-[11px] font-semibold underline cursor-pointer">
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                      <span>Copier mon Token</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="p-2 rounded-lg bg-[#0B0F17] font-mono text-[10px] text-emerald-400 break-all border border-[#1F2A3C]/70 flex items-center justify-between">
+                  <span id="wiz-token-display-val-health_connect" class="tracking-wider">Chargement du jeton...</span>
+                </div>
+              </div>
+
+              <!-- Statut réel de réception -->
+              <div class="flex justify-between items-center pt-1.5 border-t border-[#1F2A3C]/60 text-xs">
+                <span class="text-slate-400">Statut de synchronisation :</span>
+                <span id="wiz-sync-badge-health_connect" class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>En attente du 1er envoi depuis votre téléphone</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Guide Xiaomi HyperOS / MIUI -->
+            <div class="p-2.5 rounded-lg bg-[#0B0F17] border border-amber-500/30 text-[11px] space-y-1.5">
+              <div class="flex items-center space-x-1.5 text-amber-400 font-bold">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+                <span>Réglages Requis Xiaomi HyperOS / MIUI</span>
+              </div>
+              <ul class="text-[10px] text-slate-300 list-disc list-inside space-y-0.5">
+                <li><strong>Démarrage auto</strong> : <em>Paramètres > Applications > Gérer les applications > VitalTrack Bridge (ou MacroDroid) > Démarrage automatique</em> : <strong>Activé</strong>.</li>
+                <li><strong>Batterie</strong> : <em>Économiseur de batterie MIUI</em> : régler sur <strong>« Pas de restrictions »</strong>.</li>
+                <li><strong>Santé Connect</strong> : <em>Paramètres > Sécurité & Confidentialité > Health Connect > Applications autorisées</em> : accorder l'accès en lecture.</li>
+              </ul>
+            </div>
+
+            <div class="pt-1">
+              <button type="button" onclick="testHealthConnectIngestion()" class="w-full py-2.5 rounded-xl bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer shadow-sm">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
                 <span>Envoyer test webhook</span>
               </button>
             </div>
           </div>
         `;
+        fetchOrInitDeviceToken('health_connect');
       } else if (deviceId === 'withings') {
         actionText.innerText = "Connecter ma Balance Withings";
         container.innerHTML = `
@@ -2275,8 +2483,142 @@
       }
     }
 
+    let currentDeviceTokens = {};
+    let deviceTokensRevealed = {};
+
+    async function fetchOrInitDeviceToken(deviceId) {
+      const displayEl = document.getElementById(`wiz-token-display-val-${deviceId}`);
+      const badgeEl = document.getElementById(`wiz-sync-badge-${deviceId}`);
+
+      // Mettre à jour le badge selon le statut réel de l'appareil
+      if (currentData && currentData.devices) {
+        const d = currentData.devices.find(dev => (dev.id || dev.device_id) === deviceId);
+        if (d && badgeEl) {
+          const hasSync = Boolean(d.last_sync_at || d.last_sync);
+          if (hasSync) {
+            const relTime = formatRelativeTime(d.last_sync_at || d.last_sync) || 'Récemment';
+            badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
+            badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Synchronisé (${relTime})</span>`;
+          } else {
+            badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1";
+            badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>En attente du 1er envoi depuis votre téléphone</span>';
+          }
+        }
+      }
+
+      try {
+        const res = await apiFetch(`/api/devices/${deviceId}/token`, { method: 'GET' });
+        if (res && res.token) {
+          currentDeviceTokens[deviceId] = res.token;
+          updateTokenDisplay(deviceId);
+          return res.token;
+        }
+      } catch (e) {
+        // Si aucun jeton n'existe encore pour l'utilisateur, on le génère automatiquement
+        try {
+          const genRes = await apiFetch(`/api/devices/${deviceId}/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : deviceId })
+          });
+          if (genRes && genRes.token) {
+            currentDeviceTokens[deviceId] = genRes.token;
+            updateTokenDisplay(deviceId);
+            return genRes.token;
+          }
+        } catch (err) {
+          console.error("Erreur récupération/génération token:", err);
+          if (displayEl) displayEl.innerText = "Non configuré";
+        }
+      }
+    }
+
+    function updateTokenDisplay(deviceId) {
+      const displayEl = document.getElementById(`wiz-token-display-val-${deviceId}`);
+      const eyeIcon = document.getElementById(`wiz-token-eye-icon-${deviceId}`);
+      const eyeText = document.getElementById(`wiz-token-eye-text-${deviceId}`);
+      if (!displayEl) return;
+
+      const token = currentDeviceTokens[deviceId] || "";
+      const isRevealed = Boolean(deviceTokensRevealed[deviceId]);
+
+      if (!token) {
+        displayEl.innerText = "Aucun jeton actif";
+        return;
+      }
+
+      if (isRevealed) {
+        displayEl.innerText = token;
+        if (eyeText) eyeText.innerText = "Masquer";
+        if (eyeIcon) eyeIcon.setAttribute('data-lucide', 'eye-off');
+      } else {
+        const prefix = token.slice(0, 10);
+        displayEl.innerText = prefix + "••••••••••••••••••••••••";
+        if (eyeText) eyeText.innerText = "Révéler";
+        if (eyeIcon) eyeIcon.setAttribute('data-lucide', 'eye');
+      }
+      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+    }
+
+    function toggleTokenVisibility(deviceId) {
+      deviceTokensRevealed[deviceId] = !deviceTokensRevealed[deviceId];
+      updateTokenDisplay(deviceId);
+    }
+
+    async function copyTokenToClipboard(deviceId) {
+      let token = currentDeviceTokens[deviceId];
+      if (!token) {
+        token = await fetchOrInitDeviceToken(deviceId);
+      }
+      if (token) {
+        navigator.clipboard.writeText(token);
+        if (typeof showToast === 'function') showToast("✓ Jeton secret copié dans le presse-papier !", "success");
+        else alert("✓ Jeton secret copié dans le presse-papier !");
+      } else {
+        if (typeof showToast === 'function') showToast("Jeton introuvable.", "error");
+      }
+    }
+
+    async function generateDeviceToken(deviceId) {
+      try {
+        if (typeof showToast === 'function') showToast("Génération d'un nouveau jeton...", "info");
+        const res = await apiFetch(`/api/devices/${deviceId}/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : 'Smart Sensor' })
+        });
+        if (res && res.token) {
+          currentDeviceTokens[deviceId] = res.token;
+          deviceTokensRevealed[deviceId] = true; // Révélé dès la génération
+          updateTokenDisplay(deviceId);
+          navigator.clipboard.writeText(res.token);
+          if (typeof showToast === 'function') {
+            showToast("✓ Nouveau jeton généré et copié dans le presse-papier !", "success");
+          } else {
+            alert(`✓ Jeton généré et copié dans le presse-papier :
+${res.token}`);
+          }
+          await loadDashboardData();
+        }
+      } catch (err) {
+        console.error("Erreur génération token:", err);
+        if (typeof showToast === 'function') showToast("Erreur lors de la génération du jeton.", "error");
+        else alert("Erreur lors de la génération du jeton.");
+      }
+    }
+
     async function testHealthConnectIngestion() {
       const todayStr = new Date().toISOString().split('T')[0];
+      let token = currentDeviceTokens['health_connect'];
+      if (!token) {
+        token = await fetchOrInitDeviceToken('health_connect');
+      }
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['X-Webhook-Token'] = token;
+      }
+
       const payload = {
         date: todayStr,
         source: "health_connect",
@@ -2284,20 +2626,35 @@
         active_calories_kcal: 530.0,
         resting_hr_bpm: 57,
         hrv_ms: 59.0,
-        sleep_score: 85
+        sleep_score: 85,
+        token: token || undefined
       };
+
       try {
+        if (typeof showToast === 'function') showToast("Envoi du test webhook avec X-Webhook-Token...", "info");
         const res = await fetch('/api/webhooks/health-connect', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          alert("✓ Succès ! Passerelle Google Health Connect testée et validée.");
-          loadDashboardData();
+          if (typeof showToast === 'function') {
+            showToast("✓ Succès ! Payload ingéré et authentifié avec votre X-Webhook-Token.", "success");
+          } else {
+            alert("✓ Succès ! Passerelle Google Health Connect testée et validée avec votre X-Webhook-Token.");
+          }
+          await loadDashboardData();
+          // Mettre à jour l'affichage du wizard
+          await fetchOrInitDeviceToken('health_connect');
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const msg = "Échec du test webhook : " + (errData.detail || res.statusText);
+          if (typeof showToast === 'function') showToast(msg, "error");
+          else alert(msg);
         }
       } catch (e) {
-        alert("Erreur lors du test webhook Google Health");
+        if (typeof showToast === 'function') showToast("Erreur de communication lors du test webhook Google Health", "error");
+        else alert("Erreur lors du test webhook Google Health");
       }
     }
 
@@ -3088,6 +3445,14 @@
     window.openAuthModal = openAuthModal;
     window.closeAuthModal = closeAuthModal;
     window.switchTab = switchTab;
+    window.generateDeviceToken = generateDeviceToken;
+    window.toggleTokenVisibility = toggleTokenVisibility;
+    window.copyTokenToClipboard = copyTokenToClipboard;
+    window.fetchOrInitDeviceToken = fetchOrInitDeviceToken;
+    window.testHealthConnectIngestion = testHealthConnectIngestion;
+    window.formatRelativeTime = formatRelativeTime;
+    window.renderLiveSyncBanner = renderLiveSyncBanner;
+    window.triggerSyncFromBanner = triggerSyncFromBanner;
 
     function syncGoogleAccountStorage(email) {
       if (!email) return;

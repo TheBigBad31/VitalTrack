@@ -1865,6 +1865,28 @@ def disconnect_device(device_id: str, current_user: AuthUser = Depends(get_curre
     }
 
 
+@app.get("/api/devices/{device_id}/token")
+def get_device_token_endpoint(
+    device_id: str,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère le jeton webhook secret déchiffré associé à l'appareil pour l'utilisateur connecté."""
+    dev = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=True)
+    if not dev:
+        raise HTTPException(status_code=404, detail=f"Aucun appareil configuré pour '{device_id}'")
+    
+    creds = dev.get("credentials") or {}
+    token = creds.get("webhook_token") or creds.get("api_key") or dev.get("api_key")
+    if not token:
+        raise HTTPException(status_code=404, detail=f"Aucun jeton trouvé pour '{device_id}'")
+    
+    return {
+        "status": "success",
+        "device_id": device_id,
+        "token": token
+    }
+
+
 @app.post("/api/devices/{device_id}/token")
 def create_device_token_endpoint(
     device_id: str,
