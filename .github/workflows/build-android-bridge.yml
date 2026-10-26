@@ -8,10 +8,6 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/build-android-bridge.yml'
-  pull_request:
-    paths:
-      - 'android/**'
-      - '.github/workflows/build-android-bridge.yml'
   workflow_dispatch:
 
 permissions:
@@ -31,21 +27,23 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK & Gradle
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Install Android Command Line Tools & Platforms
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
 
-      - name: Build APK (Assemble Release / Debug)
+      - name: Build APK (Assemble Debug)
         run: |
           cd android/health-bridge-app
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleRelease || ./gradlew assembleDebug
-          else
-            gradle assembleRelease || gradle assembleDebug
-          fi
+          gradle assembleDebug --stacktrace
 
       - name: Package & Prepare Installable APK
         run: |
@@ -67,20 +65,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish or Update GitHub Release (Push on Main / Tag / Manual)
+      - name: Publish or Update GitHub Release
         if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && github.repository == 'TheBigBad31/VitalTrack'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('VitalTrack Android Bridge {0}', github.ref_name) || 'VitalTrack Android Health Bridge (Dernière Version)' }}
+          tag_name: latest
+          name: VitalTrack Android Health Bridge (APK Officiel)
           body: |
             ## 📱 Passerelle Android VitalTrack Health Bridge (Google Health Connect)
 
-            Cet APK installable directement sur smartphone Android / Xiaomi (HyperOS & MIUI) permet de synchroniser en continu les métriques locales de Google Health Connect (RingConn Gen 3, Withings, pas et sommeil) vers votre serveur VitalTrack.
+            Cet APK installable directement sur smartphone Android / Xiaomi (HyperOS & MIUI) permet de synchroniser en continu les métriques locales de Google Health Connect (RingConn Gen 3, Withings, pas, sommeil, FC) vers votre serveur VitalTrack.
 
-            ### 📦 Fichier APK :
-            - **Nom** : `vitaltrack-health-bridge.apk`
-            - **SHA256 & Compilation** : GitHub Actions Automated Runner
+            ### 📦 Téléchargement :
+            - **Fichier** : `vitaltrack-health-bridge.apk`
           files: output-apk/vitaltrack-health-bridge.apk
           prerelease: false
           make_latest: true
