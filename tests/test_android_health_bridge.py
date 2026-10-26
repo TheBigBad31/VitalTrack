@@ -1,4 +1,4 @@
-"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
+﻿"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
 
 import os
 import pytest
@@ -17,36 +17,39 @@ def client(tmp_path):
     import src.app as app_module
     import src.routers.webhooks as wh_module
     old_app_db = app_module.db
+    old_engine_db = app_module.nutrition_engine.db
     app_module.db = app.state.db_instance
+    app_module.nutrition_engine.db = app.state.db_instance
     wh_module._db_instance = app.state.db_instance
     
     with TestClient(app) as test_client:
         yield test_client
     
     app_module.db = old_app_db
+    app_module.nutrition_engine.db = old_engine_db
     wh_module._db_instance = old_app_db
 
 
 def test_device_token_generation_and_strict_auth(client):
-    """Vérifie la génération d'un token individuel et le rejet des requêtes non autorisées (401)."""
-    # 1. Requête sans token -> Rejet 401
+    """VÃ©rifie la gÃ©nÃ©ration d'un token individuel et le rejet des requÃªtes non autorisÃ©es (401)."""
+    # 1. RequÃªte sans token -> Rejet 401
     resp = client.post("/api/webhook/health", json={"steps": 5000})
     assert resp.status_code == 401
     assert "Jeton d'authentification manquant" in resp.json()["detail"]
 
-    # 2. Requête avec token bidon -> Rejet 401
+    # 2. RequÃªte avec token bidon -> Rejet 401
     resp = client.post("/api/webhook/health", json={"steps": 5000}, headers={"X-Webhook-Token": "fake_invalid_token"})
     assert resp.status_code == 401
     assert "Token webhook invalide" in resp.json()["detail"]
 
-    # 3. Génération d'un token individuel pour health_connect
+    # 3. GÃ©nÃ©ration d'un token individuel pour health_connect
     tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Xiaomi HyperOS Bridge"})
     assert tok_resp.status_code == 200
     tok_data = tok_resp.json()
     token = tok_data["token"]
     assert token.startswith("vt_health_connect_")
 
-    # 4. Requête avec le token généré via Header X-Webhook-Token -> Succès 200
+    # 4. RequÃªte avec le token gÃ©nÃ©rÃ© via Header X-Webhook-Token -> SuccÃ¨s 200
     payload = {
         "source": "health_connect",
         "date": "2026-10-25",
@@ -66,9 +69,9 @@ def test_device_token_generation_and_strict_auth(client):
 
 
 def test_ringconn_multi_metric_payload_ingestion(client):
-    """Vérifie l'ingestion multi-métrique complète RingConn Gen 3 / Health Connect :
-    sommeil et phases, FC intraday, HRV, SpO2, température cutanée, séances d'entraînement."""
-    # Générer le token RingConn
+    """VÃ©rifie l'ingestion multi-mÃ©trique complÃ¨te RingConn Gen 3 / Health Connect :
+    sommeil et phases, FC intraday, HRV, SpO2, tempÃ©rature cutanÃ©e, sÃ©ances d'entraÃ®nement."""
+    # GÃ©nÃ©rer le token RingConn
     tok_resp = client.post("/api/devices/ringconn/token", json={"name": "RingConn Gen 3 Ring"})
     assert tok_resp.status_code == 200
     token = tok_resp.json()["token"]
@@ -176,7 +179,7 @@ def test_ringconn_multi_metric_payload_ingestion(client):
 
 
 def test_batch_incremental_ingestion_and_idempotency(client):
-    """Vérifie l'ingestion d'un lot incrémental (batch JSON) et la déduplication idempotente par external_id."""
+    """VÃ©rifie l'ingestion d'un lot incrÃ©mental (batch JSON) et la dÃ©duplication idempotente par external_id."""
     tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Batch Sync"})
     token = tok_resp.json()["token"]
 
@@ -206,7 +209,7 @@ def test_batch_incremental_ingestion_and_idempotency(client):
     assert res1["is_batch"] is True
     assert res1["count"] == 2
 
-    # Deuxième envoi identique (ré-émission / reprise sur erreur) -> Doit réussir de façon idempotente
+    # DeuxiÃ¨me envoi identique (rÃ©-Ã©mission / reprise sur erreur) -> Doit rÃ©ussir de faÃ§on idempotente
     resp2 = client.post("/api/webhooks/health-connect", json=batch_payload, headers={"X-Webhook-Token": token})
     assert resp2.status_code == 200
     res2 = resp2.json()
@@ -215,7 +218,7 @@ def test_batch_incremental_ingestion_and_idempotency(client):
 
 
 def test_auth_token_via_query_and_payload(client):
-    """Vérifie que l'authentification par token fonctionne également via query param ou dans le body JSON."""
+    """VÃ©rifie que l'authentification par token fonctionne Ã©galement via query param ou dans le body JSON."""
     tok_resp = client.post("/api/devices/ringconn/token", json={"name": "RingConn Test"})
     token = tok_resp.json()["token"]
 
@@ -235,9 +238,9 @@ def test_auth_token_via_query_and_payload(client):
 
 
 def test_health_bridge_full_extended_payload_ingestion(client):
-    """Vérifie l'ingestion de la charge complète envoyée par HealthSyncWorker enrichi :
+    """VÃ©rifie l'ingestion de la charge complÃ¨te envoyÃ©e par HealthSyncWorker enrichi :
     - Composition Withings : body_fat_pct, muscle_mass_kg, bone_mass_kg, weight_kg
-    - Biométrie RingConn : hrv_ms, resting_hr_bpm, spo2_pct, workouts, sleep_sessions
+    - BiomÃ©trie RingConn : hrv_ms, resting_hr_bpm, spo2_pct, workouts, sleep_sessions
     - Catch-up 7 jours flag is_catchup
     """
     tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Xiaomi Bridge Full Payload"})
@@ -322,7 +325,7 @@ def test_health_bridge_full_extended_payload_ingestion(client):
     assert ing["weight"]["muscle_mass_kg"] == 39.5
     assert ing["weight"]["source"] == "health_connect"
 
-    # 2. Métriques quotidiennes RingConn (HRV, FC repos, SpO2)
+    # 2. MÃ©triques quotidiennes RingConn (HRV, FC repos, SpO2)
     assert ing["daily_metric"]["resting_hr_bpm"] == 54
     assert ing["daily_metric"]["hrv_rmssd_ms"] == 68.0
     assert ing["daily_metric"]["spo2_pct"] == 99.0
@@ -339,11 +342,11 @@ def test_health_bridge_full_extended_payload_ingestion(client):
     assert ing["workouts"][0]["workout_type"] == "running"
     assert ing["workouts"][0]["duration_minutes"] == 30
 
-    # 5. Échantillons FC intraday
+    # 5. Ã‰chantillons FC intraday
     assert ing["intraday_samples_count"] == 1
 
 def test_download_android_bridge_endpoint(client, tmp_path):
-    """Vérifie le comportement de l'endpoint de téléchargement direct de l'APK."""
+    """VÃ©rifie le comportement de l'endpoint de tÃ©lÃ©chargement direct de l'APK."""
     import src.app as app_module
     
     downloads_dir = os.path.join(app_module.STATIC_DIR, "downloads")
@@ -355,12 +358,12 @@ def test_download_android_bridge_endpoint(client, tmp_path):
         os.replace(apk_path, apk_backup_path)
 
     try:
-        # 1. Quand l'APK n'est pas présent en local, redirige (307) vers la release GitHub
+        # 1. Quand l'APK n'est pas prÃ©sent en local, redirige (307) vers la release GitHub
         resp_redirect = client.get("/api/downloads/android-bridge", follow_redirects=False)
         assert resp_redirect.status_code == 307
         assert resp_redirect.headers["location"] == app_module.GITHUB_LATEST_RELEASE_APK_URL
 
-        # 2. Quand un fichier APK est présent dans static/downloads/vitaltrack-health-bridge.apk
+        # 2. Quand un fichier APK est prÃ©sent dans static/downloads/vitaltrack-health-bridge.apk
         with open(apk_path, "wb") as f:
             f.write(b"PK  fake_apk_binary_content_vitaltrack")
         
@@ -373,3 +376,67 @@ def test_download_android_bridge_endpoint(client, tmp_path):
             os.remove(apk_path)
         if had_apk and os.path.exists(apk_backup_path):
             os.replace(apk_backup_path, apk_path)
+
+def test_android_bridge_photo_meal_estimation_and_journal_save(client):
+    """VÃ©rifie l'estimation calorique par photo IA et la sauvegarde directe dans le journal
+    avec authentification par jeton d'appareil X-Webhook-Token."""
+    import base64
+
+    # 1. CrÃ©er un token pour la passerelle mobile Android
+    tok_resp = client.post("/api/devices/android_phone/token", json={"name": "Xiaomi 14 Ultra"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    # 2. Simuler une photo de plat (JPEG minimaliste 1x1 base64)
+    fake_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+    photo_data_url = f"data:image/jpeg;base64,{base64.b64encode(fake_jpeg).decode('ascii')}"
+
+    # 3. Appel de l'endpoint d'estimation avec header X-Webhook-Token
+    estimate_resp = client.post(
+        "/api/meals/estimate",
+        json={
+            "photo_data_url": photo_data_url,
+            "meal_type": "lunch",
+            "portion_scale": 1.0
+        },
+        headers={"X-Webhook-Token": token}
+    )
+    assert estimate_resp.status_code == 200
+    est_data = estimate_resp.json()
+    assert est_data["total_calories_kcal"] > 0
+    assert "items" in est_data
+    assert len(est_data["items"]) > 0
+
+    # 4. Sauvegarde dans le journal via POST /api/meals avec X-Webhook-Token
+    save_payload = {
+        "date": "2026-10-26",
+        "meal_type": "lunch",
+        "photo_data_url": photo_data_url,
+        "portion_scale": 1.0,
+        "total_calories_kcal": est_data["total_calories_kcal"],
+        "protein_g": est_data["protein_g"],
+        "carbs_g": est_data["carbs_g"],
+        "fat_g": est_data["fat_g"],
+        "fiber_g": est_data["fiber_g"],
+        "meal_name": est_data.get("dish_name", "Salade composÃ©e"),
+        "items": est_data["items"]
+    }
+    save_resp = client.post(
+        "/api/meals",
+        json=save_payload,
+        headers={"X-Webhook-Token": token}
+    )
+    assert save_resp.status_code == 200
+    saved_meal = save_resp.json()
+    assert saved_meal["total_calories_kcal"] == est_data["total_calories_kcal"]
+    assert saved_meal["meal_type"] == "lunch"
+
+    # 5. VÃ©rifier que le repas est consultable dans l'historique de l'utilisateur
+    meals_resp = client.get("/api/meals", headers={"X-Webhook-Token": token})
+    assert meals_resp.status_code == 200
+    history = meals_resp.json()
+    assert len(history) > 0
+    assert any(m["date"] == "2026-10-26" and m["meal_type"] == "lunch" for m in history)
+
+
+
