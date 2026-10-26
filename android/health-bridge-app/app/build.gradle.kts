@@ -17,9 +17,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            // Utilise la clé debug standard pour permettre l'installation directe (sideloading) sans erreur de parsing
+            val debugKey = signingConfigs.getByName("debug")
+            storeFile = debugKey.storeFile
+            storePassword = debugKey.storePassword
+            keyAlias = debugKey.keyAlias
+            keyPassword = debugKey.keyPassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
