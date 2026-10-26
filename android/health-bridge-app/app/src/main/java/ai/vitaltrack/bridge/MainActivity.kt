@@ -20,8 +20,15 @@ class MainActivity : AppCompatActivity() {
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+        HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
-        HealthPermission.getReadPermission(WeightRecord::class)
+        HealthPermission.getReadPermission(WeightRecord::class),
+        HealthPermission.getReadPermission(BodyFatRecord::class),
+        HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+        HealthPermission.getReadPermission(BoneMassRecord::class)
     )
 
     private val requestPermissionActivityContract =
@@ -104,11 +111,16 @@ class MainActivity : AppCompatActivity() {
         val btnSyncNow = Button(this).apply {
             text = "3. Synchroniser maintenant (Test immédiat)"
             setOnClickListener {
+                val inputData = Data.Builder()
+                    .putBoolean("is_catchup", true)
+                    .build()
+
                 val oneTimeWork = OneTimeWorkRequestBuilder<HealthSyncWorker>()
+                    .setInputData(inputData)
                     .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                     .build()
                 WorkManager.getInstance(applicationContext).enqueue(oneTimeWork)
-                Toast.makeText(this@MainActivity, "Synchronisation lancée !", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Rattrapage 7 jours lancé !", Toast.LENGTH_SHORT).show()
             }
         }
         layout.addView(btnSyncNow)

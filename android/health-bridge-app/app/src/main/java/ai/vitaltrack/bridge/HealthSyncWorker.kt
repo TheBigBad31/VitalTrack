@@ -48,13 +48,20 @@ class HealthSyncWorker(
 
         return try {
             val now = Instant.now()
-            val startTime = now.minus(24, ChronoUnit.HOURS)
+            val isFirstSync = !prefs.getBoolean("has_completed_first_sync", false)
+            val isCatchupRequested = inputData.getBoolean("is_catchup", false)
+            val isCatchup = isFirstSync || isCatchupRequested
+
+            // Période d'interrogation : 7 jours pour un rattrapage / première synchro, 24 heures en routine
+            val syncDays = if (isCatchup) 7L else 1L
+            val startTime = now.minus(syncDays * 24L, ChronoUnit.HOURS)
             val timeRange = TimeRangeFilter.between(startTime, now)
 
             val payload = JSONObject()
             payload.put("source", "health_connect")
             payload.put("synced_at", now.toString())
             payload.put("date", LocalDate.now().toString())
+            payload.put("is_catchup", isCatchup)
 
             // 1. Sommeil (Sessions & Stages)
             val sleepSessions = JSONArray()
@@ -67,22 +74,43 @@ class HealthSyncWorker(
             for (rec in sleepResp.records) {
                 val sObj = JSONObject()
                 sObj.put("id", rec.metadata.id)
+                sObj.put("external_id", rec.metadata.id)
                 sObj.put("start_time", rec.startTime.toString())
                 sObj.put("end_time", rec.endTime.toString())
+                sObj.put("date", rec.endTime.atZone(ZoneId.systemDefault()).toLocalDate().toString())
                 val durMin = ChronoUnit.MINUTES.between(rec.startTime, rec.endTime)
                 sObj.put("duration_minutes", durMin)
                 sObj.put("title", rec.title ?: "Sommeil")
 
                 val stages = JSONArray()
+                var deepMin = 0L
+                var lightMin = 0L
+                var remMin = 0L
+                var awakeMin = 0L
+
                 for (st in rec.stages) {
                     val stObj = JSONObject()
-                    stObj.put("stage", mapSleepStage(st.stage))
+                    val stageStr = mapSleepStage(st.stage)
+                    stObj.put("stage", stageStr)
                     stObj.put("start_time", st.startTime.toString())
                     stObj.put("end_time", st.endTime.toString())
-                    stObj.put("duration_seconds", ChronoUnit.SECONDS.between(st.startTime, st.endTime))
+                    val stageDurSec = ChronoUnit.SECONDS.between(st.startTime, st.endTime)
+                    stObj.put("duration_seconds", stageDurSec)
                     stages.put(stObj)
+
+                    val stageDurMin = ChronoUnit.MINUTES.between(st.startTime, st.endTime)
+                    when (stageStr) {
+                        "deep" -> deepMin += stageDurMin
+                        "light" -> lightMin += stageDurMin
+                        "rem" -> remMin += stageDurMin
+                        "awake" -> awakeMin += stageDurMin
+                    }
                 }
                 sObj.put("stages", stages)
+                sObj.put("deep_minutes", deepMin)
+                sObj.put("light_minutes", lightMin)
+                sObj.put("rem_minutes", remMin)
+                sObj.put("awake_minutes", awakeMin)
                 sleepSessions.put(sObj)
             }
             if (sleepSessions.length() > 0) {
@@ -124,7 +152,7 @@ class HealthSyncWorker(
             }
             payload.put("steps", totalSteps)
 
-            // 4. Calories
+            // 4. Calories actives
             val calResp = healthConnectClient.readRecords(
                 ReadRecordsRequest(
                     recordType = ActiveCaloriesBurnedRecord::class,
@@ -137,7 +165,7 @@ class HealthSyncWorker(
             }
             payload.put("active_calories_kcal", totalActiveCal)
 
-            // 5. Poids (Weight)
+            // 5. Poids & Composition corporelle Withings
             val weightResp = healthConnectClient.readRecords(
                 ReadRecordsRequest(
                     recordType = WeightRecord::class,
@@ -147,9 +175,101 @@ class HealthSyncWorker(
             weightResp.records.lastOrNull()?.let { lastWeight ->
                 payload.put("weight_kg", lastWeight.weight.inKilograms)
                 payload.put("weight_external_id", lastWeight.metadata.id)
+                payload.put("date", lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString())
             }
 
-            // 6. Envoi au Webhook VitalTrack avec Token individuel
+            // BodyFatRecord (Withings / Health Connect)
+            val bodyFatResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = BodyFatRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            bodyFatResp.records.lastOrNull()?.let { lastFat ->
+                payload.put("body_fat_pct", lastFat.percentage.value)
+            }
+
+            // LeanBodyMassRecord (Masse musculaire en kg)
+            val leanMassResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = LeanBodyMassRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            leanMassResp.records.lastOrNull()?.let { lastLean ->
+                payload.put("muscle_mass_kg", lastLean.mass.inKilograms)
+            }
+
+            // BoneMassRecord (Masse osseuse en kg si présent)
+            val boneMassResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = BoneMassRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            boneMassResp.records.lastOrNull()?.let { lastBone ->
+                payload.put("bone_mass_kg", lastBone.mass.inKilograms)
+            }
+
+            // 6. Biométrie RingConn Gen 3 (HRV RMSSD, FC repos, SpO2)
+            val hrvResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = HeartRateVariabilityRmssdRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            hrvResp.records.lastOrNull()?.let { lastHrv ->
+                payload.put("hrv_ms", lastHrv.heartRateVariabilityMillis)
+                payload.put("hrv_rmssd_ms", lastHrv.heartRateVariabilityMillis)
+            }
+
+            val rhrResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = RestingHeartRateRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            rhrResp.records.lastOrNull()?.let { lastRhr ->
+                payload.put("resting_hr_bpm", lastRhr.beatsPerMinute)
+            }
+
+            val spo2Resp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = OxygenSaturationRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            spo2Resp.records.lastOrNull()?.let { lastSpo2 ->
+                payload.put("spo2_pct", lastSpo2.percentage.value)
+            }
+
+            // 7. Séances d'entraînement (ExerciseSessionRecord / Workouts)
+            val exerciseResp = healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = ExerciseSessionRecord::class,
+                    timeRangeFilter = timeRange
+                )
+            )
+            val workoutsArray = JSONArray()
+            for (ex in exerciseResp.records) {
+                val wObj = JSONObject()
+                wObj.put("id", ex.metadata.id)
+                wObj.put("external_id", ex.metadata.id)
+                wObj.put("workout_type", mapExerciseType(ex.exerciseType))
+                wObj.put("start_time", ex.startTime.toString())
+                wObj.put("end_time", ex.endTime.toString())
+                val durMin = ChronoUnit.MINUTES.between(ex.startTime, ex.endTime)
+                wObj.put("duration_minutes", durMin)
+                if (!ex.title.isNullOrBlank()) {
+                    wObj.put("notes", ex.title)
+                }
+                workoutsArray.put(wObj)
+            }
+            if (workoutsArray.length() > 0) {
+                payload.put("workouts", workoutsArray)
+            }
+
+            // 8. Envoi au Webhook VitalTrack avec Token individuel
             val jsonMedia = "application/json; charset=utf-8".toMediaType()
             val requestBody = payload.toString().toRequestBody(jsonMedia)
 
@@ -163,6 +283,9 @@ class HealthSyncWorker(
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     Log.i(TAG, "Ingestion VitalTrack réussie: ${response.code}")
+                    if (isFirstSync) {
+                        prefs.edit().putBoolean("has_completed_first_sync", true).apply()
+                    }
                     Result.success()
                 } else {
                     Log.e(TAG, "Erreur serveur VitalTrack HTTP: ${response.code}")
@@ -182,6 +305,20 @@ class HealthSyncWorker(
             SleepSessionRecord.STAGE_TYPE_REM -> "rem"
             SleepSessionRecord.STAGE_TYPE_AWAKE -> "awake"
             else -> "light"
+        }
+    }
+
+    private fun mapExerciseType(exerciseCode: Int): String {
+        return when (exerciseCode) {
+            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "running"
+            ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "walking"
+            ExerciseSessionRecord.EXERCISE_TYPE_BIKING -> "cycling"
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL,
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER -> "swimming"
+            ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
+            ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING -> "strength"
+            ExerciseSessionRecord.EXERCISE_TYPE_YOGA -> "yoga"
+            else -> "workout"
         }
     }
 

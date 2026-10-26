@@ -232,3 +232,112 @@ def test_auth_token_via_query_and_payload(client):
         json={"source": "ringconn", "token": token, "date": "2026-10-25", "steps": 7500}
     )
     assert resp_body.status_code == 200
+
+
+def test_health_bridge_full_extended_payload_ingestion(client):
+    """Vérifie l'ingestion de la charge complète envoyée par HealthSyncWorker enrichi :
+    - Composition Withings : body_fat_pct, muscle_mass_kg, bone_mass_kg, weight_kg
+    - Biométrie RingConn : hrv_ms, resting_hr_bpm, spo2_pct, workouts, sleep_sessions
+    - Catch-up 7 jours flag is_catchup
+    """
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Xiaomi Bridge Full Payload"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    extended_payload = {
+        "source": "health_connect",
+        "synced_at": "2026-10-26T08:30:00Z",
+        "date": "2026-10-26",
+        "is_catchup": True,
+        "steps": 8500,
+        "active_calories_kcal": 350.0,
+        "weight_kg": 77.2,
+        "weight_external_id": "hc_weight_uuid_101",
+        "body_fat_pct": 17.8,
+        "muscle_mass_kg": 39.5,
+        "bone_mass_kg": 3.2,
+        "hrv_ms": 68.0,
+        "hrv_rmssd_ms": 68.0,
+        "resting_hr_bpm": 54,
+        "spo2_pct": 99.0,
+        "sleep_sessions": [
+            {
+                "id": "hc_sleep_uuid_101",
+                "external_id": "hc_sleep_uuid_101",
+                "date": "2026-10-26",
+                "start_time": "2026-10-25T23:30:00Z",
+                "end_time": "2026-10-26T07:00:00Z",
+                "duration_minutes": 450,
+                "deep_minutes": 100,
+                "light_minutes": 230,
+                "rem_minutes": 90,
+                "awake_minutes": 30,
+                "stages": [
+                    {
+                        "stage": "light",
+                        "start_time": "2026-10-25T23:30:00Z",
+                        "end_time": "2026-10-26T00:30:00Z",
+                        "duration_seconds": 3600
+                    },
+                    {
+                        "stage": "deep",
+                        "start_time": "2026-10-26T00:30:00Z",
+                        "end_time": "2026-10-26T02:10:00Z",
+                        "duration_seconds": 6000
+                    }
+                ]
+            }
+        ],
+        "workouts": [
+            {
+                "id": "hc_workout_uuid_101",
+                "external_id": "hc_workout_uuid_101",
+                "workout_type": "running",
+                "start_time": "2026-10-26T07:15:00Z",
+                "end_time": "2026-10-26T07:45:00Z",
+                "duration_minutes": 30,
+                "calories_kcal": 280.0,
+                "notes": "Course matinale"
+            }
+        ],
+        "intraday_samples": [
+            {
+                "metric_type": "hr",
+                "timestamp": "2026-10-26T07:30:00Z",
+                "value": 145.0,
+                "unit": "bpm"
+            }
+        ]
+    }
+
+    resp = client.post("/api/webhook/health", json=extended_payload, headers={"X-Webhook-Token": token})
+    assert resp.status_code == 200
+    res_data = resp.json()
+    assert res_data["status"] == "success"
+
+    ing = res_data["results"]
+    # 1. Poids et composition Withings
+    assert ing["weight"]["weight_kg"] == 77.2
+    assert ing["weight"]["body_fat_pct"] == 17.8
+    assert ing["weight"]["muscle_mass_kg"] == 39.5
+    assert ing["weight"]["source"] == "health_connect"
+
+    # 2. Métriques quotidiennes RingConn (HRV, FC repos, SpO2)
+    assert ing["daily_metric"]["resting_hr_bpm"] == 54
+    assert ing["daily_metric"]["hrv_rmssd_ms"] == 68.0
+    assert ing["daily_metric"]["spo2_pct"] == 99.0
+    assert ing["daily_metric"]["steps"] == 8500
+    assert ing["daily_metric"]["active_calories_kcal"] == 350.0
+
+    # 3. Sommeil et phases
+    assert ing["sleep_session"]["duration_minutes"] == 450
+    assert ing["sleep_session"]["deep_minutes"] == 100
+    assert len(ing["sleep_session"]["stages"]) == 2
+
+    # 4. Workouts
+    assert len(ing["workouts"]) == 1
+    assert ing["workouts"][0]["workout_type"] == "running"
+    assert ing["workouts"][0]["duration_minutes"] == 30
+
+    # 5. Échantillons FC intraday
+    assert ing["intraday_samples_count"] == 1
