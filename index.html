@@ -3638,16 +3638,21 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : 'RingConn Ring' })
         });
-        if (res && res.token) {
-          const disp = document.getElementById(`wiz-token-display-${deviceId}`);
-          const txt = document.getElementById(`wiz-token-text-${deviceId}`);
-          if (disp && txt) {
-            txt.innerText = res.token;
-            disp.classList.remove('hidden');
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.token) {
+            const disp = document.getElementById(`wiz-token-display-${deviceId}`);
+            const txt = document.getElementById(`wiz-token-text-${deviceId}`);
+            if (disp && txt) {
+              txt.innerText = data.token;
+              disp.classList.remove('hidden');
+            }
+            alert(`Jeton sécurisé généré pour ${deviceId} : \n${data.token}\n\nCopié dans le presse-papier.`);
+            navigator.clipboard.writeText(data.token);
+            loadDashboardData();
           }
-          alert(`Jeton sécurisé généré pour ${deviceId} : \n${res.token}\n\nCopié dans le presse-papier.`);
-          navigator.clipboard.writeText(res.token);
-          loadDashboardData();
+        } else {
+          alert("Erreur lors de la génération du jeton.");
         }
       } catch (err) {
         console.error("Erreur génération token:", err);
