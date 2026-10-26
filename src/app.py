@@ -500,18 +500,18 @@ def get_dashboard_data(
     elif len(weights) >= 2:
         weight_7d_change = round(weights[-1].weight_kg - weights[0].weight_kg, 2)
 
-    # Synthèse du jour
+    # Synthèse du jour (strictement rattachée à la date du jour pour éviter d'afficher d'anciens pas de simulation)
     today_activity = next((a for a in reversed(activities) if a.date == today), None)
-    if not today_activity and activities:
-        today_activity = activities[-1]
+    today_metrics = [m for m in db.get_daily_metrics(limit=5, user_id=user_id) if m.date == today]
+    today_metric = today_metrics[0] if today_metrics else None
 
     # Profil utilisateur personnalisé
     profile = db.get_user_profile(user_id=user_id)
     saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
 
-    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today_activity.date if today_activity else today, user_id=user_id)
+    daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today, user_id=user_id)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
-        target_date=today_activity.date if today_activity else today,
+        target_date=today,
         user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5,
         user_height_cm=profile.get("height_cm", 178.0),
         user_age=profile.get("age", 35),
@@ -567,7 +567,7 @@ def get_dashboard_data(
             "water_pct": latest_weight.water_pct if latest_weight else None,
             "bmi": latest_weight.bmi if latest_weight else None,
             "target_weight_kg": profile.get("target_weight_kg", 77.0),
-            "steps": today_activity.steps if today_activity else 0,
+            "steps": (today_activity.steps if today_activity else (today_metric.steps if today_metric else 0)) or 0,
             "steps_target": profile.get("target_steps", 10000),
             "calories_intake_kcal": energy_balance["calories_intake_kcal"],
             "calories_burned_kcal": energy_balance["calories_burned_kcal"],
@@ -577,9 +577,9 @@ def get_dashboard_data(
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
             "macros": daily_nutrition["macros"],
-            "resting_hr_bpm": today_activity.resting_hr_bpm if today_activity else None,
-            "hrv_ms": today_activity.hrv_ms if today_activity else None,
-            "sleep_score": today_activity.sleep_score if today_activity else None,
+            "resting_hr_bpm": (today_activity.resting_hr_bpm if today_activity and today_activity.resting_hr_bpm else (today_metric.resting_hr_bpm if today_metric else None)),
+            "hrv_ms": (today_activity.hrv_ms if today_activity and today_activity.hrv_ms else (today_metric.hrv_rmssd_ms if today_metric else None)),
+            "sleep_score": (today_activity.sleep_score if today_activity and today_activity.sleep_score else (today_metric.sleep_score if today_metric else None)),
         },
         "weights_history": [w.model_dump() for w in weights],
         "activities_history": [a.model_dump() for a in activities],

@@ -61,6 +61,10 @@ class HealthSyncWorker(
             val startTime = now.minus(syncDays * 24L, ChronoUnit.HOURS)
             val timeRange = TimeRangeFilter.between(startTime, now)
 
+            // Fenêtre spécifique d'aujourd'hui (depuis minuit) pour les pas et calories du jour
+            val todayStart = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant()
+            val todayTimeRange = TimeRangeFilter.between(todayStart, now)
+
             val payload = JSONObject()
             payload.put("source", "health_connect")
             payload.put("synced_at", now.toString())
@@ -151,12 +155,12 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire les échantillons FC depuis Health Connect", e)
             }
 
-            // 3. Pas (Steps)
+            // 3. Pas (Steps) - Interroger spécifiquement la journée en cours
             try {
                 val stepsResp = healthConnectClient.readRecords(
                     ReadRecordsRequest(
                         recordType = StepsRecord::class,
-                        timeRangeFilter = timeRange
+                        timeRangeFilter = todayTimeRange
                     )
                 )
                 var totalSteps = 0L
@@ -168,12 +172,12 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire les pas depuis Health Connect", e)
             }
 
-            // 4. Calories actives
+            // 4. Calories actives - Interroger spécifiquement la journée en cours
             try {
                 val calResp = healthConnectClient.readRecords(
                     ReadRecordsRequest(
                         recordType = ActiveCaloriesBurnedRecord::class,
-                        timeRangeFilter = timeRange
+                        timeRangeFilter = todayTimeRange
                     )
                 )
                 var totalActiveCal = 0.0
@@ -196,7 +200,9 @@ class HealthSyncWorker(
                 weightResp.records.lastOrNull()?.let { lastWeight ->
                     payload.put("weight_kg", lastWeight.weight.inKilograms)
                     payload.put("weight_external_id", lastWeight.metadata.id)
-                    payload.put("date", lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString())
+                    val weightDate = lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString()
+                    payload.put("weight_date", weightDate)
+                    // Si aucune date n'était définie ou pour compatibilité, mais sans écraser la date du jour du payload
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Impossible de lire le poids depuis Health Connect", e)
@@ -321,6 +327,20 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire les séances de sport depuis Health Connect", e)
             }
 
+            // Calcul du nombre de métriques / types envoyés
+            var metricsCount = 0
+            if (payload.has("steps") && payload.getLong("steps") > 0) metricsCount++
+            if (payload.has("active_calories_kcal")) metricsCount++
+            if (payload.has("weight_kg")) metricsCount++
+            if (payload.has("body_fat_pct")) metricsCount++
+            if (payload.has("muscle_mass_kg")) metricsCount++
+            if (payload.has("hrv_ms")) metricsCount++
+            if (payload.has("resting_hr_bpm")) metricsCount++
+            if (payload.has("spo2_pct")) metricsCount++
+            if (payload.has("sleep_sessions")) metricsCount += payload.getJSONArray("sleep_sessions").length()
+            if (payload.has("workouts")) metricsCount += payload.getJSONArray("workouts").length()
+            if (payload.has("intraday_samples")) metricsCount += payload.getJSONArray("intraday_samples").length()
+
             // 8. Envoi au Webhook VitalTrack avec Token individuel
             val jsonMedia = "application/json; charset=utf-8".toMediaType()
             val requestBody = payload.toString().toRequestBody(jsonMedia)
@@ -335,9 +355,13 @@ class HealthSyncWorker(
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     Log.i(TAG, "Ingestion VitalTrack réussie: ${response.code}")
+                    val editor = prefs.edit()
+                    editor.putString("last_sync_timestamp", now.toString())
+                    editor.putInt("last_sync_metrics_count", metricsCount)
                     if (isFirstSync) {
-                        prefs.edit().putBoolean("has_completed_first_sync", true).apply()
+                        editor.putBoolean("has_completed_first_sync", true)
                     }
+                    editor.apply()
                     Result.success()
                 } else {
                     Log.e(TAG, "Erreur serveur VitalTrack HTTP: ${response.code}")

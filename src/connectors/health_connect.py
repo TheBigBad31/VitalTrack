@@ -200,6 +200,17 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
         if "weight_kg" in payload or "weight" in payload:
             w_kg = float(payload.get("weight_kg", payload.get("weight", 0.0)))
             if w_kg > 0:
+                # Utiliser la date dédiée à la pesée si présente, sinon la date du payload
+                w_date_raw = payload.get("weight_date") or date_raw
+                if not w_date_raw:
+                    w_target_date = date.today()
+                elif isinstance(w_date_raw, str):
+                    w_target_date = date.fromisoformat(w_date_raw[:10])
+                elif isinstance(w_date_raw, (date, datetime)):
+                    w_target_date = w_date_raw if isinstance(w_date_raw, date) else w_date_raw.date()
+                else:
+                    w_target_date = date.today()
+
                 fat_pct = payload.get("body_fat_pct", payload.get("body_fat"))
                 muscle_kg = payload.get("muscle_mass_kg", payload.get("muscle_mass"))
                 water_pct = payload.get("water_pct", payload.get("water"))
@@ -209,7 +220,7 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
                     bmi = round(w_kg / (h ** 2), 1)
 
                 weight_entry = WeightEntry(
-                    date=target_date,
+                    date=w_target_date,
                     weight_kg=w_kg,
                     body_fat_pct=float(fat_pct) if fat_pct is not None else None,
                     muscle_mass_kg=float(muscle_kg) if muscle_kg is not None else None,
