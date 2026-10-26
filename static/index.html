@@ -316,29 +316,38 @@
       </div>
 
       <!-- Bandeau Données en Direct : Google Santé Connect (Android) -->
-      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-brand-950/30 via-[#151D2A] to-[#151D2A] border border-brand-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div class="flex items-center space-x-3.5">
-          <div class="w-11 h-11 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
-            <i data-lucide="smartphone" class="w-6 h-6"></i>
+      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-brand-950/30 via-[#151D2A] to-[#151D2A] border border-brand-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300">
+        <div class="flex items-center space-x-3.5 w-full md:w-auto">
+          <div id="live-hc-icon-container" class="w-11 h-11 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
+            <i id="live-hc-icon" data-lucide="smartphone" class="w-6 h-6"></i>
           </div>
-          <div class="space-y-1">
-            <div class="flex items-center space-x-2">
-              <span class="text-xs font-bold text-white">Données reçues en direct : Google Santé Connect (Android)</span>
-              <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">Synchronisé ✓</span>
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="flex items-center flex-wrap gap-2">
+              <span id="live-hc-title" class="text-xs font-bold text-white">Données reçues en direct : Google Santé Connect (Android)</span>
+              <span id="live-hc-status-badge" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold flex items-center gap-1">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                <span id="live-hc-status-text">En attente du 1er envoi depuis votre téléphone</span>
+              </span>
             </div>
-            <div class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
-              <span>Pas du jour : <strong class="text-brand-400 font-bold" id="live-hc-steps">12 100 pas</strong></span>
-              <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">530 kcal</strong></span>
-              <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">57 BPM</strong></span>
-              <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">59 ms</strong></span>
-              <span>Sommeil : <strong class="text-indigo-400 font-bold" id="live-hc-sleep">85 / 100</strong></span>
+            <div id="live-hc-metrics-container" class="text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+              <span>Pas du jour : <strong class="text-brand-400 font-bold" id="live-hc-steps">-- pas</strong></span>
+              <span>Calories actives : <strong class="text-orange-400 font-bold" id="live-hc-cals">-- kcal</strong></span>
+              <span>FC Repos : <strong class="text-rose-400 font-bold" id="live-hc-hr">--</strong></span>
+              <span>HRV : <strong class="text-purple-400 font-bold" id="live-hc-hrv">--</strong></span>
+              <span>Sommeil : <strong class="text-indigo-400 font-bold" id="live-hc-sleep">--</strong></span>
             </div>
           </div>
         </div>
-        <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition-colors">
-          <span>Voir détails d'activité</span>
-          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-        </button>
+        <div class="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
+          <button id="live-hc-sync-btn" type="button" onclick="triggerSyncFromBanner()" class="px-3.5 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700/60 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <i id="live-hc-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
+            <span id="live-hc-sync-txt">Synchroniser</span>
+          </button>
+          <button type="button" onclick="switchTab('activity')" class="px-4 py-2 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <span>Détails d'activité</span>
+            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
       </div>
 
       <!-- Graphique combiné Poids & Tendance + Macros du Jour -->
