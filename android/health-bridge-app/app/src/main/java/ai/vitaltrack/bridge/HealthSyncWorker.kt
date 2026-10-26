@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.*
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.work.CoroutineWorker
@@ -37,8 +38,9 @@ class HealthSyncWorker(
     private val httpClient = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     override suspend fun doWork(): Result {
@@ -146,9 +148,9 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire le sommeil depuis Health Connect", e)
             }
 
-            // 2. Échantillons FC (HeartRate)
+            // 2. Échantillons FC (HeartRate) avec sous-échantillonnage pour éviter le timeout
             try {
-                val hrSamples = JSONArray()
+                val allSamples = mutableListOf<JSONObject>()
                 val hrResp = healthConnectClient.readRecords(
                     ReadRecordsRequest(
                         recordType = HeartRateRecord::class,
@@ -162,6 +164,18 @@ class HealthSyncWorker(
                         samp.put("timestamp", sample.time.toString())
                         samp.put("value", sample.beatsPerMinute)
                         samp.put("unit", "bpm")
+                        allSamples.add(samp)
+                    }
+                }
+                val hrSamples = JSONArray()
+                if (allSamples.size > 500) {
+                    // Sous-échantillonnage régulier pour conserver la courbe sans surcharger le serveur
+                    val step = (allSamples.size + 499) / 500
+                    for (i in allSamples.indices step step) {
+                        hrSamples.put(allSamples[i])
+                    }
+                } else {
+                    for (samp in allSamples) {
                         hrSamples.put(samp)
                     }
                 }
@@ -172,38 +186,62 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire les échantillons FC depuis Health Connect", e)
             }
 
-            // 3. Pas (Steps) - Interroger spécifiquement la journée en cours
+            // 3. Pas (Steps) - Agrégation Health Connect officielle (déduplication automatique des sources)
             try {
-                val stepsResp = healthConnectClient.readRecords(
-                    ReadRecordsRequest(
-                        recordType = StepsRecord::class,
+                val stepsAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(StepsRecord.COUNT_TOTAL),
                         timeRangeFilter = todayTimeRange
                     )
                 )
-                var totalSteps = 0L
-                for (rec in stepsResp.records) {
-                    totalSteps += rec.count
+                val totalSteps = stepsAgg[StepsRecord.COUNT_TOTAL]
+                if (totalSteps != null) {
+                    payload.put("steps", totalSteps)
+                } else {
+                    // Fallback readRecords si l'agrégation retourne null
+                    val stepsResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = StepsRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackSteps = 0L
+                    for (rec in stepsResp.records) {
+                        fallbackSteps += rec.count
+                    }
+                    payload.put("steps", fallbackSteps)
                 }
-                payload.put("steps", totalSteps)
             } catch (e: Exception) {
-                Log.w(TAG, "Impossible de lire les pas depuis Health Connect", e)
+                Log.w(TAG, "Impossible de lire/agréger les pas depuis Health Connect", e)
             }
 
-            // 4. Calories actives - Interroger spécifiquement la journée en cours
+            // 4. Calories actives - Agrégation Health Connect officielle (déduplication automatique des sources)
             try {
-                val calResp = healthConnectClient.readRecords(
-                    ReadRecordsRequest(
-                        recordType = ActiveCaloriesBurnedRecord::class,
+                val calAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
                         timeRangeFilter = todayTimeRange
                     )
                 )
-                var totalActiveCal = 0.0
-                for (rec in calResp.records) {
-                    totalActiveCal += rec.energy.inKilocalories
+                val activeCalEnergy = calAgg[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]
+                if (activeCalEnergy != null) {
+                    payload.put("active_calories_kcal", activeCalEnergy.inKilocalories)
+                } else {
+                    // Fallback readRecords
+                    val calResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = ActiveCaloriesBurnedRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackCal = 0.0
+                    for (rec in calResp.records) {
+                        fallbackCal += rec.energy.inKilocalories
+                    }
+                    payload.put("active_calories_kcal", fallbackCal)
                 }
-                payload.put("active_calories_kcal", totalActiveCal)
             } catch (e: Exception) {
-                Log.w(TAG, "Impossible de lire les calories brûlées depuis Health Connect", e)
+                Log.w(TAG, "Impossible d'agréger les calories actives depuis Health Connect", e)
             }
 
             // 5. Poids & Composition corporelle (Withings)
@@ -314,7 +352,7 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire la SpO2 depuis Health Connect", e)
             }
 
-            // 7. Séances d'entraînement (ExerciseSessionRecord / Workouts)
+            // 7. Séances d'entraînement (ExerciseSessionRecord / Workouts) avec calories et distance associées
             try {
                 val exerciseResp = healthConnectClient.readRecords(
                     ReadRecordsRequest(
@@ -335,6 +373,52 @@ class HealthSyncWorker(
                     if (!ex.title.isNullOrBlank()) {
                         wObj.put("notes", ex.title)
                     }
+
+                    // Récupérer les calories associées à la séance d'entraînement
+                    var workoutCalories = 0.0
+                    try {
+                        val wCalAgg = healthConnectClient.aggregate(
+                            AggregateRequest(
+                                metrics = setOf(
+                                    TotalCaloriesBurnedRecord.ENERGY_TOTAL,
+                                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL
+                                ),
+                                timeRangeFilter = TimeRangeFilter.between(ex.startTime, ex.endTime)
+                            )
+                        )
+                        val totalCal = wCalAgg[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories
+                        val activeCal = wCalAgg[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+                        workoutCalories = totalCal ?: activeCal ?: 0.0
+                    } catch (ce: Exception) {
+                        Log.d(TAG, "Impossible d'agréger les calories pour la séance ${ex.metadata.id}", ce)
+                    }
+                    wObj.put("calories_kcal", workoutCalories)
+
+                    // Récupérer la distance et la fréquence cardiaque moyenne
+                    try {
+                        val wMetricsAgg = healthConnectClient.aggregate(
+                            AggregateRequest(
+                                metrics = setOf(
+                                    DistanceRecord.DISTANCE_TOTAL,
+                                    HeartRateRecord.BPM_AVG,
+                                    HeartRateRecord.BPM_MAX
+                                ),
+                                timeRangeFilter = TimeRangeFilter.between(ex.startTime, ex.endTime)
+                            )
+                        )
+                        wMetricsAgg[DistanceRecord.DISTANCE_TOTAL]?.inMeters?.let { dist ->
+                            wObj.put("distance_meters", dist)
+                        }
+                        wMetricsAgg[HeartRateRecord.BPM_AVG]?.let { avgHr ->
+                            wObj.put("avg_hr_bpm", avgHr.toInt())
+                        }
+                        wMetricsAgg[HeartRateRecord.BPM_MAX]?.let { maxHr ->
+                            wObj.put("max_hr_bpm", maxHr.toInt())
+                        }
+                    } catch (me: Exception) {
+                        Log.d(TAG, "Impossible d'agréger distance/FC pour la séance ${ex.metadata.id}", me)
+                    }
+
                     workoutsArray.put(wObj)
                 }
                 if (workoutsArray.length() > 0) {
