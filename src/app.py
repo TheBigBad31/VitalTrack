@@ -173,8 +173,11 @@ device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health
 # Middleware & Dépendances d'Authentification JWT
 # =====================================================================
 
-def get_current_user(authorization: Optional[str] = Header(None)) -> AuthUser:
-    """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer.
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token")
+) -> AuthUser:
+    """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer ou un token d'appareil X-Webhook-Token.
     
     Supporte également le compte démo/principal par défaut si aucun header n'est fourni,
     permettant l'accès direct et la rétrocompatibilité tout en isolant par user_id.
@@ -194,6 +197,21 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> AuthUser:
                     auth_provider=user_data.get("auth_provider", "google"),
                     google_sub=user_data.get("google_sub")
                 )
+
+    # Vérifier l'authentification par token d'appareil (passerelle mobile Android / webhook)
+    if x_webhook_token and str(x_webhook_token).strip():
+        user_match = db.find_user_by_device_token(str(x_webhook_token).strip())
+        if user_match and user_match.get("user"):
+            u = user_match["user"]
+            return AuthUser(
+                id=u["id"],
+                uuid=u["uuid"],
+                email=u["email"],
+                name=u.get("name"),
+                picture=u.get("picture"),
+                auth_provider=u.get("auth_provider", "device_token"),
+                google_sub=u.get("google_sub")
+            )
 
     # Vérifier si une session Google active existe en base
     sess = db.get_google_session()
@@ -1065,6 +1083,13 @@ def estimate_meal_calories(req: MealEstimateRequest):
         portion_scale=scale,
         meal_type=req.meal_type
     )
+    # Aplatir les macros à la racine si présentes pour compatibilité client
+    if isinstance(result, dict) and "macros" in result and isinstance(result["macros"], dict):
+        macros = result["macros"]
+        result.setdefault("protein_g", macros.get("protein_g", 0.0))
+        result.setdefault("carbs_g", macros.get("carbs_g", 0.0))
+        result.setdefault("fat_g", macros.get("fat_g", 0.0))
+        result.setdefault("fiber_g", macros.get("fiber_g", 0.0))
     return result
 
 
