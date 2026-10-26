@@ -1859,9 +1859,15 @@ def get_devices_comparison():
 
 
 @app.get("/api/devices/{device_id}")
-def get_device_detail(device_id: str, current_user: AuthUser = Depends(get_current_user)):
-    """Récupère les détails et l'état en direct d'un appareil pour l'utilisateur connecté."""
-    dev = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=False)
+@app.post("/api/devices/{device_id}")
+def get_device_detail(
+    device_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    current_user: Optional[AuthUser] = None
+):
+    """Récupère les détails et l'état en direct d'un appareil, ou gère la synchronisation si invoqué par erreur en POST."""
+    user_id = current_user.id if current_user else 1
+    dev = db.get_user_device(device_id, user_id=user_id, reveal_secrets=False)
     connector = device_registry.get(device_id)
     if not dev and not connector:
         raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")

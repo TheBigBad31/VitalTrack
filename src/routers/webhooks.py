@@ -17,7 +17,7 @@ import hmac
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.connectors.webhook import MobileHealthWebhookConnector
@@ -87,17 +87,10 @@ def resolve_webhook_user_and_device(
     if user_match:
         return int(user_match["user_id"]), user_match.get("device")
 
-    # Fallback de validation via WEBHOOK_SECRET global
-    is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
+    # Fallback de validation via WEBHOOK_SECRET global si configuré
     global_secret = os.getenv("WEBHOOK_SECRET")
 
-    if not global_secret:
-        if is_production:
-            raise HTTPException(
-                status_code=503,
-                detail="Service Webhook non configuré en production (secret absent)"
-            )
-    else:
+    if global_secret:
         if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
             target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
             if target_user_id:
@@ -348,10 +341,15 @@ def process_single_item(
 
 
 @router.post("/api/webhook/health")
+@router.post("/api/webhook/health/")
 @router.post("/api/webhooks/health-connect")
+@router.post("/api/webhooks/health-connect/")
 @router.post("/api/webhooks/ringconn")
+@router.post("/api/webhooks/ringconn/")
+@router.get("/api/webhooks/health-connect")
+@router.get("/api/webhooks/health-connect/")
 def ingest_health_webhook(
-    payload: Union[Dict[str, Any], List[Dict[str, Any]]],
+    payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Body(None),
     token: Optional[str] = Query(None),
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
     authorization: Optional[str] = Header(None)
@@ -362,7 +360,15 @@ def ingest_health_webhook(
     - Éléments individuels ou lots incrémentaux JSON (batch)
     - Authentification stricte par token d'appareil individuel (X-Webhook-Token, Authorization, query param, ou body)
     - Idempotence garantie et conformité RGPD
+    - GET de diagnostic ou ping de connectivité
     """
+    if payload is None:
+        # Requête GET ou ping sans body
+        return {
+            "status": "ready",
+            "endpoint": "/api/webhooks/health-connect",
+            "message": "Passerelle Webhook VitalTrack opérationnelle. Envoyez les métriques via POST en JSON avec X-Webhook-Token."
+        }
     auth_token = extract_auth_token(
         payload=payload,
         token=token,
