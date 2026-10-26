@@ -2191,10 +2191,14 @@
                 <span class="text-emerald-400 font-bold">Prêt pour réception continue</span>
               </div>
             </div>
-            <div class="pt-1">
-              <button type="button" onclick="testHealthConnectIngestion()" class="w-full py-2 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+            <div class="pt-1 flex flex-col sm:flex-row gap-2">
+              <a href="/api/downloads/android-bridge" download="vitaltrack-health-bridge.apk" class="flex-1 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors text-center">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>Télécharger l'APK Android</span>
+              </a>
+              <button type="button" onclick="testHealthConnectIngestion()" class="flex-1 py-2 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="play" class="w-3.5 h-3.5"></i>
-                <span>Envoyer un test webhook Google Health Connect</span>
+                <span>Envoyer test webhook</span>
               </button>
             </div>
           </div>

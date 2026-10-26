@@ -1,0 +1,88 @@
+name: Build & Release Android APK (VitalTrack Health Bridge)
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-android-bridge.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-android-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Compile & Sign Android Bridge APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK & Gradle
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build APK (Assemble Release / Debug)
+        run: |
+          cd android/health-bridge-app
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleRelease || ./gradlew assembleDebug
+          else
+            gradle assembleRelease || gradle assembleDebug
+          fi
+
+      - name: Package & Prepare Installable APK
+        run: |
+          mkdir -p output-apk
+          APK_PATH=$(find android/health-bridge-app/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+            echo "Found APK: $APK_PATH"
+            cp "$APK_PATH" output-apk/vitaltrack-health-bridge.apk
+          else
+            echo "ERROR: No APK found after build!"
+            exit 1
+          fi
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitaltrack-health-bridge-apk
+          path: output-apk/vitaltrack-health-bridge.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish or Update GitHub Release (Push on Main / Tag / Manual)
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && github.repository == 'TheBigBad31/VitalTrack'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('VitalTrack Android Bridge {0}', github.ref_name) || 'VitalTrack Android Health Bridge (Dernière Version)' }}
+          body: |
+            ## 📱 Passerelle Android VitalTrack Health Bridge (Google Health Connect)
+
+            Cet APK installable directement sur smartphone Android / Xiaomi (HyperOS & MIUI) permet de synchroniser en continu les métriques locales de Google Health Connect (RingConn Gen 3, Withings, pas et sommeil) vers votre serveur VitalTrack.
+
+            ### 📦 Fichier APK :
+            - **Nom** : `vitaltrack-health-bridge.apk`
+            - **SHA256 & Compilation** : GitHub Actions Automated Runner
+          files: output-apk/vitaltrack-health-bridge.apk
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

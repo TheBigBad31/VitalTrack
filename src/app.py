@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -2437,6 +2437,31 @@ def get_goals_presets():
         except Exception:
             pass
     return DEFAULT_GOALS_PRESETS
+
+
+
+# =====================================================================
+# Téléchargement direct de l'APK Android (Health Bridge)
+# =====================================================================
+
+GITHUB_LATEST_RELEASE_APK_URL = "https://github.com/TheBigBad31/VitalTrack/releases/latest/download/vitaltrack-health-bridge.apk"
+
+@app.get("/api/downloads/android-bridge")
+def download_android_bridge():
+    """Téléchargement direct de l'APK VitalTrack Android Health Bridge.
+    
+    Vérifie en priorité si un binaire statique compilé existe localement
+    dans static/downloads/vitaltrack-health-bridge.apk. Sinon, redirige vers
+    la dernière release GitHub Actions hébergeant l'artefact officiel.
+    """
+    local_apk = os.path.join(STATIC_DIR, "downloads", "vitaltrack-health-bridge.apk")
+    if os.path.isfile(local_apk):
+        return FileResponse(
+            local_apk,
+            media_type="application/vnd.android.package-archive",
+            filename="vitaltrack-health-bridge.apk"
+        )
+    return RedirectResponse(url=GITHUB_LATEST_RELEASE_APK_URL, status_code=307)
 
 
 # =====================================================================
