@@ -346,24 +346,30 @@ def test_download_android_bridge_endpoint(client, tmp_path):
     """Vérifie le comportement de l'endpoint de téléchargement direct de l'APK."""
     import src.app as app_module
     
-    # 1. Quand l'APK n'est pas présent en local, redirige (307) vers la release GitHub
-    resp_redirect = client.get("/api/downloads/android-bridge", follow_redirects=False)
-    assert resp_redirect.status_code == 307
-    assert resp_redirect.headers["location"] == app_module.GITHUB_LATEST_RELEASE_APK_URL
-
-    # 2. Quand un fichier APK est présent dans static/downloads/vitaltrack-health-bridge.apk
     downloads_dir = os.path.join(app_module.STATIC_DIR, "downloads")
-    os.makedirs(downloads_dir, exist_ok=True)
-    fake_apk_path = os.path.join(downloads_dir, "vitaltrack-health-bridge.apk")
+    apk_path = os.path.join(downloads_dir, "vitaltrack-health-bridge.apk")
+    apk_backup_path = os.path.join(downloads_dir, "vitaltrack-health-bridge.apk.bak")
     
+    had_apk = os.path.exists(apk_path)
+    if had_apk:
+        os.replace(apk_path, apk_backup_path)
+
     try:
-        with open(fake_apk_path, "wb") as f:
-            f.write(b"PKfake_apk_binary_content_vitaltrack")
+        # 1. Quand l'APK n'est pas présent en local, redirige (307) vers la release GitHub
+        resp_redirect = client.get("/api/downloads/android-bridge", follow_redirects=False)
+        assert resp_redirect.status_code == 307
+        assert resp_redirect.headers["location"] == app_module.GITHUB_LATEST_RELEASE_APK_URL
+
+        # 2. Quand un fichier APK est présent dans static/downloads/vitaltrack-health-bridge.apk
+        with open(apk_path, "wb") as f:
+            f.write(b"PK  fake_apk_binary_content_vitaltrack")
         
         resp_file = client.get("/api/downloads/android-bridge")
         assert resp_file.status_code == 200
         assert resp_file.headers["content-type"] == "application/vnd.android.package-archive"
-        assert resp_file.content == b"PKfake_apk_binary_content_vitaltrack"
+        assert resp_file.content == b"PK  fake_apk_binary_content_vitaltrack"
     finally:
-        if os.path.exists(fake_apk_path):
-            os.remove(fake_apk_path)
+        if os.path.exists(apk_path):
+            os.remove(apk_path)
+        if had_apk and os.path.exists(apk_backup_path):
+            os.replace(apk_backup_path, apk_path)
