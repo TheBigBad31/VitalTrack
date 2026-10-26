@@ -2508,28 +2508,39 @@
 
       try {
         const res = await apiFetch(`/api/devices/${deviceId}/token`, { method: 'GET' });
-        if (res && res.token) {
-          currentDeviceTokens[deviceId] = res.token;
-          updateTokenDisplay(deviceId);
-          return res.token;
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.token) {
+            currentDeviceTokens[deviceId] = data.token;
+            updateTokenDisplay(deviceId);
+            return data.token;
+          }
         }
       } catch (e) {
-        // Si aucun jeton n'existe encore pour l'utilisateur, on le génère automatiquement
-        try {
-          const genRes = await apiFetch(`/api/devices/${deviceId}/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : deviceId })
-          });
-          if (genRes && genRes.token) {
-            currentDeviceTokens[deviceId] = genRes.token;
+        // En cas d'erreur de récupération
+      }
+
+      // Si aucun jeton n'existe encore pour l'utilisateur, on le génère automatiquement
+      try {
+        const genRes = await apiFetch(`/api/devices/${deviceId}/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : deviceId })
+        });
+        if (genRes && genRes.ok) {
+          const data = await genRes.json();
+          if (data && data.token) {
+            currentDeviceTokens[deviceId] = data.token;
             updateTokenDisplay(deviceId);
-            return genRes.token;
+            return data.token;
           }
-        } catch (err) {
-          console.error("Erreur récupération/génération token:", err);
+        } else {
+          console.error("Échec création token automatique:", genRes ? genRes.status : "inconnu");
           if (displayEl) displayEl.innerText = "Non configuré";
         }
+      } catch (err) {
+        console.error("Erreur récupération/génération token:", err);
+        if (displayEl) displayEl.innerText = "Non configuré";
       }
     }
 
@@ -2587,18 +2598,25 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : 'Smart Sensor' })
         });
-        if (res && res.token) {
-          currentDeviceTokens[deviceId] = res.token;
-          deviceTokensRevealed[deviceId] = true; // Révélé dès la génération
-          updateTokenDisplay(deviceId);
-          navigator.clipboard.writeText(res.token);
-          if (typeof showToast === 'function') {
-            showToast("✓ Nouveau jeton généré et copié dans le presse-papier !", "success");
-          } else {
-            alert(`✓ Jeton généré et copié dans le presse-papier :
-${res.token}`);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.token) {
+            currentDeviceTokens[deviceId] = data.token;
+            deviceTokensRevealed[deviceId] = true; // Révélé dès la génération
+            updateTokenDisplay(deviceId);
+            navigator.clipboard.writeText(data.token);
+            if (typeof showToast === 'function') {
+              showToast("✓ Nouveau jeton généré et copié dans le presse-papier !", "success");
+            } else {
+              alert(`✓ Jeton généré et copié dans le presse-papier :\n${data.token}`);
+            }
+            await loadDashboardData();
           }
-          await loadDashboardData();
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.error("Erreur génération token HTTP status:", res.status, errData);
+          if (typeof showToast === 'function') showToast("Erreur génération jeton: " + (errData.detail || res.statusText), "error");
+          else alert("Erreur génération jeton: " + (errData.detail || res.statusText));
         }
       } catch (err) {
         console.error("Erreur génération token:", err);
