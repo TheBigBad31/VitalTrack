@@ -35,18 +35,34 @@ class HealthSyncWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val httpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
-        val webhookUrl = prefs.getString("webhook_url", null)
+        val rawWebhookUrl = prefs.getString("webhook_url", null)
         val deviceToken = prefs.getString("device_token", null)
 
-        if (webhookUrl.isNullOrBlank() || deviceToken.isNullOrBlank()) {
+        if (rawWebhookUrl.isNullOrBlank() || deviceToken.isNullOrBlank()) {
             Log.w(TAG, "Paramètres webhook manquants. Configuration requise.")
             return Result.failure()
+        }
+
+        // Nettoyage et normalisation de l'URL cible
+        var webhookUrl = rawWebhookUrl.trim()
+        if (webhookUrl.endsWith("/")) {
+            webhookUrl = webhookUrl.dropLast(1)
+        }
+        if (!webhookUrl.contains("/api/webhook")) {
+            // Si l'utilisateur a rentré seulement le domaine ou une mauvaise sous-route
+            webhookUrl = if (webhookUrl.endsWith("/api")) {
+                "$webhookUrl/webhooks/health-connect"
+            } else {
+                "$webhookUrl/api/webhooks/health-connect"
+            }
         }
 
         val healthConnectClient = HealthConnectClient.getOrCreate(applicationContext)

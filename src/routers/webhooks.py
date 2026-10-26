@@ -342,12 +342,22 @@ def process_single_item(
 
 @router.post("/api/webhook/health")
 @router.post("/api/webhook/health/")
+@router.post("/api/webhooks/health")
+@router.post("/api/webhooks/health/")
 @router.post("/api/webhooks/health-connect")
 @router.post("/api/webhooks/health-connect/")
+@router.post("/api/webhook/health-connect")
+@router.post("/api/webhook/health-connect/")
+@router.post("/api/webhooks/health_connect")
+@router.post("/api/webhooks/health_connect/")
+@router.post("/api/webhook/health_connect")
+@router.post("/api/webhook/health_connect/")
 @router.post("/api/webhooks/ringconn")
 @router.post("/api/webhooks/ringconn/")
 @router.get("/api/webhooks/health-connect")
 @router.get("/api/webhooks/health-connect/")
+@router.get("/api/webhook/health")
+@router.get("/api/webhook/health/")
 def ingest_health_webhook(
     payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Body(None),
     token: Optional[str] = Query(None),
