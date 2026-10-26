@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.VitalTrackBridge" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary_purple</item>
+        <item name="colorPrimaryVariant">@color/primary_electric</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+        <item name="colorSecondary">@color/accent_cyan</item>
+        <item name="colorSecondaryVariant">@color/primary_electric</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="android:statusBarColor">@color/bg_base</item>
+        <item name="android:windowBackground">@color/bg_base</item>
+    </style>
+</resources>

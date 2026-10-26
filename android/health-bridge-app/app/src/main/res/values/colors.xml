@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VitalTrack Dark Indigo Theme Colors -->
+    <color name="bg_base">#0B0B1A</color>
+    <color name="surface_base">#14142B</color>
+    <color name="surface_elevated">#1C1C36</color>
+    <color name="border_subtle">#25254A</color>
+    <color name="border_hover">#3D3D6B</color>
+
+    <!-- Brand Accents -->
+    <color name="primary_purple">#7C3AED</color>
+    <color name="primary_electric">#2563FF</color>
+    <color name="accent_cyan">#22D3EE</color>
+    <color name="secondary_magenta">#C026D3</color>
+
+    <!-- Status Colors -->
+    <color name="status_success">#34D399</color>
+    <color name="status_warning">#F59E0B</color>
+    <color name="status_error">#F43F5E</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    <color name="text_hint">#475569</color>
+</resources>
