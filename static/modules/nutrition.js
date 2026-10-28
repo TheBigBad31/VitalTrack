@@ -4,7 +4,11 @@
 
 let currentCatalogItems = [];
 let currentCatalogFilter = 'all'; // 'all', 'food', 'dish'
+let currentCatalogSourceFilter = 'all'; // 'all', 'mine', 'public', 'friends' (Stage 15 / BALI-85)
 let currentCatalogBenefitFilter = ''; // Filtre par bienfait (Stage 13)
+let currentFriendSubscriptions = []; // Liste des abonnements aux catalogues d'amis
+let currentExplorerFriend = null; // Ami en cours d'exploration
+let currentExplorerFriendItems = []; // Aliments de l'ami
 let currentCatalogSearch = '';
 let currentJournalDate = new Date().toISOString().split('T')[0];
 let currentJournalData = null;
@@ -201,6 +205,9 @@ async function loadCatalogItems() {
   if (currentCatalogFilter && currentCatalogFilter !== 'all') {
     params.push(`type=${encodeURIComponent(currentCatalogFilter)}`);
   }
+  if (currentCatalogSourceFilter && currentCatalogSourceFilter !== 'all') {
+    params.push(`source=${encodeURIComponent(currentCatalogSourceFilter)}`);
+  }
   if (currentCatalogSearch && currentCatalogSearch.trim()) {
     params.push(`q=${encodeURIComponent(currentCatalogSearch.trim())}`);
   }
@@ -235,6 +242,21 @@ function filterCatalog(type) {
         btn.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors';
       } else {
         btn.className = 'flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors';
+      }
+    }
+  });
+  loadCatalogItems();
+}
+
+function filterCatalogSource(source) {
+  currentCatalogSourceFilter = source;
+  ['all', 'mine', 'public', 'friends'].forEach(s => {
+    const btn = document.getElementById(`cat-source-${s}`);
+    if (btn) {
+      if (s === source) {
+        btn.className = 'px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all text-center truncate shadow-sm';
+      } else {
+        btn.className = 'px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1';
       }
     }
   });
@@ -292,6 +314,19 @@ function renderCatalogItems() {
       ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
       : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
 
+    // Badge d'origine de l'aliment (BALI-85) : Public, Perso, ou Ami
+    let sourceBadge = '';
+    const isPublic = Boolean(item.is_public || item.user_id === 0 || item.user_id === null || item.source === 'public');
+    const isFriend = Boolean(item.owner_name || item.friend_name || (item.source === 'friend' || item.source === 'friends'));
+    if (isPublic) {
+      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Aliment du socle public"><i data-lucide="globe" class="w-2.5 h-2.5"></i><span>Public</span></span>`;
+    } else if (isFriend) {
+      const friendLabel = item.owner_name || item.friend_name || "Ami";
+      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${friendLabel}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${friendLabel}</span></span>`;
+    } else {
+      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Ma création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i><span>Perso</span></span>`;
+    }
+
     const unitLabel = `${item.default_quantity}${item.default_unit || 'g'}`;
     const p = Math.round((item.protein_per_unit_g || 0) * 10) / 10;
     const g = Math.round((item.carbs_per_unit_g || 0) * 10) / 10;
@@ -330,6 +365,7 @@ function renderCatalogItems() {
             </div>
             ${typeBadge}
             <h4 class="font-bold text-xs text-white truncate" title="${item.name}">${item.name}</h4>
+            ${sourceBadge}
           </div>
           <div class="text-right shrink-0">
             <span class="text-xs font-black text-amber-400">${cal}</span>
@@ -373,12 +409,19 @@ function renderCatalogItems() {
           </button>
           
           <div class="flex items-center gap-1">
-            <button onclick="openEditCatalogItemModal('${item.id}')" title="Modifier" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A]">
-              <i data-lucide="pencil" class="w-3 h-3"></i>
-            </button>
-            <button onclick="deleteCatalogItem('${item.id}')" title="Supprimer" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10">
-              <i data-lucide="trash-2" class="w-3 h-3"></i>
-            </button>
+            ${(!isPublic && !isFriend) ? `
+              <button onclick="openEditCatalogItemModal('${item.id}')" title="Modifier" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A]">
+                <i data-lucide="pencil" class="w-3 h-3"></i>
+              </button>
+              <button onclick="deleteCatalogItem('${item.id}')" title="Supprimer" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10">
+                <i data-lucide="trash-2" class="w-3 h-3"></i>
+              </button>
+            ` : (isFriend ? `
+              <button onclick="copyFriendItemToMyCatalog('${item.id}')" title="Importer dans mon catalogue" class="px-1.5 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 text-[10px] font-semibold flex items-center space-x-1">
+                <i data-lucide="copy" class="w-2.5 h-2.5"></i>
+                <span>Importer</span>
+              </button>
+            ` : '')}
           </div>
         </div>
       </div>
@@ -1565,15 +1608,30 @@ function renderModalCatalogList(searchQuery = '') {
     return;
   }
 
-  container.innerHTML = filtered.map(it => `
-    <div onclick="selectCatalogItemForPortion('${it.id}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
-      <div class="flex-1 pr-2">
-        <div class="text-xs font-bold text-white">${it.name}</div>
-        <div class="text-[11px] text-slate-400">Réf: ${it.default_quantity} ${it.default_unit} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
+  container.innerHTML = filtered.map(it => {
+    const isPublic = Boolean(it.is_public || it.user_id === 0 || it.user_id === null || it.source === 'public');
+    const isFriend = Boolean(it.owner_name || it.friend_name || (it.source === 'friend' || it.source === 'friends'));
+    let badge = '';
+    if (isPublic) {
+      badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">Public</span>';
+    } else if (isFriend) {
+      badge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">${it.owner_name || it.friend_name || 'Ami'}</span>`;
+    } else {
+      badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Perso</span>';
+    }
+    return `
+      <div onclick="selectCatalogItemForPortion('${it.id}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
+        <div class="flex-1 pr-2">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-xs font-bold text-white">${it.name}</span>
+            ${badge}
+          </div>
+          <div class="text-[11px] text-slate-400">Réf: ${it.default_quantity} ${it.default_unit} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
+        </div>
+        <button class="px-2 py-1 rounded-lg bg-brand-500/20 text-brand-300 text-xs font-semibold shrink-0">Choisir</button>
       </div>
-      <button class="px-2 py-1 rounded-lg bg-brand-500/20 text-brand-300 text-xs font-semibold shrink-0">Choisir</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function selectCatalogItemForPortion(itemId) {
@@ -1688,6 +1746,14 @@ document.addEventListener('keydown', (e) => {
       searchInput.select();
     }
   }
+
+  // Raccourci 'Escape' pour fermer la modale d'amis
+  if (e.key === 'Escape') {
+    const friendsModal = document.getElementById('modal-friends-catalog');
+    if (friendsModal && !friendsModal.classList.contains('hidden')) {
+      closeFriendsCatalogModal();
+    }
+  }
 });
 
 // Initialisation globale au chargement
@@ -1709,3 +1775,344 @@ window.handleDishIngredientSelectChange = handleDishIngredientSelectChange;
 window.addIngredientToDish = addIngredientToDish;
 window.removeDishIngredient = removeDishIngredient;
 window.updateDishIngredientQuantity = updateDishIngredientQuantity;
+
+
+
+// ============================================================================
+// 8. GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85)
+// ============================================================================
+
+function openFriendsCatalogModal() {
+  const modal = document.getElementById('modal-friends-catalog');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+  loadFriendSubscriptions();
+}
+
+function closeFriendsCatalogModal() {
+  const modal = document.getElementById('modal-friends-catalog');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  closeFriendCatalogExplorer();
+}
+
+async function loadFriendSubscriptions() {
+  const container = document.getElementById('friends-subscriptions-list');
+  const pill = document.getElementById('friends-count-pill');
+  if (container) {
+    container.innerHTML = '<div class="py-6 text-center text-xs text-slate-500"><span class="animate-spin inline-block mr-2">⏳</span> Chargement de vos amis abonnés...</div>';
+  }
+
+  try {
+    const res = await apiFetch('/api/catalog/subscriptions');
+    if (res.ok) {
+      currentFriendSubscriptions = await res.json();
+      renderFriendSubscriptionsList(currentFriendSubscriptions);
+      if (pill) {
+        pill.textContent = `${currentFriendSubscriptions.length} abonné${currentFriendSubscriptions.length > 1 ? 's' : ''}`;
+      }
+    } else {
+      if (container) {
+        container.innerHTML = '<div class="py-6 text-center text-xs text-rose-400">Impossible de charger la liste des abonnements.</div>';
+      }
+    }
+  } catch (err) {
+    console.error("Erreur récupération abonnements amis:", err);
+    if (container) {
+      container.innerHTML = '<div class="py-6 text-center text-xs text-rose-400">Erreur réseau lors de la récupération des abonnements.</div>';
+    }
+  }
+}
+
+function renderFriendSubscriptionsList(subs) {
+  const container = document.getElementById('friends-subscriptions-list');
+  if (!container) return;
+
+  if (!subs || subs.length === 0) {
+    container.innerHTML = `
+      <div class="py-8 text-center bg-[#0B0F17] border border-dashed border-[#1F2A3C] rounded-xl p-4 space-y-2">
+        <i data-lucide="user-plus" class="w-8 h-8 text-slate-600 mx-auto"></i>
+        <p class="text-xs text-slate-400 font-medium">Vous n'êtes actuellement abonné à aucun catalogue d'ami.</p>
+        <p class="text-[11px] text-slate-500">Saisissez l'email de votre ami ci-dessus pour accéder à ses recettes.</p>
+      </div>
+    `;
+    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = subs.map(sub => {
+    const friendName = sub.friend_name || sub.name || sub.email || `Ami #${sub.target_user_id || sub.id}`;
+    const friendEmail = sub.friend_email || sub.email || '';
+    const itemsCount = sub.items_count !== undefined ? sub.items_count : (sub.total_items || '--');
+    const targetId = sub.target_user_id || sub.id;
+
+    return `
+      <div class="bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/40 rounded-xl p-3 flex items-center justify-between gap-3 transition-all">
+        <div class="flex items-center space-x-3 min-w-0 flex-1">
+          <div class="w-9 h-9 rounded-xl bg-brand-500/20 border border-brand-500/30 text-brand-300 font-bold flex items-center justify-center shrink-0 text-xs">
+            ${friendName.charAt(0).toUpperCase()}
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-xs text-white truncate">${friendName}</span>
+              <span class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Synchronisé</span>
+              </span>
+            </div>
+            <div class="text-[11px] text-slate-400 truncate">${friendEmail || 'Utilisateur partagé'} &bull; ${itemsCount} aliments partagés</div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button 
+            type="button" 
+            onclick="exploreFriendCatalog('${targetId}', '${friendName}')" 
+            class="px-2.5 py-1.5 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 text-brand-300 text-xs font-semibold flex items-center space-x-1 transition-all"
+            title="Explorer le catalogue de cet ami"
+          >
+            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+            <span>Explorer</span>
+          </button>
+          <button 
+            type="button" 
+            onclick="removeFriendSubscription('${targetId}', '${friendName}')" 
+            class="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+            title="Se désabonner de ce catalogue"
+          >
+            <i data-lucide="user-x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+async function addFriendSubscription() {
+  const input = document.getElementById('friend-sub-input');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) {
+    if (typeof showToast === 'function') showToast("Veuillez saisir un email ou identifiant d'ami", "warning");
+    input.focus();
+    return;
+  }
+
+  const btn = document.getElementById('btn-add-friend-sub');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="animate-spin">⏳</span>';
+  }
+
+  try {
+    const payload = val.includes('@') ? { email: val } : { target_user_id: parseInt(val, 10) || val };
+    const res = await apiFetch('/api/catalog/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      input.value = '';
+      if (typeof showToast === 'function') showToast("Abonnement au catalogue validé avec succès !", "success");
+      await loadFriendSubscriptions();
+      loadCatalogItems(); // Actualise le catalogue principal
+    } else {
+      const err = await res.json().catch(() => ({}));
+      const msg = err.detail || "Impossible de trouver ou s'abonner à cet utilisateur.";
+      if (typeof showToast === 'function') showToast(msg, "error");
+      else alert(msg);
+    }
+  } catch (err) {
+    console.error("Erreur abonnement ami:", err);
+    if (typeof showToast === 'function') showToast("Erreur réseau lors de l'abonnement", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="user-plus" class="w-3.5 h-3.5"></i><span>S'abonner</span>';
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+  }
+}
+
+async function removeFriendSubscription(targetId, friendName) {
+  if (!confirm(`Souhaitez-vous vous désabonner du catalogue de ${friendName || 'cet ami'} ?`)) {
+    return;
+  }
+
+  try {
+    const res = await apiFetch(`/api/catalog/subscriptions/${targetId}`, {
+      method: 'DELETE'
+    });
+
+    if (res.ok) {
+      if (typeof showToast === 'function') showToast(`Désabonné du catalogue de ${friendName}`, "info");
+      if (currentExplorerFriend && currentExplorerFriend.id == targetId) {
+        closeFriendCatalogExplorer();
+      }
+      await loadFriendSubscriptions();
+      loadCatalogItems();
+    } else {
+      alert("Erreur lors du désabonnement.");
+    }
+  } catch (err) {
+    console.error("Erreur désabonnement:", err);
+    alert("Erreur réseau lors du désabonnement.");
+  }
+}
+
+async function exploreFriendCatalog(friendId, friendName) {
+  const explorerView = document.getElementById('friend-catalog-explorer-view');
+  const nameEl = document.getElementById('explorer-friend-name');
+  const countEl = document.getElementById('explorer-friend-items-count');
+  const listEl = document.getElementById('friend-explorer-items-list');
+
+  if (!explorerView || !listEl) return;
+
+  currentExplorerFriend = { id: friendId, name: friendName };
+  explorerView.classList.remove('hidden');
+  if (nameEl) nameEl.textContent = friendName;
+  if (countEl) countEl.textContent = "Chargement des aliments...";
+  listEl.innerHTML = '<div class="py-6 text-center text-xs text-slate-500"><span class="animate-spin inline-block mr-2">⏳</span> Récupération du catalogue de l'ami...</div>';
+
+  try {
+    const res = await apiFetch(`/api/catalog/friends/${friendId}/items`);
+    if (res.ok) {
+      currentExplorerFriendItems = await res.json();
+      if (countEl) countEl.textContent = `${currentExplorerFriendItems.length} aliment${currentExplorerFriendItems.length > 1 ? 's' : ''} et plat${currentExplorerFriendItems.length > 1 ? 's' : ''}`;
+      renderFriendExplorerItems(currentExplorerFriendItems);
+    } else {
+      listEl.innerHTML = '<div class="py-4 text-center text-xs text-rose-400">Impossible de charger le catalogue de cet ami.</div>';
+    }
+  } catch (err) {
+    console.error("Erreur exploration catalogue ami:", err);
+    listEl.innerHTML = '<div class="py-4 text-center text-xs text-rose-400">Erreur réseau lors de la récupération des aliments.</div>';
+  }
+}
+
+function closeFriendCatalogExplorer() {
+  const explorerView = document.getElementById('friend-catalog-explorer-view');
+  if (explorerView) explorerView.classList.add('hidden');
+  currentExplorerFriend = null;
+  currentExplorerFriendItems = [];
+}
+
+function renderFriendExplorerItems(items) {
+  const listEl = document.getElementById('friend-explorer-items-list');
+  if (!listEl) return;
+
+  if (!items || items.length === 0) {
+    listEl.innerHTML = '<div class="py-4 text-center text-xs text-slate-500 italic">Cet ami n'a pas encore d'aliments dans son catalogue.</div>';
+    return;
+  }
+
+  listEl.innerHTML = items.map(it => {
+    const isDish = it.item_type === 'dish';
+    const cal = Math.round(it.calories_per_unit);
+    const unit = `${it.default_quantity}${it.default_unit || 'g'}`;
+    const p = Math.round((it.protein_per_unit_g || 0) * 10) / 10;
+    const g = Math.round((it.carbs_per_unit_g || 0) * 10) / 10;
+    const l = Math.round((it.fat_per_unit_g || 0) * 10) / 10;
+
+    return `
+      <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-2.5 flex items-center justify-between gap-2 hover:border-brand-500/40 transition-colors">
+        <div class="flex items-center space-x-2 min-w-0 flex-1">
+          <span class="text-base shrink-0">${isDish ? '🍽️' : '🍎'}</span>
+          <div class="min-w-0 flex-1">
+            <h5 class="text-xs font-bold text-white truncate">${it.name}</h5>
+            <div class="text-[10px] text-slate-400 font-mono">
+              ${unit} &bull; <span class="text-amber-400 font-bold">${cal} kcal</span> (P:${p}g G:${g}g L:${l}g)
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-1.5 shrink-0">
+          <button 
+            type="button" 
+            onclick="copyFriendItemToMyCatalog('${it.id}')" 
+            class="px-2 py-1 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 text-brand-300 text-[11px] font-semibold flex items-center space-x-1 transition-all"
+            title="Copier cet aliment dans mon catalogue personnel"
+          >
+            <i data-lucide="copy" class="w-3 h-3"></i>
+            <span>Importer</span>
+          </button>
+          <button 
+            type="button" 
+            onclick="addFriendItemDirectlyToActiveMeal('${it.id}')" 
+            class="px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center space-x-1 transition-all"
+            title="Consommer directement dans mon repas actuel"
+          >
+            <i data-lucide="plus" class="w-3 h-3"></i>
+            <span>Consommer</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide && lucide.createIcons) lucide.createIcons();
+}
+
+async function copyFriendItemToMyCatalog(itemId) {
+  // Recherche l'item soit dans currentExplorerFriendItems, soit dans currentCatalogItems
+  const item = (currentExplorerFriendItems || []).find(it => it.id == itemId) || (currentCatalogItems || []).find(it => it.id == itemId);
+  if (!item) return;
+
+  const payload = {
+    name: item.name,
+    item_type: item.item_type || 'food',
+    default_unit: item.default_unit || 'g',
+    default_quantity: item.default_quantity || 100.0,
+    calories_per_unit: item.calories_per_unit,
+    protein_per_unit_g: item.protein_per_unit_g || 0.0,
+    carbs_per_unit_g: item.carbs_per_unit_g || 0.0,
+    fat_per_unit_g: item.fat_per_unit_g || 0.0,
+    fiber_per_unit_g: item.fiber_per_unit_g || 0.0,
+    photo_url: item.photo_url || null,
+    recipe_items: item.recipe_items || []
+  };
+
+  try {
+    const res = await apiFetch('/api/catalog/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      if (typeof showToast === 'function') {
+        showToast(`'${item.name}' a été importé dans votre catalogue personnel !`, 'success');
+      }
+      loadCatalogItems();
+    } else {
+      alert("Erreur lors de l'import de l'aliment dans votre catalogue.");
+    }
+  } catch (err) {
+    console.error("Erreur import aliment:", err);
+    alert("Erreur réseau lors de l'import.");
+  }
+}
+
+function addFriendItemDirectlyToActiveMeal(itemId) {
+  const item = (currentExplorerFriendItems || []).find(it => it.id == itemId) || (currentCatalogItems || []).find(it => it.id == itemId);
+  if (!item) return;
+  closeFriendsCatalogModal();
+  openDropPortionModal(item, currentActiveMealSlot || 'lunch');
+}
+
+window.openFriendsCatalogModal = openFriendsCatalogModal;
+window.closeFriendsCatalogModal = closeFriendsCatalogModal;
+window.loadFriendSubscriptions = loadFriendSubscriptions;
+window.addFriendSubscription = addFriendSubscription;
+window.removeFriendSubscription = removeFriendSubscription;
+window.exploreFriendCatalog = exploreFriendCatalog;
+window.closeFriendCatalogExplorer = closeFriendCatalogExplorer;
+window.copyFriendItemToMyCatalog = copyFriendItemToMyCatalog;
+window.addFriendItemDirectlyToActiveMeal = addFriendItemDirectlyToActiveMeal;
+window.filterCatalogSource = filterCatalogSource;

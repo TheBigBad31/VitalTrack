@@ -528,6 +528,10 @@
             <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-brand-400 font-mono">/</kbd>
             <span>rechercher</span>
           </div>
+          <button onclick="openFriendsCatalogModal()" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-colors" title="Gérer les catalogues d'amis partagés">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+            <span>Amis &amp; Partages</span>
+          </button>
           <button id="btn-quick-add-to-meal" onclick="openSelectFromCatalogModal('lunch')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition-all">
             <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
             <span>+ Ajouter au Repas</span>
@@ -568,6 +572,34 @@
                 <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
                 <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors">
                 <span class="absolute right-2.5 top-2 text-[10px] text-slate-500 font-mono hidden sm:inline">/</span>
+              </div>
+
+              <!-- Filtre par Source (BALI-85) : Tous, Mes Aliments, Catalogue Public, Amis -->
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-[11px] px-1 text-slate-400">
+                  <span class="font-medium flex items-center gap-1">
+                    <i data-lucide="database" class="w-3.5 h-3.5 text-brand-400"></i>
+                    <span>Origine &amp; Sources :</span>
+                  </span>
+                  <button type="button" onclick="openFriendsCatalogModal()" class="text-xs font-semibold text-brand-400 hover:text-brand-300 hover:underline flex items-center space-x-1">
+                    <i data-lucide="users" class="w-3 h-3"></i>
+                    <span>Gérer les amis</span>
+                  </button>
+                </div>
+                <div class="grid grid-cols-4 gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]" id="catalog-source-filters-bar">
+                  <button id="cat-source-all" onclick="filterCatalogSource('all')" class="px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all text-center truncate shadow-sm" title="Toutes les sources">
+                    Tous
+                  </button>
+                  <button id="cat-source-mine" onclick="filterCatalogSource('mine')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Mes créations personnelles">
+                    <span>Perso</span>
+                  </button>
+                  <button id="cat-source-public" onclick="filterCatalogSource('public')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Socle public commun">
+                    <span>Public</span>
+                  </button>
+                  <button id="cat-source-friends" onclick="filterCatalogSource('friends')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Catalogues d'amis abonnés">
+                    <span>Amis</span>
+                  </button>
+                </div>
               </div>
 
               <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
@@ -1637,7 +1669,102 @@
     </div>
   </div>
 
-    <!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
+      <!-- =================================================================== -->
+  <!-- MODAL : GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85) -->
+  <!-- =================================================================== -->
+  <div id="modal-friends-catalog" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+            <i data-lucide="users" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <span>Catalogues Partagés d'Amis</span>
+              <span id="friends-count-pill" class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-mono">0 abonnés</span>
+            </h3>
+            <p class="text-xs text-slate-400">Abonnez-vous aux catalogues de vos proches pour découvrir leurs plats &amp; recettes</p>
+          </div>
+        </div>
+        <button onclick="closeFriendsCatalogModal()" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Section 1 : Ajouter un ami (Email ou Identifiant) -->
+      <div class="p-3.5 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl space-y-2">
+        <label for="friend-sub-input" class="block text-xs font-semibold text-slate-300">
+          S'abonner au catalogue d'un ami :
+        </label>
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1">
+            <i data-lucide="at-sign" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+            <input type="text" id="friend-sub-input" placeholder="Adresse email ou identifiant de votre ami..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors" onkeydown="if(event.key==='Enter'){event.preventDefault(); addFriendSubscription();}">
+          </div>
+          <button type="button" onclick="addFriendSubscription()" id="btn-add-friend-sub" class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-md shadow-brand-600/20 flex items-center space-x-1.5 shrink-0 active:scale-95">
+            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+            <span>S'abonner</span>
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500 flex items-center gap-1">
+          <i data-lucide="info" class="w-3 h-3 text-slate-400"></i>
+          <span>Synchronisation automatique et instantanée des aliments et plats mis à jour par votre ami.</span>
+        </p>
+      </div>
+
+      <!-- Section 2 : Liste des abonnements actuels avec statut live -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
+            <i data-lucide="check-check" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>Mes amis abonnés</span>
+          </span>
+          <button type="button" onclick="loadFriendSubscriptions()" class="text-[11px] text-brand-400 hover:underline flex items-center space-x-1">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            <span>Actualiser</span>
+          </button>
+        </div>
+
+        <div id="friends-subscriptions-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+          <!-- Dynamique via renderFriendSubscriptionsList() -->
+        </div>
+      </div>
+
+      <!-- Section 3 : Explorateur dédié du catalogue de l'ami sélectionné -->
+      <div id="friend-catalog-explorer-view" class="hidden pt-3 border-t border-[#1F2A3C] space-y-3">
+        <div class="flex items-center justify-between bg-brand-500/10 border border-brand-500/20 rounded-xl p-3">
+          <div class="flex items-center space-x-2.5">
+            <span class="text-xl">🥗</span>
+            <div>
+              <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>Catalogue de :</span>
+                <span id="explorer-friend-name" class="text-brand-300 font-extrabold">--</span>
+              </div>
+              <div id="explorer-friend-items-count" class="text-[10px] text-slate-400">0 aliments disponibles</div>
+            </div>
+          </div>
+          <button type="button" onclick="closeFriendCatalogExplorer()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-[#0B0F17] border border-[#1F2A3C]">
+            Fermer l'explorateur
+          </button>
+        </div>
+
+        <div id="friend-explorer-items-list" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <!-- Dynamique via renderFriendExplorerItems() -->
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end pt-2 border-t border-[#1F2A3C]">
+        <button type="button" onclick="closeFriendsCatalogModal()" class="px-4 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-semibold transition-colors">
+          Fermer (Échap)
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+<!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
   <!-- =================================================================== -->
   <div id="modal-meal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
