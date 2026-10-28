@@ -22,7 +22,7 @@ import logging
 import os
 import time
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -1571,14 +1571,9 @@ def evaluate_nutrition_benefits(req: NutritionEvaluateRequest):
 # Endpoints Journal des Repas Quotidiens (Stage 12)
 # =====================================================================
 
-@app.get("/api/meals/journal")
-def get_meals_journal(
-    date_param: Optional[str] = Query(None, alias="date", description="Date YYYY-MM-DD"),
-    current_user: AuthUser = Depends(get_current_user)
-):
-    """Récupère les 4 repas du jour avec la composition et les totaux."""
-    target_date = date.fromisoformat(date_param) if date_param else date.today()
-    logs = db.get_meal_logs_for_date(target_date, user_id=current_user.id)
+def calculate_day_summary(target_date: date, user_id: int = 1) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Calcule les 4 repas et le résumé nutritionnel de la journée sans écriture en base."""
+    logs = db.get_meal_logs_for_date(target_date, user_id=user_id)
     logs_by_type = {log.meal_type: log for log in logs}
 
     meal_types = ["breakfast", "lunch", "snack", "dinner"]
@@ -1592,8 +1587,19 @@ def get_meals_journal(
     for mt in meal_types:
         mlog = logs_by_type.get(mt)
         if not mlog:
-            mlog = db.get_or_create_meal_log(target_date, mt, user_id=current_user.id)
-        
+            mlog = MealLog(
+                id=None,
+                user_id=user_id,
+                date=target_date,
+                meal_type=mt,
+                total_calories=0.0,
+                total_protein_g=0.0,
+                total_carbs_g=0.0,
+                total_fat_g=0.0,
+                total_fiber_g=0.0,
+                items=[]
+            )
+
         m_dict = mlog.model_dump()
         meals_response.append(m_dict)
 
@@ -1603,7 +1609,6 @@ def get_meals_journal(
         day_total_fat += mlog.total_fat_g
         day_total_fiber += (mlog.total_fiber_g or 0.0)
 
-    # Calcul des pourcentages de macros pour la journée
     cal_p = day_total_prot * 4.0
     cal_c = day_total_carbs * 4.0
     cal_f = day_total_fat * 9.0
@@ -1614,17 +1619,30 @@ def get_meals_journal(
         "fat_pct": round((cal_f / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0
     }
 
+    day_summary = {
+        "total_calories": round(day_total_cal, 1),
+        "total_protein_g": round(day_total_prot, 1),
+        "total_carbs_g": round(day_total_carbs, 1),
+        "total_fat_g": round(day_total_fat, 1),
+        "total_fiber_g": round(day_total_fiber, 1),
+        "macros_pct": macros_pct
+    }
+    return meals_response, day_summary
+
+
+@app.get("/api/meals/journal")
+def get_meals_journal(
+    date_param: Optional[str] = Query(None, alias="date", description="Date YYYY-MM-DD"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Récupère les 4 repas du jour avec la composition et les totaux (lecture pure sans écriture en base)."""
+    target_date = date.fromisoformat(date_param) if date_param else date.today()
+    meals_response, day_summary = calculate_day_summary(target_date, user_id=current_user.id)
+
     return {
         "date": target_date.isoformat(),
         "meals": meals_response,
-        "day_summary": {
-            "total_calories": round(day_total_cal, 1),
-            "total_protein_g": round(day_total_prot, 1),
-            "total_carbs_g": round(day_total_carbs, 1),
-            "total_fat_g": round(day_total_fat, 1),
-            "total_fiber_g": round(day_total_fiber, 1),
-            "macros_pct": macros_pct
-        }
+        "day_summary": day_summary
     }
 
 
@@ -1692,10 +1710,14 @@ def add_item_to_meal_journal(
             user_id=current_user.id
         )
 
+    action_date = last_log.date if last_log else target_date
+    _, day_summary = calculate_day_summary(action_date, user_id=current_user.id)
+
     return {
         "status": "success",
         "meal_type": meal_type,
-        "meal_log": last_log.model_dump() if last_log else None
+        "meal_log": last_log.model_dump() if last_log else None,
+        "day_summary": day_summary
     }
 
 
@@ -1708,10 +1730,14 @@ def delete_meal_journal_item(
     updated_log = db.delete_meal_log_item(item_id, user_id=current_user.id)
     if not updated_log:
         raise HTTPException(status_code=404, detail="Ligne d'aliment introuvable dans le journal")
+
+    _, day_summary = calculate_day_summary(updated_log.date, user_id=current_user.id)
+
     return {
         "status": "success",
         "message": f"Aliment #{item_id} retiré du repas",
-        "meal_log": updated_log.model_dump()
+        "meal_log": updated_log.model_dump(),
+        "day_summary": day_summary
     }
 
 
