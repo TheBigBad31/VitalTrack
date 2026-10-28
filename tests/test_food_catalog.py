@@ -295,3 +295,105 @@ def test_dish_with_recipe_items_composition(catalog_setup):
     my_dish = next(d for d in list_res if d["id"] == dish_id)
     assert len(my_dish["recipe_items"]) == 2
     assert my_dish["recipe_items"][0]["quantity"] == 40.0
+
+
+def test_public_catalog_and_subscriptions(catalog_setup):
+    """Teste le catalogue public partagé, le filtrage par source et l'abonnement aux amis."""
+    client = catalog_setup["client"]
+    token1 = catalog_setup["token1"]
+    token2 = catalog_setup["token2"]
+    user1 = catalog_setup["user1"]
+    user2 = catalog_setup["user2"]
+    headers1 = {"Authorization": f"Bearer {token1}"}
+    headers2 = {"Authorization": f"Bearer {token2}"}
+
+    # 1. Vérification de la présence des aliments publics du socle
+    res_pub = client.get("/api/catalog/items?source=public", headers=headers1)
+    assert res_pub.status_code == 200
+    public_items = res_pub.json()
+    assert len(public_items) >= 10
+    assert any(it["name"] == "Flocons d'avoine complets" for it in public_items)
+    assert any(it["name"] == "Blanc de poulet rôti" for it in public_items)
+    assert all(it["is_public"] is True for it in public_items)
+
+    # 2. Alice crée un aliment personnel et un plat personnalisé
+    client.post("/api/catalog/items", json={
+        "name": "Porridge Maison Alice",
+        "item_type": "dish",
+        "default_unit": "bol",
+        "default_quantity": 1.0,
+        "calories_per_unit": 320.0,
+        "protein_per_unit_g": 18.0,
+        "carbs_per_unit_g": 45.0,
+        "fat_per_unit_g": 6.0
+    }, headers=headers1)
+
+    # Bob consulte sans abonnement :
+    # source=mine -> vide
+    bob_mine = client.get("/api/catalog/items?source=mine", headers=headers2).json()
+    assert len(bob_mine) == 0
+
+    # source=friends -> vide (pas encore abonné)
+    bob_friends = client.get("/api/catalog/items?source=friends", headers=headers2).json()
+    assert len(bob_friends) == 0
+
+    # source=all -> seulement les publics
+    bob_all = client.get("/api/catalog/items?source=all", headers=headers2).json()
+    assert len(bob_all) == len(public_items)
+    assert not any(it["name"] == "Porridge Maison Alice" for it in bob_all)
+
+    # 3. Bob explore le catalogue d'Alice (friend_id)
+    res_explore = client.get(f"/api/catalog/friends/{user1['id']}/items", headers=headers2)
+    assert res_explore.status_code == 200
+    explore_data = res_explore.json()
+    assert explore_data["friend"]["id"] == user1["id"]
+    assert explore_data["is_subscribed"] is False
+    assert len(explore_data["items"]) == 1
+    assert explore_data["items"][0]["name"] == "Porridge Maison Alice"
+
+    # 4. Bob s'abonne au catalogue d'Alice par email
+    res_sub = client.post("/api/catalog/subscriptions", json={"email": "alice@vitaltrack.local"}, headers=headers2)
+    assert res_sub.status_code == 200
+    assert res_sub.json()["status"] == "success"
+
+    # Vérification dans la liste des abonnements de Bob
+    res_subs_list = client.get("/api/catalog/subscriptions", headers=headers2)
+    assert res_subs_list.status_code == 200
+    subs = res_subs_list.json()
+    assert len(subs) == 1
+    assert subs[0]["target_user_id"] == user1["id"]
+    assert subs[0]["target_user_name"] == "Alice"
+
+    # 5. Bob filtre source=friends -> Il voit le porridge d'Alice
+    bob_friends_after = client.get("/api/catalog/items?source=friends", headers=headers2).json()
+    assert len(bob_friends_after) == 1
+    assert bob_friends_after[0]["name"] == "Porridge Maison Alice"
+
+    # Bob filtre source=all -> Publics + Amis abonnés
+    bob_all_after = client.get("/api/catalog/items?source=all", headers=headers2).json()
+    assert len(bob_all_after) == len(public_items) + 1
+    assert any(it["name"] == "Porridge Maison Alice" for it in bob_all_after)
+
+    # 6. Synchronisation automatique : Alice met à jour sa recette
+    alice_items = client.get("/api/catalog/items?source=mine", headers=headers1).json()
+    alice_dish_id = next(it["id"] for it in alice_items if it["name"] == "Porridge Maison Alice")
+    client.put(f"/api/catalog/items/{alice_dish_id}", json={
+        "name": "Porridge Protéiné Alice",
+        "calories_per_unit": 350.0,
+        "protein_per_unit_g": 24.0
+    }, headers=headers1)
+
+    # Bob voit immédiatement la mise à jour reflétée
+    bob_friends_updated = client.get("/api/catalog/items?source=friends", headers=headers2).json()
+    assert len(bob_friends_updated) == 1
+    assert bob_friends_updated[0]["name"] == "Porridge Protéiné Alice"
+    assert bob_friends_updated[0]["calories_per_unit"] == 350.0
+    assert bob_friends_updated[0]["protein_per_unit_g"] == 24.0
+
+    # 7. Bob se désabonne du catalogue d'Alice
+    res_unsub = client.delete(f"/api/catalog/subscriptions/{user1['id']}", headers=headers2)
+    assert res_unsub.status_code == 200
+
+    # Bob ne voit plus l'aliment dans ses amis
+    bob_friends_empty = client.get("/api/catalog/items?source=friends", headers=headers2).json()
+    assert len(bob_friends_empty) == 0
