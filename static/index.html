@@ -69,6 +69,9 @@
       <!-- Actions Rapides Header -->
       <div class="flex items-center space-x-2">
         <!-- Container Authentification Header & Menu Profil Déroulant -->
+        <!-- Sélecteur de Profil & Mode Read-Only -->
+        <div id="header-profile-selector-container" class="relative"></div>
+
         <div id="header-auth-container" class="relative flex items-center">
           <button type="button" onclick="openAuthModal()" id="btn-header-auth" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter / S'inscrire">
             <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
@@ -84,11 +87,11 @@
           <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>
           <span class="hidden sm:inline">Connexion Appareils</span>
         </button>
-        <button onclick="openMealModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md shadow-brand-600/20 transition-all active:scale-95">
+        <button onclick="openMealModal()" class="write-action-btn flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-md shadow-brand-600/20 transition-all active:scale-95">
           <i data-lucide="camera" class="w-4 h-4"></i>
           <span class="hidden sm:inline">Photo Repas</span>
         </button>
-        <button onclick="openWeightModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95">
+        <button onclick="openWeightModal()" class="write-action-btn flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95">
           <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
           <span class="hidden sm:inline">Pesée</span>
         </button>
@@ -120,6 +123,11 @@
         <i data-lucide="target" class="w-4 h-4"></i>
         <span>Objectifs</span>
       </button>
+      <button onclick="openFriendsModal()" id="tab-friends-desk" class="nav-btn px-3 py-1.5 rounded-lg border-b-2 text-slate-400 border-transparent hover:text-slate-200 flex items-center space-x-2 transition-all cursor-pointer">
+        <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
+        <span>Amis & Partage</span>
+        <span id="badge-friends-incoming-desk" class="hidden text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-bold animate-pulse">0</span>
+      </button>
       <button onclick="switchTab('devices')" id="tab-devices-desk" class="nav-btn px-3 py-1.5 rounded-lg border-b-2 text-slate-400 border-transparent hover:text-slate-200 flex items-center space-x-2 transition-all">
         <i data-lucide="cpu" class="w-4 h-4"></i>
         <span>Appareils & Données</span>
@@ -129,6 +137,34 @@
 
   <!-- Contenu Principal -->
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-6">
+
+    <!-- Bannière Visuelle Consultation Read-Only (Mode Ami) -->
+    <div id="read-only-banner" class="hidden bg-gradient-to-r from-amber-500/20 via-amber-600/15 to-amber-500/20 border border-amber-500/50 rounded-2xl p-4 shadow-xl backdrop-blur-md animate-fade-in">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="flex items-center space-x-3.5">
+          <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0 shadow-inner">
+            <i data-lucide="eye" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">Mode Consultation</span>
+              <span class="text-xs font-bold text-amber-300">Lecture Seule</span>
+            </div>
+            <p class="text-xs text-slate-200 mt-0.5">
+              Vous consultez actuellement le journal de <span id="read-only-friend-name" class="font-bold text-white underline decoration-amber-400">votre ami</span> en lecture seule.
+            </p>
+          </div>
+        </div>
+        <button 
+          type="button" 
+          onclick="exitReadOnlyMode()" 
+          class="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/25 flex items-center justify-center space-x-2 transition-transform active:scale-95 shrink-0"
+        >
+          <i data-lucide="arrow-left" class="w-4 h-4"></i>
+          <span>Revenir à mon journal</span>
+        </button>
+      </div>
+    </div>
 
     <!-- Banderole d'Action Rapide Mobile (Toujours en tête) -->
     <section class="bg-gradient-to-r from-brand-950/40 via-[#151D2A] to-[#151D2A] border border-brand-500/20 rounded-2xl p-4 shadow-xl">
@@ -143,15 +179,15 @@
           </div>
         </div>
         <div class="flex items-center gap-2 w-full sm:w-auto">
-          <button onclick="openMealModal()" class="flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-black font-bold text-xs shadow-lg shadow-brand-500/25 transition-transform active:scale-95">
+          <button onclick="openMealModal()" class="write-action-btn flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-black font-bold text-xs shadow-lg shadow-brand-500/25 transition-transform active:scale-95">
             <i data-lucide="camera" class="w-4 h-4"></i>
             <span>📸 Analyser mon repas</span>
           </button>
-          <button onclick="openWeightModal()" class="flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
+          <button onclick="openWeightModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
             <i data-lucide="plus" class="w-4 h-4 text-brand-400"></i>
             <span>Poids (kg)</span>
           </button>
-          <button onclick="openActivityModal()" class="flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
+          <button onclick="openActivityModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
             <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
             <span>Activité</span>
           </button>
@@ -463,7 +499,7 @@
             <h3 class="font-bold text-white text-base">Historique Détaillé du Poids (30 jours)</h3>
             <p class="text-xs text-slate-400">Pesées réelles (points), Tendance glissante 7 jours (ligne verte) et Objectif cible (ligne pointillée)</p>
           </div>
-          <button onclick="openWeightModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+          <button onclick="openWeightModal()" class="write-action-btn px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>Nouvelle Pesée</span>
           </button>
@@ -701,7 +737,7 @@
                 <i data-lucide="bookmark" class="w-3.5 h-3.5 text-amber-400"></i>
                 <span>Mes Plats</span>
               </button>
-              <button onclick="openMealModal('breakfast')" class="py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
+              <button onclick="openMealModal('breakfast')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
                 <i data-lucide="camera" class="w-3.5 h-3.5"></i>
                 <span>Photo</span>
               </button>
@@ -722,7 +758,7 @@
                 <i data-lucide="bookmark" class="w-3.5 h-3.5 text-brand-400"></i>
                 <span>Mes Plats</span>
               </button>
-              <button onclick="openMealModal('lunch')" class="py-1.5 px-2.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
+              <button onclick="openMealModal('lunch')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
                 <i data-lucide="camera" class="w-3.5 h-3.5"></i>
                 <span>Photo</span>
               </button>
@@ -743,7 +779,7 @@
                 <i data-lucide="bookmark" class="w-3.5 h-3.5 text-pink-400"></i>
                 <span>Mes Plats</span>
               </button>
-              <button onclick="openMealModal('snack')" class="py-1.5 px-2.5 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
+              <button onclick="openMealModal('snack')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
                 <i data-lucide="camera" class="w-3.5 h-3.5"></i>
                 <span>Photo</span>
               </button>
@@ -764,7 +800,7 @@
                 <i data-lucide="bookmark" class="w-3.5 h-3.5 text-indigo-400"></i>
                 <span>Mes Plats</span>
               </button>
-              <button onclick="openMealModal('dinner')" class="py-1.5 px-2.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
+              <button onclick="openMealModal('dinner')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
                 <i data-lucide="camera" class="w-3.5 h-3.5"></i>
                 <span>Photo</span>
               </button>
@@ -813,7 +849,7 @@
             <h3 class="font-bold text-white text-base">Calories Réparties par Repas & par Jour</h3>
             <p class="text-xs text-slate-400">Petit-déjeuner 🥐, Déjeuner 🥗, Goûter 🍎, Dîner 🍲 comparés à la cible calorique (2 000 kcal)</p>
           </div>
-          <button onclick="openMealModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+          <button onclick="openMealModal()" class="write-action-btn px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
             <i data-lucide="camera" class="w-4 h-4"></i>
             <span>Ajouter Repas Photo</span>
           </button>
@@ -1264,6 +1300,13 @@
         <button onclick="switchTab('goals'); toggleMobileMoreMenu();" id="tab-goals-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
           <i data-lucide="target" class="w-4 h-4 text-violet-400"></i>
           <span>Objectifs & Profil</span>
+        </button>
+        <button onclick="openFriendsModal(); toggleMobileMoreMenu();" id="tab-friends-mob" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
+            <span>Amis & Partage</span>
+          </div>
+          <span id="badge-friends-incoming-mob" class="hidden text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-bold">0</span>
         </button>
         <button onclick="switchTab('devices'); toggleMobileMoreMenu();" id="tab-devices-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
           <i data-lucide="cpu" class="w-4 h-4 text-blue-400"></i>
@@ -2108,6 +2151,29 @@
           </div>
         </div>
 
+        <!-- Section Cercle d'Amis & Partage dans le Profil -->
+        <div class="pt-2 border-t border-[#1F2A3C]">
+          <div class="p-3 rounded-xl bg-gradient-to-r from-brand-950/40 to-[#0B0F17] border border-brand-500/30 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
+                <i data-lucide="users" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <div class="text-xs font-bold text-white">Cercle d'Amis & Partage</div>
+                <div class="text-[10px] text-slate-400">Partagez vos données de santé ou suivez vos proches en lecture seule</div>
+              </div>
+            </div>
+            <button 
+              type="button" 
+              onclick="closeProfileModal(); openFriendsModal()" 
+              class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition-all active:scale-95 shadow-sm flex items-center space-x-1 shrink-0"
+            >
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>Gérer</span>
+            </button>
+          </div>
+        </div>
+
         <button onclick="saveUserProfile()" class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-transform active:scale-95 shadow-lg shadow-brand-600/25">
           <i data-lucide="save" class="w-4 h-4"></i>
           <span>Enregistrer mon Profil</span>
@@ -2566,11 +2632,123 @@
     };
   </script>
 
+
+  <!-- =================================================================== -->
+  <!-- MODAL : GESTION DES AMIS & PARTAGE EN LECTURE SEULE -->
+  <!-- =================================================================== -->
+  <div id="modal-friends" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+      
+      <!-- En-tête Modale -->
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
+            <i data-lucide="users" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base sm:text-lg">Amis & Partage en Lecture Seule</h3>
+            <p class="text-xs text-slate-400">Partagez votre journal ou consultez celui de vos proches / coachs</p>
+          </div>
+        </div>
+        <button onclick="closeFriendsModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Formulaire d'invitation d'ami -->
+      <div class="bg-[#0B0B1A] border border-[#25254A] rounded-2xl p-4 space-y-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="user-plus" class="w-4 h-4 text-brand-400"></i>
+          <h4 class="font-bold text-white text-xs uppercase tracking-wider">Inviter un ami ou un coach</h4>
+        </div>
+        <p class="text-xs text-slate-400">
+          Entrez l'adresse email ou le nom de compte VitalTrack. Une demande de partage en lecture seule lui sera adressée.
+        </p>
+        <form onsubmit="handleSendFriendRequest(event)" class="flex flex-col sm:flex-row gap-2">
+          <div class="relative flex-1">
+            <i data-lucide="mail" class="w-4 h-4 text-slate-500 absolute left-3 top-3"></i>
+            <input 
+              type="text" 
+              id="friend-invite-input" 
+              placeholder="Ex: ami@vitaltrack.io ou pseudo" 
+              class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              required
+            >
+          </div>
+          <button 
+            type="submit" 
+            id="btn-send-friend-invite"
+            class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-md shadow-brand-600/25 flex items-center justify-center space-x-1.5 transition-all active:scale-95 shrink-0"
+          >
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            <span>Envoyer la demande</span>
+          </button>
+        </form>
+        <span id="friend-invite-feedback" class="hidden text-xs"></span>
+      </div>
+
+      <!-- Onglets : Mes amis / Demandes reçues / Demandes envoyées -->
+      <div class="flex items-center p-1 bg-[#0B0B1A] rounded-xl border border-[#1F2A3C] text-xs font-semibold gap-1">
+        <button 
+          type="button"
+          onclick="switchFriendsTab('friends')" 
+          id="friends-tab-btn-friends" 
+          class="flex-1 py-2 px-3 rounded-lg bg-brand-600 text-white font-bold transition-all flex items-center justify-center space-x-1.5"
+        >
+          <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+          <span>Mes Amis</span>
+        </button>
+        <button 
+          type="button"
+          onclick="switchFriendsTab('incoming')" 
+          id="friends-tab-btn-incoming" 
+          class="flex-1 py-2 px-3 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center space-x-1.5"
+        >
+          <i data-lucide="inbox" class="w-3.5 h-3.5"></i>
+          <span>Demandes reçues</span>
+          <span id="badge-friends-incoming-tab" class="hidden px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">0</span>
+        </button>
+        <button 
+          type="button"
+          onclick="switchFriendsTab('outgoing')" 
+          id="friends-tab-btn-outgoing" 
+          class="flex-1 py-2 px-3 rounded-lg text-slate-400 hover:text-white transition-all flex items-center justify-center space-x-1.5"
+        >
+          <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+          <span>Invitations envoyées</span>
+        </button>
+      </div>
+
+      <!-- Contenu Onglet 1 : Mes Amis -->
+      <div id="friends-tab-sec-friends" class="space-y-3">
+        <div id="friends-list-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3 min-h-[140px]">
+          <!-- Dynamique via renderFriendsView -->
+        </div>
+      </div>
+
+      <!-- Contenu Onglet 2 : Demandes Reçues -->
+      <div id="friends-tab-sec-incoming" class="space-y-3 hidden">
+        <div id="friends-incoming-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3 min-h-[100px]">
+          <!-- Dynamique via renderFriendsView -->
+        </div>
+      </div>
+
+      <!-- Contenu Onglet 3 : Demandes Envoyées -->
+      <div id="friends-tab-sec-outgoing" class="space-y-3 hidden">
+        <div id="friends-outgoing-container" class="space-y-2 min-h-[100px]">
+          <!-- Dynamique via renderFriendsView -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- MODULES JAVASCRIPT MIS EN CACHE (ARCHITECTURE DÉCOUPLÉE) -->
   <script src="/static/modules/api.js"></script>
   <script src="/static/modules/lazy.js"></script>
   <script src="/static/modules/dashboard.js?v=1793010035041"></script>
   <script src="/static/modules/nutrition.js"></script>
+  <script src="/static/modules/friends.js"></script>
   <script>
     function toggleMobileMoreMenu() {
       const menu = document.getElementById('mobile-more-menu');

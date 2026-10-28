@@ -100,6 +100,9 @@
       initDates();
       loadDashboardData();
       loadUnifiedAuthState();
+      if (typeof loadFriendsData === 'function') {
+        loadFriendsData();
+      }
     });
 
     function initDates() {
@@ -121,7 +124,8 @@
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
       try {
-        const res = await apiFetch('/api/dashboard');
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `?user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const res = await apiFetch(`/api/dashboard${readOnlyParam}`);
         if (res.ok) {
           currentData = await res.json();
         } else {
@@ -3366,6 +3370,10 @@
               <button onclick="toggleUserDropdown(); openProfileModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
                 <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
                 <span>Mon Profil</span>
+              </button>
+              <button onclick="toggleUserDropdown(); openFriendsModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
+                <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
+                <span>Amis & Partage</span>
               </button>
               <button onclick="toggleUserDropdown(); openConnectWizardModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
                 <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>

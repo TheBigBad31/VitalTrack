@@ -1485,10 +1485,13 @@ class SaveAsDishRequest(BaseModel):
 def get_catalog_items(
     type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
     q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user)
 ):
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
     """Récupère le catalogue d'aliments et de plats de l'utilisateur."""
-    items = db.get_food_items(item_type=type, query=q, user_id=current_user.id)
+    items = db.get_food_items(item_type=type, query=q, user_id=target_uid)
     return [it.model_dump() for it in items]
 
 
