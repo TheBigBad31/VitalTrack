@@ -691,6 +691,19 @@ class Database:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS friendships (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        friend_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        permission TEXT NOT NULL DEFAULT 'read_only',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        CONSTRAINT uq_friendships_user_friend UNIQUE (user_id, friend_id)
+                    );
+                """)
+
                 # Migrations douces colonnes users pour PostgreSQL
                 for col, def_val in [
                     ("uuid", "TEXT"),
@@ -782,6 +795,9 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -1158,6 +1174,19 @@ class Database:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS friendships (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        friend_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        permission TEXT NOT NULL DEFAULT 'read_only',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (user_id, friend_id)
+                    );
+                """)
+
                 # Migrations douces colonnes weights et activities pour idempotence SQLite
                 for table, col, def_val in [
                     ("weights", "external_id", "TEXT"),
@@ -1244,6 +1273,9 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON friendships(user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships(friend_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);")
 
             conn.commit()
 
@@ -4223,6 +4255,7 @@ class Database:
             cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM user_consents WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM friendships WHERE user_id = ? OR friend_id = ?", (user_id, user_id))
             cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
@@ -4230,3 +4263,206 @@ class Database:
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
         return True
+
+    # ---------------------------------------------------------
+    # Gestion des Amis & Partages de Données (Friendships / User Shares)
+    # ---------------------------------------------------------
+
+    def create_friend_request(self, user_id: int, friend_email_or_username: str) -> Dict[str, Any]:
+        """Crée ou renvoie une demande d'ami / partage par email ou nom d'utilisateur."""
+        query_val = friend_email_or_username.strip()
+        if not query_val:
+            raise ValueError("L'identifiant de l'ami (email ou nom) ne peut pas être vide.")
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Recherche de l'ami par email exact (insensible à la casse) ou nom exact
+            cursor.execute("""
+                SELECT id, email, name, picture FROM users 
+                WHERE LOWER(email) = ? OR LOWER(name) = ?
+                LIMIT 1
+            """, (query_val.lower(), query_val.lower()))
+            friend = cursor.fetchone()
+
+            if not friend:
+                raise ValueError(f"Aucun utilisateur trouvé avec l'identifiant '{query_val}'.")
+
+            friend_id = friend["id"]
+            if friend_id == user_id:
+                raise ValueError("Vous ne pouvez pas vous ajouter vous-même comme ami.")
+
+            now_str = datetime.now(timezone.utc).isoformat()
+
+            # Vérifier si une relation existe déjà dans un sens ou dans l'autre
+            cursor.execute("""
+                SELECT * FROM friendships 
+                WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+            """, (user_id, friend_id, friend_id, user_id))
+            existing = cursor.fetchone()
+
+            if existing:
+                # Si l'autre utilisateur nous avait déjà envoyé une demande en pending, on l'accepte automatiquement
+                if existing["user_id"] == friend_id and existing["status"] == "pending":
+                    cursor.execute("""
+                        UPDATE friendships 
+                        SET status = 'accepted', updated_at = ?
+                        WHERE id = ?
+                    """, (now_str, existing["id"]))
+                    conn.commit()
+                    existing["status"] = "accepted"
+                    existing["updated_at"] = now_str
+                    return dict(existing)
+
+                # Si déjà accepté
+                if existing["status"] == "accepted":
+                    return dict(existing)
+
+                # Si rejeté ou révoqué précédemment par le demandeur ou le destinataire, on réactive en pending
+                cursor.execute("""
+                    UPDATE friendships 
+                    SET user_id = ?, friend_id = ?, status = 'pending', permission = 'read_only', updated_at = ?
+                    WHERE id = ?
+                """, (user_id, friend_id, now_str, existing["id"]))
+                conn.commit()
+                cursor.execute("SELECT * FROM friendships WHERE id = ?", (existing["id"],))
+                updated_row = cursor.fetchone()
+                return dict(updated_row)
+
+            # Création d'une nouvelle demande
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO friendships (user_id, friend_id, status, permission, created_at, updated_at)
+                    VALUES (?, ?, 'pending', 'read_only', ?, ?)
+                    RETURNING id, user_id, friend_id, status, permission, created_at, updated_at;
+                """, (user_id, friend_id, now_str, now_str))
+                new_row = cursor.fetchone()
+                conn.commit()
+                return dict(new_row)
+            else:
+                cursor.execute("""
+                    INSERT INTO friendships (user_id, friend_id, status, permission, created_at, updated_at)
+                    VALUES (?, ?, 'pending', 'read_only', ?, ?)
+                """, (user_id, friend_id, now_str, now_str))
+                new_id = cursor.lastrowid
+                conn.commit()
+                cursor.execute("SELECT * FROM friendships WHERE id = ?", (new_id,))
+                new_row = cursor.fetchone()
+                return dict(new_row)
+
+    def respond_friend_request(self, request_id: int, target_user_id: int, status: str) -> Dict[str, Any]:
+        """Accepte ou refuse une demande d'ami reçue.
+        
+        target_user_id doit être le friend_id de la relation (le destinataire de la requête).
+        status doit être 'accepted' ou 'rejected'.
+        """
+        valid_statuses = ("accepted", "rejected")
+        if status not in valid_statuses:
+            raise ValueError(f"Statut invalide : '{status}'. Valeurs autorisées: {valid_statuses}")
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM friendships WHERE id = ?", (request_id,))
+            req = cursor.fetchone()
+
+            if not req:
+                raise ValueError("Demande d'ami introuvable.")
+
+            if req["friend_id"] != target_user_id:
+                raise PermissionError("Vous n'êtes pas autorisé à répondre à cette demande d'ami.")
+
+            now_str = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE friendships 
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+            """, (status, now_str, request_id))
+            conn.commit()
+
+            cursor.execute("SELECT * FROM friendships WHERE id = ?", (request_id,))
+            updated_req = cursor.fetchone()
+            return dict(updated_req)
+
+    def list_friendships(self, user_id: int) -> Dict[str, Any]:
+        """Retourne les amis acceptés, les demandes reçues en attente, et les demandes envoyées en attente."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 1. Amis acceptés (bilatéral : user_id ou friend_id avec status='accepted')
+            cursor.execute("""
+                SELECT f.id AS friendship_id, f.status, f.permission, f.created_at, f.updated_at,
+                       u.id AS friend_user_id, u.email, u.name, u.picture
+                FROM friendships f
+                JOIN users u ON u.id = CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END
+                WHERE (f.user_id = ? OR f.friend_id = ?) AND f.status = 'accepted'
+                ORDER BY f.updated_at DESC
+            """, (user_id, user_id, user_id))
+            friends = [dict(r) for r in cursor.fetchall()]
+
+            # 2. Demandes reçues en attente (user_id est friend_id, status='pending')
+            cursor.execute("""
+                SELECT f.id AS request_id, f.status, f.permission, f.created_at,
+                       u.id AS requester_id, u.email AS requester_email, u.name AS requester_name, u.picture AS requester_picture
+                FROM friendships f
+                JOIN users u ON u.id = f.user_id
+                WHERE f.friend_id = ? AND f.status = 'pending'
+                ORDER BY f.created_at DESC
+            """, (user_id,))
+            pending_received = [dict(r) for r in cursor.fetchall()]
+
+            # 3. Demandes envoyées en attente (user_id est user_id, status='pending')
+            cursor.execute("""
+                SELECT f.id AS request_id, f.status, f.permission, f.created_at,
+                       u.id AS target_id, u.email AS target_email, u.name AS target_name, u.picture AS target_picture
+                FROM friendships f
+                JOIN users u ON u.id = f.friend_id
+                WHERE f.user_id = ? AND f.status = 'pending'
+                ORDER BY f.created_at DESC
+            """, (user_id,))
+            pending_sent = [dict(r) for r in cursor.fetchall()]
+
+            return {
+                "friends": friends,
+                "pending_received": pending_received,
+                "pending_sent": pending_sent
+            }
+
+    def revoke_friendship(self, user_id: int, friend_id: int) -> bool:
+        """Révoque une relation d'ami / partage (passe en 'revoked' ou supprime)."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id FROM friendships
+                WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+            """, (user_id, friend_id, friend_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return False
+
+            cursor.execute("""
+                UPDATE friendships 
+                SET status = 'revoked', updated_at = ?
+                WHERE id = ?
+            """, (now_str, row["id"]))
+            conn.commit()
+            return True
+
+    def check_read_permission(self, owner_id: int, viewer_id: int) -> bool:
+        """Vérifie si viewer_id dispose des droits de lecture sur les données de owner_id.
+        
+        - Un utilisateur a toujours accès à ses propres données (owner_id == viewer_id).
+        - Sinon, il doit exister une relation 'accepted' entre owner_id et viewer_id.
+        """
+        if owner_id == viewer_id:
+            return True
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM friendships
+                WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+                  AND status = 'accepted'
+                LIMIT 1
+            """, (owner_id, viewer_id, viewer_id, owner_id))
+            row = cursor.fetchone()
+            return bool(row)
