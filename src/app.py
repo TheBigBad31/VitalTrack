@@ -52,6 +52,7 @@ from src.connectors.oura import OuraRingConnector
 from src.connectors.ringconn import RingConnConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
 from src.routers.webhooks import router as webhooks_router
+from src.routers.friends import verify_view_access, router as friends_router
 from src.auth import (
     AuthUser,
     GoogleAuthPayload,
@@ -476,10 +477,14 @@ def health_check():
 @app.get("/api/dashboard")
 def get_dashboard_data(
     include_simulation: bool = Query(False, description="Inclure ou exclure les données de simulation"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté."""
-    user_id = current_user.id
+    """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté ou un ami."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+    user_id = target_uid
+
     profile = db.get_user_profile(user_id=user_id)
     
     # Exclure par défaut les données simulées sauf si confirmation explicite d'un profil de démo ou requête include_simulation=True
@@ -604,13 +609,16 @@ def get_dashboard_data(
 def get_weights(
     limit: int = Query(30, ge=1, le=180),
     include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    """Retourne la série chronologique des pesées pour l'utilisateur connecté."""
-    profile = db.get_user_profile(user_id=current_user.id)
+    """Retourne la série chronologique des pesées pour l'utilisateur connecté ou un ami autorisé."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+    profile = db.get_user_profile(user_id=target_uid)
     is_demo = bool(profile.get("is_demo_profile"))
     effective_exclude = not include_simulation if include_simulation is not None else not is_demo
-    weights = db.get_weights(limit=limit, user_id=current_user.id, exclude_simulation=effective_exclude)
+    weights = db.get_weights(limit=limit, user_id=target_uid, exclude_simulation=effective_exclude)
     return [w.model_dump() for w in weights]
 
 
@@ -676,16 +684,31 @@ def delete_weight(weight_id: int, current_user: AuthUser = Depends(get_current_u
 # Endpoints Métriques Biométriques & Visualisations Avancées (Palier 3)
 # =====================================================================
 
+
+@app.get("/api/daily-metrics")
+def get_daily_metrics_list(
+    limit: int = Query(30, ge=1, le=180, description="Nombre d'entrées"),
+    source: Optional[str] = Query(None, description="Filtre source"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Retourne la liste des métriques quotidiennes biométriques (pas, sommeil, HRV, etc.)."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+    metrics = db.get_daily_metrics(limit=limit, source=source, user_id=target_uid)
+    return [m.model_dump() for m in metrics]
+
 @app.get("/api/metrics")
 def get_biometrics_metrics(
     days: int = Query(30, ge=7, le=90, description="Nombre de jours d'historique (30 à 90)"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    """Agrégat biométrique complet pour les visualisations Palier 3 :
-    Anneaux d'objectifs, Hypnogramme & dette de sommeil, FC 24h, Tendances HRV/RHR avec couloirs de normalité,
-    Journal des séances, corrélations et heatmap d'assiduité.
-    """
-    user_id = current_user.id
+    """Agrégat biométrique complet pour les visualisations Palier 3 pour l'utilisateur connecté ou un ami."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+    user_id = target_uid
+
     profile = db.get_user_profile(user_id=user_id)
     is_demo = bool(profile.get("is_demo_profile"))
 
@@ -1039,9 +1062,15 @@ def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(get_
 # =====================================================================
 
 @app.get("/api/meals")
-def get_meals(limit: int = Query(50, ge=1, le=200), current_user: AuthUser = Depends(get_current_user)):
-    """Retourne les repas récemment enregistrés pour l'utilisateur connecté."""
-    meals = db.get_meals(limit=limit, user_id=current_user.id)
+def get_meals(
+    limit: int = Query(50, ge=1, le=200),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Retourne les repas récemment enregistrés pour l'utilisateur connecté ou un ami autorisé."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+    meals = db.get_meals(limit=limit, user_id=target_uid)
     return [m.model_dump() for m in meals]
 
 
@@ -1574,11 +1603,14 @@ def evaluate_nutrition_benefits(req: NutritionEvaluateRequest):
 @app.get("/api/meals/journal")
 def get_meals_journal(
     date_param: Optional[str] = Query(None, alias="date", description="Date YYYY-MM-DD"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    """Récupère les 4 repas du jour avec la composition et les totaux."""
+    """Récupère les 4 repas du jour avec la composition et les totaux pour l'utilisateur connecté ou un ami autorisé."""
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
     target_date = date.fromisoformat(date_param) if date_param else date.today()
-    logs = db.get_meal_logs_for_date(target_date, user_id=current_user.id)
+    logs = db.get_meal_logs_for_date(target_date, user_id=target_uid)
     logs_by_type = {log.meal_type: log for log in logs}
 
     meal_types = ["breakfast", "lunch", "snack", "dinner"]
@@ -1592,7 +1624,7 @@ def get_meals_journal(
     for mt in meal_types:
         mlog = logs_by_type.get(mt)
         if not mlog:
-            mlog = db.get_or_create_meal_log(target_date, mt, user_id=current_user.id)
+            mlog = db.get_or_create_meal_log(target_date, mt, user_id=target_uid)
         
         m_dict = mlog.model_dump()
         meals_response.append(m_dict)
@@ -1756,7 +1788,7 @@ def save_meal_as_dish(
 @app.post("/api/devices")
 @app.get("/api/devices/")
 @app.post("/api/devices/")
-def list_devices(current_user: Optional[AuthUser] = None):
+def list_devices(current_user: AuthUser = Depends(get_current_user)):
     """Liste tous les objets connectés de l'utilisateur avec leur statut temps réel et métriques récentes."""
     user_id = current_user.id if current_user else 1
     saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
@@ -1867,12 +1899,143 @@ def get_devices_comparison():
     }
 
 
+@app.post("/api/devices/connect")
+def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(get_current_user)):
+    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté avec chiffrement et test immédiat."""
+    connector = device_registry.get(connect_in.device_id)
+    name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
+    dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
+
+    # Consolidation des credentials
+    creds = dict(connect_in.credentials) if connect_in.credentials else {}
+    if connect_in.api_key:
+        creds["api_key"] = connect_in.api_key
+    if connect_in.token:
+        creds["token"] = connect_in.token
+    if connect_in.account_email:
+        creds["account_email"] = connect_in.account_email
+
+    # Test de connectivité si supporté
+    connectivity_test = {"ok": True, "message": "Connexion établie avec succès"}
+    if connector and hasattr(connector, "test_connection"):
+        try:
+            connectivity_test = connector.test_connection()
+        except Exception as e:
+            connectivity_test = {"ok": False, "message": f"Test de liaison échoué: {e}"}
+
+    saved = db.update_user_device(
+        device_id=connect_in.device_id,
+        name=name,
+        device_type=dev_type,
+        connected=connect_in.connected,
+        auth_type=connect_in.auth_type or "connected",
+        api_key=connect_in.api_key or connect_in.token,
+        credentials=creds,
+        account_email=connect_in.account_email,
+        sync_status="connected" if connectivity_test.get("ok", True) else "error",
+        user_id=current_user.id
+    )
+
+    # Si c'est une bague ou une balance, mettre à jour la préférence dans le profil
+    if dev_type == "ring":
+        db.update_user_profile({"preferred_ring": connect_in.device_id}, user_id=current_user.id)
+    elif dev_type == "scale":
+        db.update_user_profile({"preferred_scale": connect_in.device_id}, user_id=current_user.id)
+
+    # Si l'appareil est connecté, déclencher une synchronisation initiale
+    if connect_in.connected:
+        try:
+            sync_device_targeted(connect_in.device_id, current_user=current_user)
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "message": f"Appareil {name} configuré et connecté avec succès via l'assistant (identifiants chiffrés au repos)",
+        "connectivity_test": connectivity_test,
+        "device": saved
+    }
+
+
+@app.post("/api/devices/{device_id}/sync")
+def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_current_user)):
+    """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
+    # Instancier le connecteur avec les credentials utilisateur déchiffrés si existants
+    user_device = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=True)
+    custom_cfg = {}
+    if user_device and user_device.get("credentials"):
+        custom_cfg.update(user_device["credentials"])
+    if user_device and user_device.get("api_key"):
+        custom_cfg["api_key"] = user_device["api_key"]
+    if user_device and user_device.get("account_email"):
+        custom_cfg["account_email"] = user_device["account_email"]
+
+    try:
+        connector = get_connector(device_id, custom_config=custom_cfg)
+    except Exception:
+        connector = device_registry.get(device_id)
+
+    if not connector:
+        raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
+    
+    today_val = dt_module.date.today()
+    start_val = today_val - dt_module.timedelta(days=7)
+    
+    weights = []
+    activities = []
+    if getattr(connector, "is_configured", False):
+        if hasattr(connector, "sync_weights"):
+            # Si le connecteur Withings a une DB associée, lui lier l'instance actuelle
+            if hasattr(connector, "db") and not connector.db:
+                connector.db = db
+                connector.user_id = current_user.id
+            raw_weights = [
+                w for w in connector.sync_weights(start_val, today_val)
+                if w.source not in ("demo", "simulation") and "Démo" not in (w.notes or "")
+            ]
+            for w in raw_weights:
+                db.insert_weight(w, user_id=current_user.id)
+            weights = [w.model_dump() for w in raw_weights]
+
+        if hasattr(connector, "sync_activities"):
+            raw_acts = [
+                a for a in connector.sync_activities(start_val, today_val)
+                if a.source not in ("demo", "simulation")
+            ]
+            for a in raw_acts:
+                db.insert_activity(a, user_id=current_user.id)
+            activities = [a.model_dump() for a in raw_acts]
+
+    # Mettre à jour l'état de synchronisation en base
+    db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id)
+
+    return {
+        "device_id": device_id,
+        "name": getattr(connector, "name", device_id.capitalize()),
+        "status": "success",
+        "sync_status": "connected",
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "details": {
+            "weights_synced": len(weights),
+            "activities_synced": len(activities)
+        }
+    }
+
+
+@app.post("/api/devices/sync")
+@app.post("/api/devices/sync/")
+def sync_device_legacy(req: Optional[DeviceSyncRequest] = None, current_user: AuthUser = Depends(get_current_user)):
+    """Compatibilité rétroactive pour la synchronisation d'un appareil."""
+    dev_id = req.device_id if req and req.device_id else "health_connect"
+    return sync_device_targeted(dev_id, current_user=current_user)
+
+
 @app.get("/api/devices/{device_id}")
 @app.post("/api/devices/{device_id}")
 def get_device_detail(
     device_id: str,
     payload: Optional[Dict[str, Any]] = None,
-    current_user: Optional[AuthUser] = None
+    current_user: AuthUser = Depends(get_current_user)
 ):
     """Récupère les détails et l'état en direct d'un appareil, ou gère la synchronisation si invoqué par erreur en POST."""
     user_id = current_user.id if current_user else 1
@@ -1950,80 +2113,6 @@ def create_device_token_endpoint(
         "token": device_token_info["token"],
         "device": device_token_info
     }
-
-
-@app.post("/api/devices/{device_id}/sync")
-def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(get_current_user)):
-    """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
-    # Instancier le connecteur avec les credentials utilisateur déchiffrés si existants
-    user_device = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=True)
-    custom_cfg = {}
-    if user_device and user_device.get("credentials"):
-        custom_cfg.update(user_device["credentials"])
-    if user_device and user_device.get("api_key"):
-        custom_cfg["api_key"] = user_device["api_key"]
-    if user_device and user_device.get("account_email"):
-        custom_cfg["account_email"] = user_device["account_email"]
-
-    try:
-        connector = get_connector(device_id, custom_config=custom_cfg)
-    except Exception:
-        connector = device_registry.get(device_id)
-
-    if not connector:
-        raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
-    
-    today_val = dt_module.date.today()
-    start_val = today_val - dt_module.timedelta(days=7)
-    
-    weights = []
-    activities = []
-    if getattr(connector, "is_configured", False):
-        if hasattr(connector, "sync_weights"):
-            # Si le connecteur Withings a une DB associée, lui lier l'instance actuelle
-            if hasattr(connector, "db") and not connector.db:
-                connector.db = db
-                connector.user_id = current_user.id
-            raw_weights = [
-                w for w in connector.sync_weights(start_val, today_val)
-                if w.source not in ("demo", "simulation") and "Démo" not in (w.notes or "")
-            ]
-            for w in raw_weights:
-                db.insert_weight(w, user_id=current_user.id)
-            weights = [w.model_dump() for w in raw_weights]
-
-        if hasattr(connector, "sync_activities"):
-            raw_acts = [
-                a for a in connector.sync_activities(start_val, today_val)
-                if a.source not in ("demo", "simulation")
-            ]
-            for a in raw_acts:
-                db.insert_activity(a, user_id=current_user.id)
-            activities = [a.model_dump() for a in raw_acts]
-
-    # Mettre à jour l'état de synchronisation en base
-    db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id)
-
-    return {
-        "device_id": device_id,
-        "name": getattr(connector, "name", device_id.capitalize()),
-        "status": "success",
-        "sync_status": "connected",
-        "synced_at": datetime.now(timezone.utc).isoformat(),
-        "details": {
-            "weights_synced": len(weights),
-            "activities_synced": len(activities)
-        }
-    }
-
-
-@app.post("/api/devices/sync")
-@app.post("/api/devices/sync/")
-def sync_device_legacy(req: Optional[DeviceSyncRequest] = None, current_user: Optional[AuthUser] = None):
-    """Compatibilité rétroactive pour la synchronisation d'un appareil."""
-    dev_id = req.device_id if req and req.device_id else "health_connect"
-    user = current_user or AuthUser(id=1, uuid="default-user", email="user@vitaltrack.local", name="Sébastien")
-    return sync_device_targeted(dev_id, current_user=user)
 
 
 # =====================================================================
@@ -2169,10 +2258,31 @@ def logout_google_session():
 # =====================================================================
 
 @app.get("/api/profile")
-def get_user_profile(current_user: AuthUser = Depends(get_current_user)):
-    """Renvoie le profil utilisateur personnalisé et ses préférences d'objets pour l'utilisateur connecté."""
-    profile = db.get_user_profile(user_id=current_user.id)
-    devices = db.get_user_devices(user_id=current_user.id)
+def get_user_profile(
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Renvoie le profil utilisateur personnalisé et ses préférences d'objets pour l'utilisateur connecté ou un ami."""
+    target_uid = current_user.id if user_id is None else user_id
+    access = verify_view_access(target_uid, current_user, database=db)
+    is_owner = (target_uid == current_user.id)
+    profile = db.get_user_profile(user_id=target_uid)
+    devices = db.get_user_devices(user_id=target_uid)
+    
+    # Masquage strict des données sensibles pour les amis consultants
+    if not is_owner:
+        sanitized_devices = []
+        for dev in devices:
+            d = dict(dev)
+            d.pop("encrypted_credentials", None)
+            d.pop("credentials", None)
+            d.pop("api_key", None)
+            d.pop("api_key_masked", None)
+            d.pop("account_email", None)
+            d["has_credentials"] = False
+            sanitized_devices.append(d)
+        devices = sanitized_devices
+
     return {
         "profile": profile,
         "connected_devices": devices
@@ -2188,64 +2298,6 @@ def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = D
         "status": "success",
         "message": "Profil mis à jour avec succès",
         "profile": updated
-    }
-
-
-@app.post("/api/devices/connect")
-def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(get_current_user)):
-    """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté avec chiffrement et test immédiat."""
-    connector = device_registry.get(connect_in.device_id)
-    name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
-    dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
-
-    # Consolidation des credentials
-    creds = dict(connect_in.credentials) if connect_in.credentials else {}
-    if connect_in.api_key:
-        creds["api_key"] = connect_in.api_key
-    if connect_in.token:
-        creds["token"] = connect_in.token
-    if connect_in.account_email:
-        creds["account_email"] = connect_in.account_email
-
-    # Test de connectivité si supporté
-    connectivity_test = {"ok": True, "message": "Connexion établie avec succès"}
-    if connector and hasattr(connector, "test_connection"):
-        try:
-            connectivity_test = connector.test_connection()
-        except Exception as e:
-            connectivity_test = {"ok": False, "message": f"Test de liaison échoué: {e}"}
-
-    saved = db.update_user_device(
-        device_id=connect_in.device_id,
-        name=name,
-        device_type=dev_type,
-        connected=connect_in.connected,
-        auth_type=connect_in.auth_type or "connected",
-        api_key=connect_in.api_key or connect_in.token,
-        credentials=creds,
-        account_email=connect_in.account_email,
-        sync_status="connected" if connectivity_test.get("ok", True) else "error",
-        user_id=current_user.id
-    )
-
-    # Si c'est une bague ou une balance, mettre à jour la préférence dans le profil
-    if dev_type == "ring":
-        db.update_user_profile({"preferred_ring": connect_in.device_id}, user_id=current_user.id)
-    elif dev_type == "scale":
-        db.update_user_profile({"preferred_scale": connect_in.device_id}, user_id=current_user.id)
-
-    # Si l'appareil est connecté, déclencher une synchronisation initiale
-    if connect_in.connected:
-        try:
-            sync_device_targeted(connect_in.device_id, current_user=current_user)
-        except Exception:
-            pass
-
-    return {
-        "status": "success",
-        "message": f"Appareil {name} configuré et connecté avec succès via l'assistant (identifiants chiffrés au repos)",
-        "connectivity_test": connectivity_test,
-        "device": saved
     }
 
 
@@ -2428,6 +2480,7 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 # Endpoints Webhooks Universels (Health Connect, RingConn, Apple Santé)
 # =====================================================================
 app.include_router(webhooks_router)
+app.include_router(friends_router)
 
 
 
