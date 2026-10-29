@@ -88,9 +88,16 @@ def resolve_webhook_user_and_device(
         return int(user_match["user_id"]), user_match.get("device")
 
     # Fallback de validation via WEBHOOK_SECRET global si configuré
+    is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
     global_secret = os.getenv("WEBHOOK_SECRET")
 
-    if global_secret:
+    if not global_secret:
+        if is_production:
+            raise HTTPException(
+                status_code=503,
+                detail="Service Webhook non configuré en production (secret absent)"
+            )
+    else:
         if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
             target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
             if target_user_id:
