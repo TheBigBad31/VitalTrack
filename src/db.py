@@ -2308,6 +2308,34 @@ class Database:
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
 
+            food_ids = [r["id"] for r in rows]
+            benefits_by_food_id: Dict[int, List[AssociatedBenefit]] = {fid: [] for fid in food_ids}
+
+            if food_ids:
+                placeholders = ", ".join(["?"] * len(food_ids))
+                cursor.execute(f"""
+                    SELECT fib.food_item_id, nb.id, nb.category, nb.category_id, nb.title, nb.description, nb.icon,
+                           fib.source, fib.explanation
+                    FROM food_item_benefits fib
+                    JOIN nutrition_benefits nb ON fib.benefit_id = nb.id
+                    WHERE fib.food_item_id IN ({placeholders})
+                    ORDER BY nb.category_id ASC, nb.title ASC
+                """, tuple(food_ids))
+                b_rows = cursor.fetchall()
+                for br in b_rows:
+                    fid = br["food_item_id"]
+                    if fid in benefits_by_food_id:
+                        benefits_by_food_id[fid].append(AssociatedBenefit(
+                            benefit_id=br["id"],
+                            category=br["category"],
+                            category_id=int(br["category_id"]),
+                            title=br["title"],
+                            description=br["description"],
+                            icon=br["icon"],
+                            source=br["source"],
+                            explanation=br.get("explanation")
+                        ))
+
         items = []
         for r in rows:
             it = CatalogItem(
@@ -2324,7 +2352,7 @@ class Database:
                 fiber_per_unit_g=float(r["fiber_per_unit_g"]) if r.get("fiber_per_unit_g") is not None else 0.0,
                 photo_url=r.get("photo_url"),
                 recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
-                benefits=self.get_food_item_benefits(r["id"]),
+                benefits=benefits_by_food_id.get(r["id"], []),
                 is_public=bool(r.get("is_public")),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
@@ -2863,18 +2891,222 @@ class Database:
         )
 
     def get_meal_logs_for_date(self, target_date: date, user_id: int = 1) -> List[MealLog]:
-        """Récupère les 4 repas d'une date (avec les instances existantes)."""
+        """Récupère les 4 repas d'une date (avec les instances existantes et leurs items) en 1 seule requête SQL."""
         date_str = target_date.isoformat()
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM meal_logs
-                WHERE user_id = ? AND date = ?
-                ORDER BY id ASC
+                SELECT
+                    m.id AS m_id,
+                    m.user_id AS m_user_id,
+                    m.date AS m_date,
+                    m.meal_type AS m_meal_type,
+                    m.photo_url AS m_photo_url,
+                    m.total_calories AS m_total_calories,
+                    m.total_protein_g AS m_total_protein_g,
+                    m.total_carbs_g AS m_total_carbs_g,
+                    m.total_fat_g AS m_total_fat_g,
+                    m.total_fiber_g AS m_total_fiber_g,
+                    m.created_at AS m_created_at,
+                    m.updated_at AS m_updated_at,
+                    it.id AS it_id,
+                    it.meal_log_id AS it_meal_log_id,
+                    it.food_item_id AS it_food_item_id,
+                    it.name AS it_name,
+                    it.quantity AS it_quantity,
+                    it.unit AS it_unit,
+                    it.calories AS it_calories,
+                    it.protein_g AS it_protein_g,
+                    it.carbs_g AS it_carbs_g,
+                    it.fat_g AS it_fat_g,
+                    it.fiber_g AS it_fiber_g,
+                    it.created_at AS it_created_at
+                FROM meal_logs m
+                LEFT JOIN meal_log_items it ON m.id = it.meal_log_id
+                WHERE m.user_id = ? AND m.date = ?
+                ORDER BY m.id ASC, it.id ASC
             """, (user_id, date_str))
             rows = cursor.fetchall()
 
-        return [self._build_meal_log(dict(r), user_id=user_id) for r in rows]
+        logs_dict: Dict[int, MealLog] = {}
+        for r in rows:
+            m_id = r["m_id"]
+            if m_id not in logs_dict:
+                logs_dict[m_id] = MealLog(
+                    id=m_id,
+                    user_id=r["m_user_id"],
+                    date=date.fromisoformat(r["m_date"][:10]),
+                    meal_type=r["m_meal_type"],
+                    photo_url=r.get("m_photo_url"),
+                    total_calories=float(r.get("m_total_calories") or 0.0),
+                    total_protein_g=float(r.get("m_total_protein_g") or 0.0),
+                    total_carbs_g=float(r.get("m_total_carbs_g") or 0.0),
+                    total_fat_g=float(r.get("m_total_fat_g") or 0.0),
+                    total_fiber_g=float(r["m_total_fiber_g"]) if r.get("m_total_fiber_g") is not None else 0.0,
+                    items=[],
+                    created_at=datetime.fromisoformat(r["m_created_at"]) if r.get("m_created_at") else None,
+                    updated_at=datetime.fromisoformat(r["m_updated_at"]) if r.get("m_updated_at") else None,
+                )
+
+            if r.get("it_id") is not None:
+                logs_dict[m_id].items.append(
+                    MealLogItem(
+                        id=r["it_id"],
+                        meal_log_id=r["it_meal_log_id"],
+                        food_item_id=r.get("it_food_item_id"),
+                        name=r["it_name"],
+                        quantity=float(r["it_quantity"]),
+                        unit=r["it_unit"],
+                        calories=float(r["it_calories"]),
+                        protein_g=float(r.get("it_protein_g") or 0.0),
+                        carbs_g=float(r.get("it_carbs_g") or 0.0),
+                        fat_g=float(r.get("it_fat_g") or 0.0),
+                        fiber_g=float(r["it_fiber_g"]) if r.get("it_fiber_g") is not None else 0.0,
+                        created_at=datetime.fromisoformat(r["it_created_at"]) if r.get("it_created_at") else None,
+                    )
+                )
+
+        return list(logs_dict.values())
+
+    def _atomic_recalculate_and_sync(self, cursor: Any, meal_log_id: int, user_id: int = 1):
+        """Recalcule les totaux du MealLog et synchronise vers meals en utilisant le même curseur/connexion."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        cursor.execute("""
+            SELECT
+                COALESCE(SUM(calories), 0.0) AS total_cal,
+                COALESCE(SUM(protein_g), 0.0) AS total_prot,
+                COALESCE(SUM(carbs_g), 0.0) AS total_carbs,
+                COALESCE(SUM(fat_g), 0.0) AS total_fat,
+                COALESCE(SUM(fiber_g), 0.0) AS total_fiber
+            FROM meal_log_items
+            WHERE meal_log_id = ?
+        """, (meal_log_id,))
+        totals = cursor.fetchone()
+
+        cal = round(float(totals["total_cal"]), 1)
+        prot = round(float(totals["total_prot"]), 1)
+        carbs = round(float(totals["total_carbs"]), 1)
+        fat = round(float(totals["total_fat"]), 1)
+        fiber = round(float(totals["total_fiber"]), 1)
+
+        cursor.execute("""
+            UPDATE meal_logs
+            SET total_calories = ?, total_protein_g = ?, total_carbs_g = ?,
+                total_fat_g = ?, total_fiber_g = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+        """, (cal, prot, carbs, fat, fiber, now_str, meal_log_id, user_id))
+
+        # Récupérer les informations de date et meal_type pour meals
+        cursor.execute("SELECT date, meal_type FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
+        ml = cursor.fetchone()
+        if not ml:
+            return
+
+        date_str = ml["date"][:10]
+        meal_type = ml["meal_type"]
+
+        # Récupérer les items du meal_log pour serialization JSON
+        cursor.execute("""
+            SELECT name, quantity, unit, calories, protein_g, carbs_g, fat_g, fiber_g
+            FROM meal_log_items
+            WHERE meal_log_id = ?
+            ORDER BY id ASC
+        """, (meal_log_id,))
+        items_rows = cursor.fetchall()
+        items_list = [
+            {
+                "name": r["name"],
+                "portion_g": float(r["quantity"]) if r["unit"] == "g" else 100.0,
+                "calories_kcal": float(r["calories"] or 0.0),
+                "protein_g": float(r["protein_g"] or 0.0),
+                "carbs_g": float(r["carbs_g"] or 0.0),
+                "fat_g": float(r["fat_g"] or 0.0),
+                "fiber_g": float(r["fiber_g"] or 0.0),
+                "confidence_score": 1.0
+            }
+            for r in items_rows
+        ]
+        items_json = json.dumps(items_list)
+
+        cursor.execute("""
+            SELECT id FROM meals
+            WHERE user_id = ? AND date = ? AND meal_type = ?
+            ORDER BY id DESC LIMIT 1
+        """, (user_id, date_str, meal_type))
+        existing = cursor.fetchone()
+
+        if cal > 0:
+            if existing:
+                cursor.execute("""
+                    UPDATE meals
+                    SET total_calories_kcal = ?, protein_g = ?, carbs_g = ?,
+                        fat_g = ?, fiber_g = ?, items_json = ?
+                    WHERE id = ?
+                """, (cal, prot, carbs, fat, fiber, items_json, existing["id"]))
+            else:
+                cursor.execute("""
+                    INSERT INTO meals (
+                        user_id, date, meal_type, total_calories_kcal,
+                        protein_g, carbs_g, fat_g, fiber_g, photo_data_url, items_json, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, date_str, meal_type, cal,
+                    prot, carbs, fat, fiber,
+                    None, items_json, now_str
+                ))
+        else:
+            if existing:
+                cursor.execute("DELETE FROM meals WHERE id = ?", (existing["id"],))
+
+    def _fetch_meal_log_with_cursor(self, cursor: Any, meal_log_id: int, user_id: int = 1) -> Optional[MealLog]:
+        """Charge un MealLog complet avec ses items en utilisant un curseur existant."""
+        cursor.execute("""
+            SELECT * FROM meal_logs
+            WHERE id = ? AND user_id = ?
+        """, (meal_log_id, user_id))
+        ml_row = cursor.fetchone()
+        if not ml_row:
+            return None
+
+        cursor.execute("""
+            SELECT * FROM meal_log_items
+            WHERE meal_log_id = ?
+            ORDER BY id ASC
+        """, (meal_log_id,))
+        item_rows = cursor.fetchall()
+        items = [
+            MealLogItem(
+                id=it["id"],
+                meal_log_id=it["meal_log_id"],
+                food_item_id=it.get("food_item_id"),
+                name=it["name"],
+                quantity=float(it["quantity"]),
+                unit=it["unit"],
+                calories=float(it["calories"]),
+                protein_g=float(it.get("protein_g") or 0.0),
+                carbs_g=float(it.get("carbs_g") or 0.0),
+                fat_g=float(it.get("fat_g") or 0.0),
+                fiber_g=float(it["fiber_g"]) if it.get("fiber_g") is not None else 0.0,
+                created_at=datetime.fromisoformat(it["created_at"]) if it.get("created_at") else None,
+            )
+            for it in item_rows
+        ]
+        return MealLog(
+            id=ml_row["id"],
+            user_id=ml_row["user_id"],
+            date=date.fromisoformat(ml_row["date"][:10]),
+            meal_type=ml_row["meal_type"],
+            photo_url=ml_row.get("photo_url"),
+            total_calories=float(ml_row.get("total_calories") or 0.0),
+            total_protein_g=float(ml_row.get("total_protein_g") or 0.0),
+            total_carbs_g=float(ml_row.get("total_carbs_g") or 0.0),
+            total_fat_g=float(ml_row.get("total_fat_g") or 0.0),
+            total_fiber_g=float(ml_row["total_fiber_g"]) if ml_row.get("total_fiber_g") is not None else 0.0,
+            items=items,
+            created_at=datetime.fromisoformat(ml_row["created_at"]) if ml_row.get("created_at") else None,
+            updated_at=datetime.fromisoformat(ml_row["updated_at"]) if ml_row.get("updated_at") else None,
+        )
 
     def add_item_to_meal_log(
         self,
@@ -2891,12 +3123,44 @@ class Database:
         food_item_id: Optional[int] = None,
         user_id: int = 1
     ) -> MealLog:
-        """Ajoute un aliment/plat à un repas pour une date et recalcule les totaux."""
-        meal_log = self.get_or_create_meal_log(date_val, meal_type, user_id=user_id)
+        """Ajoute un aliment/plat à un repas pour une date et recalcule les totaux dans une seule transaction atomique."""
+        date_str = date_val.isoformat()
         now_str = datetime.now(timezone.utc).isoformat()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # 1. Obtenir ou créer le meal_log
+            cursor.execute("""
+                SELECT id FROM meal_logs
+                WHERE user_id = ? AND date = ? AND meal_type = ?
+            """, (user_id, date_str, meal_type))
+            row = cursor.fetchone()
+
+            if not row:
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                        ON CONFLICT (user_id, date, meal_type) DO NOTHING
+                        RETURNING id;
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+                    row = cursor.fetchone()
+                else:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+
+                if not row:
+                    cursor.execute("""
+                        SELECT id FROM meal_logs
+                        WHERE user_id = ? AND date = ? AND meal_type = ?
+                    """, (user_id, date_str, meal_type))
+                    row = cursor.fetchone()
+
+            meal_log_id = row["id"]
+
+            # 2. Insérer l'item
             cursor.execute("""
                 INSERT INTO meal_log_items (
                     meal_log_id, food_item_id, name, quantity, unit,
@@ -2904,17 +3168,23 @@ class Database:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                meal_log.id, food_item_id, name, quantity, unit,
+                meal_log_id, food_item_id, name, quantity, unit,
                 calories, protein_g, carbs_g, fat_g, fiber_g, now_str
             ))
+
+            # 3. Recalcul des totaux et synchro meals
+            self._atomic_recalculate_and_sync(cursor, meal_log_id, user_id=user_id)
+
+            # 4. Commit unique
             conn.commit()
 
-        self._recalculate_meal_log_totals(meal_log.id, user_id=user_id)
-        self._sync_meal_log_to_meals(meal_log.id, user_id=user_id)
-        return self._get_meal_log_by_id(meal_log.id, user_id=user_id)
+            # 5. Charger le log mis à jour
+            result_log = self._fetch_meal_log_with_cursor(cursor, meal_log_id, user_id=user_id)
+
+        return result_log
 
     def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
-        """Supprime une ligne d'aliment consommée et recalcule le repas parent."""
+        """Supprime une ligne d'aliment consommée et recalcule le repas parent dans une seule transaction atomique."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -2929,11 +3199,16 @@ class Database:
 
             meal_log_id = row["meal_log_id"]
             cursor.execute("DELETE FROM meal_log_items WHERE id = ?", (item_id,))
+
+            # Recalcul et synchro meals atomiques
+            self._atomic_recalculate_and_sync(cursor, meal_log_id, user_id=user_id)
+
+            # Commit unique
             conn.commit()
 
-        self._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
-        self._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
-        return self._get_meal_log_by_id(meal_log_id, user_id=user_id)
+            result_log = self._fetch_meal_log_with_cursor(cursor, meal_log_id, user_id=user_id)
+
+        return result_log
 
     def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
         """Recalcule et met à jour les totaux d'un MealLog."""

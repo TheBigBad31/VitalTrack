@@ -277,3 +277,69 @@ def test_dashboard_read_path_does_not_call_sync_all(journal_setup, monkeypatch):
     assert res.status_code == 200
     assert not sync_called, "GET /api/dashboard ne doit pas exécuter sync_all_meal_logs_to_meals"
 
+
+def test_get_meals_journal_is_pure_read_without_insert(journal_setup):
+    """Vérifie que GET /api/meals/journal n'effectue aucun INSERT dans meal_logs."""
+    client = journal_setup["client"]
+    token1 = journal_setup["token1"]
+    headers = {"Authorization": f"Bearer {token1}"}
+    db = journal_setup["db"]
+
+    future_date = "2026-11-15"
+
+    # Vérifier que meal_logs est vide pour cette date
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM meal_logs WHERE date = ?", (future_date,))
+        assert cursor.fetchone()["cnt"] == 0
+
+    # Appel GET /api/meals/journal
+    res = client.get(f"/api/meals/journal?date={future_date}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["meals"]) == 4
+    assert data["day_summary"]["total_calories"] == 0.0
+
+    # Vérifier que meal_logs est TOUJOURS vide (aucune écriture en base)
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS cnt FROM meal_logs WHERE date = ?", (future_date,))
+        assert cursor.fetchone()["cnt"] == 0
+
+
+def test_add_and_delete_meal_items_return_enriched_day_summary(journal_setup):
+    """Vérifie que POST items et DELETE item retournent day_summary directement."""
+    client = journal_setup["client"]
+    token1 = journal_setup["token1"]
+    headers = {"Authorization": f"Bearer {token1}"}
+    test_date = "2026-10-25"
+
+    # Ajout d'un item
+    res_add = client.post("/api/meals/journal/lunch/items", json={
+        "date": test_date,
+        "name": "Pomme",
+        "quantity": 150.0,
+        "unit": "g",
+        "calories": 78.0,
+        "protein_g": 0.4,
+        "carbs_g": 21.0,
+        "fat_g": 0.2,
+        "fiber_g": 3.6
+    }, headers=headers)
+    assert res_add.status_code == 200
+    data_add = res_add.json()
+    assert "day_summary" in data_add
+    assert data_add["day_summary"]["total_calories"] == 78.0
+    assert data_add["day_summary"]["total_carbs_g"] == 21.0
+    assert data_add["meal_log"]["meal_type"] == "lunch"
+    item_id = data_add["meal_log"]["items"][0]["id"]
+
+    # Suppression de l'item
+    res_del = client.delete(f"/api/meals/journal/items/{item_id}", headers=headers)
+    assert res_del.status_code == 200
+    data_del = res_del.json()
+    assert "day_summary" in data_del
+    assert data_del["day_summary"]["total_calories"] == 0.0
+    assert len(data_del["meal_log"]["items"]) == 0
+
+
