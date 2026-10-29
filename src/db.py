@@ -301,6 +301,7 @@ class Database:
         # Garantir l'existence de l'utilisateur par défaut et le référentiel des bienfaits
         try:
             self._ensure_default_user()
+            self._seed_public_food_items()
             self._seed_nutrition_benefits()
             self.purge_demo_data()
         except Exception as e:
@@ -436,8 +437,18 @@ class Database:
                         fiber_per_unit_g REAL DEFAULT 0.0,
                         photo_url TEXT,
                         recipe_items_json TEXT,
+                        is_public BOOLEAN DEFAULT FALSE,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS catalog_subscriptions (
+                        subscriber_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (subscriber_id, target_user_id)
                     );
                 """)
 
@@ -773,6 +784,11 @@ class Database:
                 except Exception:
                     pass
 
+                try:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;")
+                except Exception:
+                    pass
+
                 # Index optimisés PostgreSQL
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
@@ -781,6 +797,9 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_public ON food_items(is_public);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_sub ON catalog_subscriptions(subscriber_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_target ON catalog_subscriptions(target_user_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date ON daily_metrics(user_id, date DESC);")
@@ -919,8 +938,18 @@ class Database:
                         fiber_per_unit_g REAL DEFAULT 0.0,
                         photo_url TEXT,
                         recipe_items_json TEXT,
+                        is_public INTEGER DEFAULT 0,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
+                    );
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS catalog_subscriptions (
+                        subscriber_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (subscriber_id, target_user_id)
                     );
                 """)
 
@@ -1242,6 +1271,20 @@ class Database:
                 except Exception:
                     pass
 
+                try:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN is_public INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS catalog_subscriptions (
+                        subscriber_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (subscriber_id, target_user_id)
+                    );
+                """)
+
                 # Index uniques pour SQLite garantissant ON CONFLICT(user_id, date)
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_weights_user_date ON weights(user_id, date);")
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_user_date ON activities(user_id, date);")
@@ -1249,6 +1292,9 @@ class Database:
 
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_meal_logs_user_date_type ON meal_logs(user_id, date, meal_type);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_public ON food_items(is_public);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_sub ON catalog_subscriptions(subscriber_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_target ON catalog_subscriptions(target_user_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_item_benefits_food ON food_item_benefits(food_item_id);")
@@ -1281,6 +1327,8 @@ class Database:
 
         # Garantir l'existence de l'utilisateur par défaut
         self._ensure_default_user()
+        # Seeder les aliments publics communs de base
+        self._seed_public_food_items()
         # Seeder le référentiel expert des bienfaits nutritionnels
         self._seed_nutrition_benefits()
         # Purger toute donnée de démonstration résiduelle
@@ -2154,6 +2202,7 @@ class Database:
     def insert_food_item(self, item: CatalogItem, user_id: int = 1) -> CatalogItem:
         """Crée un aliment ou un plat dans le catalogue de l'utilisateur."""
         now_str = datetime.now(timezone.utc).isoformat()
+        is_pub = item.is_public if self.is_postgres else (1 if item.is_public else 0)
         with self.get_connection() as conn:
             cursor = conn.cursor()
             if self.is_postgres:
@@ -2161,9 +2210,10 @@ class Database:
                     INSERT INTO food_items (
                         user_id, name, item_type, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
+                        is_public, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     RETURNING id, created_at, updated_at;
                 """, (
                     user_id, item.name, item.item_type, item.default_unit or "g",
@@ -2171,7 +2221,7 @@ class Database:
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
                     item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    now_str, now_str
+                    is_pub, now_str, now_str
                 ))
                 row = cursor.fetchone()
                 item_id = row["id"]
@@ -2182,16 +2232,17 @@ class Database:
                     INSERT INTO food_items (
                         user_id, name, item_type, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, created_at, updated_at
+                        fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
+                        is_public, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user_id, item.name, item.item_type, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
                     item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    now_str, now_str
+                    is_pub, now_str, now_str
                 ))
                 item_id = cursor.lastrowid
                 created_at = now_str
@@ -2214,21 +2265,43 @@ class Database:
         self,
         item_type: Optional[str] = None,
         query: Optional[str] = None,
-        user_id: int = 1
+        user_id: int = 1,
+        source: str = "mine",
+        friend_id: Optional[int] = None
     ) -> List[CatalogItem]:
-        """Récupère les éléments du catalogue de l'utilisateur avec filtres optionnels."""
-        sql = "SELECT * FROM food_items WHERE user_id = ?"
-        params: List[Any] = [user_id]
+        """Récupère les éléments du catalogue selon la source demandée ('mine', 'public', 'friends', 'all', ou friend_id)."""
+        params: List[Any] = []
+        where_clauses: List[str] = []
+
+        if friend_id is not None:
+            # Aliments d'un ami spécifique
+            where_clauses.append("user_id = ?")
+            params.append(friend_id)
+        elif source == "mine":
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+        elif source == "public":
+            where_clauses.append("is_public = 1")
+        elif source == "friends":
+            where_clauses.append("user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?)")
+            params.append(user_id)
+        elif source == "all":
+            where_clauses.append("(user_id = ? OR is_public = 1 OR user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?))")
+            params.extend([user_id, user_id])
+        else:
+            # Fallback par défaut: mes aliments
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
 
         if item_type:
-            sql += " AND item_type = ?"
+            where_clauses.append("item_type = ?")
             params.append(item_type)
 
         if query:
-            sql += " AND LOWER(name) LIKE ?"
+            where_clauses.append("LOWER(name) LIKE ?")
             params.append(f"%{query.strip().lower()}%")
 
-        sql += " ORDER BY name ASC"
+        sql = f"SELECT * FROM food_items WHERE {' AND '.join(where_clauses)} ORDER BY is_public DESC, name ASC"
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2252,17 +2325,27 @@ class Database:
                 photo_url=r.get("photo_url"),
                 recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=self.get_food_item_benefits(r["id"]),
+                is_public=bool(r.get("is_public")),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
             items.append(it)
         return items
 
-    def get_food_item_by_id(self, item_id: int, user_id: int = 1) -> Optional[CatalogItem]:
-        """Récupère un élément du catalogue par son ID pour user_id."""
+    def get_food_item_by_id(self, item_id: int, user_id: Optional[int] = None) -> Optional[CatalogItem]:
+        """Récupère un élément du catalogue par son ID pour user_id ou s'il est public."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+            if user_id is not None:
+                cursor.execute("""
+                    SELECT * FROM food_items
+                    WHERE id = ? AND (
+                        user_id = ? OR is_public = 1
+                        OR user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?)
+                    )
+                """, (item_id, user_id, user_id))
+            else:
+                cursor.execute("SELECT * FROM food_items WHERE id = ?", (item_id,))
             r = cursor.fetchone()
             if not r:
                 return None
@@ -2281,14 +2364,15 @@ class Database:
                 photo_url=r.get("photo_url"),
                 recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=self.get_food_item_benefits(r["id"]),
+                is_public=bool(r.get("is_public")),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
 
     def update_food_item(self, item_id: int, data: Dict[str, Any], user_id: int = 1) -> Optional[CatalogItem]:
-        """Met à jour un aliment ou plat du catalogue."""
+        """Met à jour un aliment ou plat du catalogue (uniquement si l'utilisateur en est propriétaire)."""
         existing = self.get_food_item_by_id(item_id, user_id=user_id)
-        if not existing:
+        if not existing or existing.user_id != user_id:
             return None
 
         now_str = datetime.now(timezone.utc).isoformat()
@@ -2304,6 +2388,8 @@ class Database:
         photo_url = data.get("photo_url", existing.photo_url)
         recipe_items = data.get("recipe_items", existing.recipe_items)
         recipe_items_json = json.dumps(recipe_items) if recipe_items is not None else None
+        is_public = data.get("is_public", existing.is_public)
+        is_pub = is_public if self.is_postgres else (1 if is_public else 0)
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2311,13 +2397,14 @@ class Database:
                 UPDATE food_items
                 SET name = ?, item_type = ?, default_unit = ?, default_quantity = ?,
                     calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
-                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?, updated_at = ?
+                    fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?,
+                    is_public = ?, updated_at = ?
                 WHERE id = ? AND user_id = ?
             """, (
                 name, item_type, default_unit, default_quantity,
                 calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
-                fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json, now_str,
-                item_id, user_id
+                fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
+                is_pub, now_str, item_id, user_id
             ))
             conn.commit()
 
@@ -2333,6 +2420,7 @@ class Database:
         updated.fat_per_unit_g = fat_per_unit_g
         updated.fiber_per_unit_g = fiber_per_unit_g
         updated.photo_url = photo_url
+        updated.is_public = bool(is_public)
         updated.updated_at = datetime.fromisoformat(now_str)
         return updated
 
@@ -2346,6 +2434,222 @@ class Database:
             cursor.execute("DELETE FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
             conn.commit()
             return True
+
+    # ---------------------------------------------------------
+    # Abonnements Catalogues Amis (catalog_subscriptions)
+    # ---------------------------------------------------------
+
+    def add_catalog_subscription(self, subscriber_id: int, target_user_id: int) -> bool:
+        """Abonne un utilisateur au catalogue d'un autre utilisateur."""
+        if subscriber_id == target_user_id:
+            raise ValueError("Impossible de s'abonner à son propre catalogue")
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Vérifier que le target_user existe
+            cursor.execute("SELECT id FROM users WHERE id = ?", (target_user_id,))
+            if not cursor.fetchone():
+                return False
+
+            if self.is_postgres:
+                cursor.execute("""
+                    INSERT INTO catalog_subscriptions (subscriber_id, target_user_id, created_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (subscriber_id, target_user_id) DO NOTHING;
+                """, (subscriber_id, target_user_id, now_str))
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO catalog_subscriptions (subscriber_id, target_user_id, created_at)
+                    VALUES (?, ?, ?);
+                """, (subscriber_id, target_user_id, now_str))
+            conn.commit()
+            return True
+
+    def remove_catalog_subscription(self, subscriber_id: int, target_user_id: int) -> bool:
+        """Désabonne un utilisateur du catalogue d'un ami."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM catalog_subscriptions
+                WHERE subscriber_id = ? AND target_user_id = ?
+            """, (subscriber_id, target_user_id))
+            affected = cursor.rowcount > 0
+            conn.commit()
+            return affected
+
+    def get_catalog_subscriptions(self, subscriber_id: int) -> List[Dict[str, Any]]:
+        """Liste les catalogues d'amis auxquels l'utilisateur est abonné avec les infos de l'ami."""
+        sql = """
+            SELECT cs.subscriber_id, cs.target_user_id, cs.created_at,
+                   u.name AS target_user_name, u.email AS target_user_email
+            FROM catalog_subscriptions cs
+            JOIN users u ON u.id = cs.target_user_id
+            WHERE cs.subscriber_id = ?
+            ORDER BY u.name ASC
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, (subscriber_id,))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    def is_subscribed_to_catalog(self, subscriber_id: int, target_user_id: int) -> bool:
+        """Vérifie si subscriber_id est abonné au catalogue de target_user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM catalog_subscriptions
+                WHERE subscriber_id = ? AND target_user_id = ?
+            """, (subscriber_id, target_user_id))
+            return cursor.fetchone() is not None
+
+    def _seed_public_food_items(self):
+        """Seede le socle d'aliments publics communs de base (CIQUAL / OpenFoodFacts)."""
+        PUBLIC_BASE_ITEMS = [
+            {
+                "name": "Flocons d'avoine complets",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 368.0,
+                "protein_per_unit_g": 13.5,
+                "carbs_per_unit_g": 58.7,
+                "fat_per_unit_g": 7.0,
+                "fiber_per_unit_g": 10.0,
+                "is_public": True,
+            },
+            {
+                "name": "Blanc de poulet rôti",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 165.0,
+                "protein_per_unit_g": 31.0,
+                "carbs_per_unit_g": 0.0,
+                "fat_per_unit_g": 3.6,
+                "fiber_per_unit_g": 0.0,
+                "is_public": True,
+            },
+            {
+                "name": "Oeuf entier plein air",
+                "item_type": "food",
+                "default_unit": "pièce",
+                "default_quantity": 1.0,
+                "calories_per_unit": 70.0,
+                "protein_per_unit_g": 6.3,
+                "carbs_per_unit_g": 0.4,
+                "fat_per_unit_g": 4.8,
+                "fiber_per_unit_g": 0.0,
+                "is_public": True,
+            },
+            {
+                "name": "Riz basmati cuit",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 130.0,
+                "protein_per_unit_g": 2.7,
+                "carbs_per_unit_g": 28.0,
+                "fat_per_unit_g": 0.3,
+                "fiber_per_unit_g": 0.4,
+                "is_public": True,
+            },
+            {
+                "name": "Huile d'olive extra vierge",
+                "item_type": "food",
+                "default_unit": "cuillère à soupe",
+                "default_quantity": 1.0,
+                "calories_per_unit": 119.0,
+                "protein_per_unit_g": 0.0,
+                "carbs_per_unit_g": 0.0,
+                "fat_per_unit_g": 13.5,
+                "fiber_per_unit_g": 0.0,
+                "is_public": True,
+            },
+            {
+                "name": "Saumon atlantique cuit au four",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 208.0,
+                "protein_per_unit_g": 22.0,
+                "carbs_per_unit_g": 0.0,
+                "fat_per_unit_g": 13.0,
+                "fiber_per_unit_g": 0.0,
+                "is_public": True,
+            },
+            {
+                "name": "Avocat mûr",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 160.0,
+                "protein_per_unit_g": 2.0,
+                "carbs_per_unit_g": 8.5,
+                "fat_per_unit_g": 14.7,
+                "fiber_per_unit_g": 6.7,
+                "is_public": True,
+            },
+            {
+                "name": "Banane fraîche",
+                "item_type": "food",
+                "default_unit": "pièce",
+                "default_quantity": 1.0,
+                "calories_per_unit": 105.0,
+                "protein_per_unit_g": 1.3,
+                "carbs_per_unit_g": 27.0,
+                "fat_per_unit_g": 0.3,
+                "fiber_per_unit_g": 3.1,
+                "is_public": True,
+            },
+            {
+                "name": "Amandes entières naturelles",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 30.0,
+                "calories_per_unit": 174.0,
+                "protein_per_unit_g": 6.3,
+                "carbs_per_unit_g": 6.1,
+                "fat_per_unit_g": 15.0,
+                "fiber_per_unit_g": 3.5,
+                "is_public": True,
+            },
+            {
+                "name": "Yaourt grec nature 0%",
+                "item_type": "food",
+                "default_unit": "pot",
+                "default_quantity": 1.0,
+                "calories_per_unit": 73.0,
+                "protein_per_unit_g": 12.0,
+                "carbs_per_unit_g": 4.5,
+                "fat_per_unit_g": 0.0,
+                "fiber_per_unit_g": 0.0,
+                "is_public": True,
+            }
+        ]
+
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for it in PUBLIC_BASE_ITEMS:
+                cursor.execute("SELECT id FROM food_items WHERE name = ? AND is_public = 1", (it["name"],))
+                if not cursor.fetchone():
+                    is_pub_val = True if self.is_postgres else 1
+                    cursor.execute("""
+                        INSERT INTO food_items (
+                            user_id, name, item_type, default_unit, default_quantity,
+                            calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
+                            fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
+                            is_public, created_at, updated_at
+                        )
+                        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                    """, (
+                        it["name"], it["item_type"], it["default_unit"], it["default_quantity"],
+                        it["calories_per_unit"], it["protein_per_unit_g"], it["carbs_per_unit_g"],
+                        it["fat_per_unit_g"], it["fiber_per_unit_g"], is_pub_val, now_str, now_str
+                    ))
+            conn.commit()
 
     # ---------------------------------------------------------
     # Référentiel des Bienfaits Nutritionnels (Stage 13)

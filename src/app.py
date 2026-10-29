@@ -1440,6 +1440,7 @@ class CatalogItemCreateRequest(BaseModel):
     photo_url: Optional[str] = Field(None, description="Photo ou data URL")
     recipe_items: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Ingrédients composant le plat")
     benefits: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Bienfaits associés à la création")
+    is_public: Optional[bool] = Field(False, description="True si l'aliment doit être public")
 
 
 class CatalogItemUpdateRequest(BaseModel):
@@ -1454,6 +1455,12 @@ class CatalogItemUpdateRequest(BaseModel):
     fiber_per_unit_g: Optional[float] = None
     photo_url: Optional[str] = None
     recipe_items: Optional[List[Dict[str, Any]]] = None
+    is_public: Optional[bool] = None
+
+
+class CatalogSubscriptionCreateRequest(BaseModel):
+    target_user_id: Optional[int] = Field(None, description="ID de l'utilisateur auquel s'abonner")
+    email: Optional[str] = Field(None, description="Email de l'utilisateur auquel s'abonner")
 
 
 class MealJournalAddItemRequest(BaseModel):
@@ -1486,12 +1493,23 @@ def get_catalog_items(
     type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
     q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un ami pour consultation en lecture seule"),
+    source: Optional[str] = Query(None, description="Source des aliments ('all', 'mine', 'public', 'friends')"),
+    friend_id: Optional[int] = Query(None, description="ID d'un ami spécifique pour explorer son catalogue"),
     current_user: AuthUser = Depends(get_current_user)
 ):
+    """Récupère le catalogue d'aliments et de plats selon la source (all, mine, public, friends) ou friend_id."""
+    # Consultation en lecture seule : cible l'utilisateur concerné (ami ou soi-même) après vérification d'accès.
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
-    """Récupère le catalogue d'aliments et de plats de l'utilisateur."""
-    items = db.get_food_items(item_type=type, query=q, user_id=target_uid)
+    # Par défaut, si friend_id est spécifié on filtre sur l'ami, sinon si source n'est pas spécifié, on retourne "mine"
+    effective_source = source if source is not None else ("mine" if not friend_id else "friends")
+    items = db.get_food_items(
+        item_type=type,
+        query=q,
+        user_id=target_uid,
+        source=effective_source,
+        friend_id=friend_id
+    )
     return [it.model_dump() for it in items]
 
 
@@ -1513,7 +1531,8 @@ def create_catalog_item(
         fat_per_unit_g=req.fat_per_unit_g or 0.0,
         fiber_per_unit_g=req.fiber_per_unit_g or 0.0,
         photo_url=req.photo_url,
-        recipe_items=req.recipe_items or []
+        recipe_items=req.recipe_items or [],
+        is_public=bool(req.is_public)
     )
     created = db.insert_food_item(item, user_id=current_user.id)
     return created.model_dump()
@@ -1529,7 +1548,7 @@ def update_catalog_item(
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = db.update_food_item(item_id, update_data, user_id=current_user.id)
     if not updated:
-        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable ou non autorisé")
     return updated.model_dump()
 
 
@@ -1541,8 +1560,96 @@ def delete_catalog_item(
     """Supprime un aliment ou un plat du catalogue."""
     deleted = db.delete_food_item(item_id, user_id=current_user.id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
+        raise HTTPException(status_code=404, detail="Élément de catalogue introuvable ou non autorisé")
     return {"status": "success", "message": f"Élément #{item_id} supprimé du catalogue"}
+
+
+# ---------------------------------------------------------
+# Abonnements aux catalogues d'amis
+# ---------------------------------------------------------
+
+@app.get("/api/catalog/subscriptions")
+def get_catalog_subscriptions(current_user: AuthUser = Depends(get_current_user)):
+    """Liste tous les catalogues d'amis auxquels l'utilisateur est abonné."""
+    subs = db.get_catalog_subscriptions(subscriber_id=current_user.id)
+    return subs
+
+
+@app.post("/api/catalog/subscriptions")
+def create_catalog_subscription(
+    req: CatalogSubscriptionCreateRequest,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """S'abonne au catalogue d'un utilisateur par son ID ou son adresse email."""
+    target_user_id = req.target_user_id
+    if not target_user_id and req.email:
+        target_user = db.get_user_by_email(req.email)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Utilisateur cible introuvable")
+        target_user_id = target_user["id"]
+
+    if not target_user_id:
+        raise HTTPException(status_code=400, detail="target_user_id ou email obligatoire")
+
+    if target_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Impossible de s'abonner à son propre catalogue")
+
+    success = db.add_catalog_subscription(subscriber_id=current_user.id, target_user_id=target_user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Utilisateur cible introuvable")
+
+    return {
+        "status": "success",
+        "message": f"Abonnement au catalogue de l'utilisateur #{target_user_id} activé",
+        "subscriber_id": current_user.id,
+        "target_user_id": target_user_id
+    }
+
+
+@app.delete("/api/catalog/subscriptions/{target_user_id}")
+def delete_catalog_subscription(
+    target_user_id: int,
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Se désabonne du catalogue d'un ami."""
+    removed = db.remove_catalog_subscription(subscriber_id=current_user.id, target_user_id=target_user_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Abonnement introuvable ou déjà supprimé")
+    return {
+        "status": "success",
+        "message": f"Désabonnement du catalogue #{target_user_id} effectué"
+    }
+
+
+@app.get("/api/catalog/friends/{target_user_id}/items")
+def get_friend_catalog_items(
+    target_user_id: int,
+    type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
+    q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    """Explore le catalogue complet d'un ami spécifique."""
+    friend = db.get_user_by_id(target_user_id)
+    if not friend:
+        raise HTTPException(status_code=404, detail="Ami introuvable")
+
+    items = db.get_food_items(
+        item_type=type,
+        query=q,
+        user_id=current_user.id,
+        source="mine",
+        friend_id=target_user_id
+    )
+    return {
+        "friend": {
+            "id": friend["id"],
+            "name": friend.get("name"),
+            "email": friend.get("email"),
+            "picture": friend.get("picture")
+        },
+        "is_subscribed": db.is_subscribed_to_catalog(current_user.id, target_user_id),
+        "items": [it.model_dump() for it in items]
+    }
 
 
 @app.get("/api/catalog/items/{item_id}/benefits")

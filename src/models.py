@@ -253,23 +253,33 @@ class BenefitEvaluationResult(BaseModel):
 
 
 class CatalogItem(BaseModel):
-    """Aliment simple ou plat/recette rǸutilisable du catalogue personnel."""
+    """Aliment simple ou plat/recette réutilisable du catalogue personnel ou public."""
     id: Optional[int] = None
     user_id: Optional[int] = 1
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
     item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
-    default_unit: str = Field("g", description="UnitǸ de rǸfǸrence (g, portion, ml, pice)")
-    default_quantity: float = Field(100.0, gt=0, description="QuantitǸ de rǸfǸrence")
-    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantitǸ de rǸfǸrence")
-    protein_per_unit_g: float = Field(0.0, ge=0.0, description="ProtǸines en grammes")
+    default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
+    default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
+    calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")
+    protein_per_unit_g: float = Field(0.0, ge=0.0, description="Protéines en grammes")
     carbs_per_unit_g: float = Field(0.0, ge=0.0, description="Glucides en grammes")
     fat_per_unit_g: float = Field(0.0, ge=0.0, description="Lipides en grammes")
     fiber_per_unit_g: Optional[float] = Field(0.0, ge=0.0, description="Fibres en grammes")
-    photo_url: Optional[str] = Field(None, description="Photo ou image de rǸfǸrence")
-    recipe_items: List[Dict[str, Any]] = Field(default_factory=list, description="IngrǸdients composant le plat avec quantitǸs et macros")
-    benefits: List[AssociatedBenefit] = Field(default_factory=list, description="Bienfaits associǸs")
+    photo_url: Optional[str] = Field(None, description="Photo ou image de référence")
+    recipe_items: List[Dict[str, Any]] = Field(default_factory=list, description="Ingrédients composant le plat avec quantités et macros")
+    benefits: List[AssociatedBenefit] = Field(default_factory=list, description="Bienfaits associés")
+    is_public: bool = Field(False, description="True si l'aliment fait partie du socle public accessible à tous")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class CatalogSubscription(BaseModel):
+    """Abonnement d'un utilisateur au catalogue d'aliments d'un ami."""
+    subscriber_id: int = Field(..., description="ID de l'utilisateur abonné")
+    target_user_id: int = Field(..., description="ID de l'ami dont on consulte le catalogue")
+    target_user_name: Optional[str] = Field(None, description="Nom de l'ami")
+    target_user_email: Optional[str] = Field(None, description="Email de l'ami")
+    created_at: Optional[datetime] = None
 
 
 class MealLogItem(BaseModel):
