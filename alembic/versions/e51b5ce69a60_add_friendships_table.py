@@ -1,7 +1,7 @@
 """add_friendships_table
 
 Revision ID: e51b5ce69a60
-Revises: 0002_enriched_biometrics
+Revises: 0003_public_catalog_and_subscriptions
 Create Date: 2026-10-28 11:29:02.409824
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'e51b5ce69a60'
-down_revision: Union[str, Sequence[str], None] = '0002_enriched_biometrics'
+down_revision: Union[str, Sequence[str], None] = '0003_public_catalog_and_subscriptions'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
