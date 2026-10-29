@@ -293,11 +293,25 @@ function handleCatalogSearch(e) {
   }
 }
 
+/** Normalise un texte pour la recherche : minuscules, sans accents, espaces compactés. */
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/œ/gi, 'oe')
+    .replace(/æ/gi, 'ae')
+    .toLowerCase()
+    .trim();
+}
+
 /** Vrai si l'élément correspond à la recherche libre (tous les mots saisis doivent être présents). */
 function catalogItemMatchesSearch(item, normalizedQuery) {
   if (!normalizedQuery) return true;
-  const haystack = `${item.name || ''} ${item.description || ''}`.toLowerCase();
-  return normalizedQuery.split(/\s+/).filter(Boolean).every(token => haystack.includes(token));
+  // L'index de recherche est calculé une seule fois par élément (et non à chaque frappe).
+  if (item.__searchHaystack === undefined) {
+    item.__searchHaystack = normalizeSearchText(`${item.name || ''} ${item.description || ''}`);
+  }
+  return normalizedQuery.split(/\s+/).filter(Boolean).every(token => item.__searchHaystack.includes(token));
 }
 
 /** Réinitialise recherche, type et bienfait du catalogue (état vide sans résultat). */
@@ -340,7 +354,7 @@ function renderCatalogItems() {
   }
 
   // 2. Recherche libre — appliquée en mémoire à chaque frappe (0 requête réseau)
-  const normalizedQuery = (currentCatalogSearch || '').trim().toLowerCase();
+  const normalizedQuery = normalizeSearchText(currentCatalogSearch);
   if (normalizedQuery) {
     itemsToRender = itemsToRender.filter(it => catalogItemMatchesSearch(it, normalizedQuery));
   }
@@ -365,7 +379,7 @@ function renderCatalogItems() {
       <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
         <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${normalizedQuery} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${(currentCatalogSearch || '').trim()} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
         <div class="flex items-center justify-center gap-2 pt-2">
           ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
           <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
