@@ -518,37 +518,38 @@
       const badge = document.getElementById('meals-count-badge');
       if (badge) badge.innerText = `${meals.length} repas récents`;
 
+      // Calcul des 7 derniers jours (utilisé par le graphique ET le tableau récapitulatif)
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().split('T')[0]);
+      }
+
+      const bfast = [];
+      const lunch = [];
+      const dinner = [];
+      const snack = [];
+
+      days.forEach(day => {
+        const dayMeals = meals.filter(m => m.date === day);
+        let b = 0, l = 0, d = 0, s = 0;
+        dayMeals.forEach(m => {
+          if (m.meal_type === 'breakfast') b += m.total_calories_kcal;
+          else if (m.meal_type === 'lunch') l += m.total_calories_kcal;
+          else if (m.meal_type === 'dinner') d += m.total_calories_kcal;
+          else if (m.meal_type === 'snack') s += m.total_calories_kcal;
+        });
+
+        bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s);
+      });
+
       // Graphique empilé des 7 derniers jours
       const ctx = document.getElementById('chart-meals-stacked');
       if (ctx) {
-        if (chartMealsStacked) chartMealsStacked.destroy();
+        if (chartMealsStacked) { try { chartMealsStacked.destroy(); } catch (e) { /* ignore */ } }
 
-        // Calcul 7 jours
-        const days = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          days.push(d.toISOString().split('T')[0]);
-        }
-
-        const bfast = [];
-        const lunch = [];
-        const dinner = [];
-        const snack = [];
-
-        days.forEach(day => {
-          const dayMeals = meals.filter(m => m.date === day);
-          let b = 0, l = 0, d = 0, s = 0;
-          dayMeals.forEach(m => {
-            if (m.meal_type === 'breakfast') b += m.total_calories_kcal;
-            else if (m.meal_type === 'lunch') l += m.total_calories_kcal;
-            else if (m.meal_type === 'dinner') d += m.total_calories_kcal;
-            else if (m.meal_type === 'snack') s += m.total_calories_kcal;
-          });
-
-          bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s);
-        });
-
+        try {
         chartMealsStacked = new Chart(ctx, {
           type: 'bar',
           data: {
@@ -581,6 +582,10 @@
             }
           }
         });
+        } catch (err) {
+          console.warn('[render] Graphique repas non rendu', err);
+          chartMealsStacked = null;
+        }
       }
 
       // Rendu du Tableau Récapitulatif des Calories par Jour & par Repas
