@@ -204,6 +204,9 @@ async function loadCatalogItems() {
   if (currentCatalogSearch && currentCatalogSearch.trim()) {
     params.push(`q=${encodeURIComponent(currentCatalogSearch.trim())}`);
   }
+  if (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) {
+    params.push(`user_id=${window.currentReadOnlyFriend.friend_id}`);
+  }
   if (params.length > 0) {
     url += '?' + params.join('&');
   }
@@ -361,7 +364,7 @@ function renderCatalogItems() {
 
         ${benefitsHtml}
 
-        <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70">
+        <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
           <button 
             type="button"
             onclick="promptAddToMeal('${item.id}')" 
@@ -399,6 +402,10 @@ function renderCatalogItems() {
 // ============================================================================
 
 function handleCatalogDragStart(event, itemId) {
+  if (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) {
+    event.preventDefault();
+    return;
+  }
   const item = currentCatalogItems.find(it => it.id == itemId);
   if (!item) return;
 
@@ -1279,7 +1286,8 @@ async function loadMealsJournal(dateStr) {
   if (dateInput) dateInput.value = currentJournalDate;
 
   try {
-    const res = await apiFetch(`/api/meals/journal?date=${currentJournalDate}`);
+    const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+    const res = await apiFetch(`/api/meals/journal?date=${currentJournalDate}${readOnlyParam}`);
     if (res.ok) {
       currentJournalData = await res.json();
       renderMealsJournal();
@@ -1396,15 +1404,13 @@ function renderMealsJournal() {
                   (P:${Math.round(it.protein_g || 0)}g G:${Math.round(it.carbs_g || 0)}g L:${Math.round(it.fat_g || 0)}g)
                 </div>
               </div>
-              <button onclick="removeMealLogItem('${it.id}')" title="Retirer l'aliment" class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 shrink-0">
-                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-              </button>
+              ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? '' : `<button onclick="removeMealLogItem('${it.id}')" title="Retirer l'aliment" class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 shrink-0 write-action-btn"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
             </div>
           `).join('')}
         </div>
 
         <!-- Boutons d'actions -->
-        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]/70">
+        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
           <button onclick="openSelectFromCatalogModal('${slot}')" class="flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>+ Ajouter un aliment</span>
