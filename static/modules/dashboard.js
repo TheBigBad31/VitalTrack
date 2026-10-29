@@ -14,6 +14,13 @@
     let currentTrendsDays = 30;
     let currentCorrelationMode = 'weight_cals';
 
+    // --- Lot 2 (BALI-90) : rendu ciblé par onglet actif ---
+    // Seule la vue de l'onglet visible est rendue ; les autres sont marquées "dirty"
+    // puis rendues à la demande (à la première ouverture de l'onglet).
+    let currentActiveTab = 'summary';
+    const dirtyTabs = new Set();
+    const TAB_VIEW_IDS = ['summary', 'weight', 'nutrition', 'activity', 'goals', 'devices'];
+
     let currentEstimatedMeal = null;
     let currentUploadedPhotoUrl = null;
 
@@ -138,17 +145,66 @@
     }
 
     function refreshData() {
+      // Actualisation manuelle : on invalide tous les caches (onglets + journal)
+      if (typeof invalidateTabCaches === 'function') invalidateTabCaches();
+      if (typeof invalidateJournalCache === 'function') invalidateJournalCache();
+      if (typeof markAllTabsDirty === 'function') markAllTabsDirty();
       loadDashboardData();
     }
 
-    // Rendu global de l'interface
+    // --- Rendu ciblé (Lot 2 - BALI-90) ---------------------------------------
+    /** Rend la vue d'un onglet donné (sans toucher aux autres onglets). */
+    function renderTabView(tabId) {
+      switch (tabId) {
+        case 'summary': renderSummaryView(); break;
+        case 'weight': renderWeightView(); break;
+        case 'nutrition': renderNutritionView(); break;
+        case 'activity': renderActivityView(); break;
+        case 'goals': if (typeof renderGoalsView === 'function') renderGoalsView(); break;
+        case 'devices': renderDevicesView(); break;
+        default: break;
+      }
+    }
+
+    /** Marque un onglet à rafraîchir lors de sa prochaine ouverture. */
+    function markTabDirty(tabId) {
+      if (!tabId || tabId === currentActiveTab) return;
+      dirtyTabs.add(tabId);
+    }
+
+    function markAllTabsDirty() {
+      TAB_VIEW_IDS.forEach(markTabDirty);
+    }
+
+    /**
+     * Rend la vue d'un onglet si elle a été invalidée (données rafraîchies alors
+     * qu'elle était masquée). Retourne true si un rendu a eu lieu.
+     */
+    function renderTabViewIfDirty(tabId) {
+      if (!dirtyTabs.has(tabId)) return false;
+      dirtyTabs.delete(tabId);
+      try {
+        renderTabView(tabId);
+        refreshIcons(document.getElementById(`view-${tabId}`));
+      } catch (err) {
+        console.warn(`[render] Vue ${tabId} non rendue :`, err);
+      }
+      return true;
+    }
+
+    // Rendu global de l'interface : ne rend immédiatement que l'onglet actif.
     function renderAllViews() {
-      renderSummaryView();
-      renderWeightView();
-      renderNutritionView();
-      renderActivityView();
-      renderDevicesView();
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+      const active = currentActiveTab || 'summary';
+      TAB_VIEW_IDS.forEach(tabId => {
+        if (tabId === active) {
+          dirtyTabs.delete(tabId);
+          renderTabView(tabId);
+        } else {
+          dirtyTabs.add(tabId);
+        }
+      });
+      // Icônes recréées uniquement dans la vue affichée
+      refreshIcons(document.getElementById(`view-${active}`) || document.body);
     }
 
     // 1. Rendu Synthèse Quotidienne
@@ -162,27 +218,9 @@
       const diffTxt = diff !== undefined ? (diff > 0 ? `+${diff} kg (7j)` : `${diff} kg (7j)`) : '--';
       document.getElementById('val-weight-diff').innerText = `Variation 7j: ${diffTxt}`;
 
-      document.getElementById('val-cals-in').innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
-      const inPct = Math.min(100, Math.round(((s.calories_intake_kcal || 0) / (s.target_calories_intake || 2000)) * 100));
-      document.getElementById('bar-cals-in').style.width = `${inPct}%`;
-
-      document.getElementById('val-cals-out').innerHTML = `${Math.round(s.calories_burned_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
-      
-      // Mise à jour des Anneaux d'objectifs (Palier 3)
-      renderSummaryRings();
-      document.getElementById('val-bmr').innerText = `${Math.round(s.bmr_kcal || 1780)} kcal`;
-
-      const net = Math.round(s.net_energy_balance_kcal || 0);
-      const netEl = document.getElementById('val-net-balance');
-      netEl.innerHTML = `${net > 0 ? '+' : ''}${net} <span class="text-xs font-normal text-slate-400">kcal</span>`;
-      netEl.className = `text-2xl sm:text-3xl font-extrabold ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
-      
-      const stEl = document.getElementById('val-net-status');
-      stEl.innerText = `Statut: ${s.energy_status === 'deficit' ? 'Déficit optimal' : (s.energy_status === 'surplus' ? 'Surplus calorique' : 'Maintien')}`;
-      stEl.className = `text-[11px] font-medium ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
-
-      const projChange = s.weekly_projected_weight_change_kg || ((net * 7) / 7700).toFixed(2);
-      document.getElementById('val-projected-loss').innerText = `Impact 7j: ~${projChange} kg`;
+      // Compteurs énergétiques, anneaux et macros (fonction réutilisable pour
+      // les mises à jour ciblées du journal, sans reconstruire les graphiques)
+      renderSummaryCounters();
 
       document.getElementById('val-steps').innerHTML = `${(s.steps || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400">/ 10k</span>`;
       const stepsPct = Math.min(100, Math.round(((s.steps || 0) / (s.steps_target || 10000)) * 100));
@@ -194,14 +232,111 @@
       // Actualiser le bandeau dynamique de synchronisation Santé Connect / Objets
       renderLiveSyncBanner();
 
+      renderWeightSummaryChart();
+    }
+
+    /**
+     * Rafraîchit uniquement les compteurs énergétiques et macros de la Synthèse
+     * (kcal ingérées / dépensées / bilan net, anneaux d'objectifs, donut macros).
+     * Utilisé après une modification optimiste du journal (Lot 2 - BALI-90) :
+     * coût constant, aucun graphique poids ni table recalculée.
+     */
+    function renderSummaryCounters() {
+      const s = (currentData && currentData.summary) || {};
+
+      const elCalsIn = document.getElementById('val-cals-in');
+      if (elCalsIn) elCalsIn.innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+      const barCalsIn = document.getElementById('bar-cals-in');
+      if (barCalsIn) {
+        const inPct = Math.min(100, Math.round(((s.calories_intake_kcal || 0) / (s.target_calories_intake || 2000)) * 100));
+        barCalsIn.style.width = `${inPct}%`;
+      }
+
+      const elCalsOut = document.getElementById('val-cals-out');
+      if (elCalsOut) elCalsOut.innerHTML = `${Math.round(s.calories_burned_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+
+      // Mise à jour des Anneaux d'objectifs (Palier 3)
+      renderSummaryRings();
+      const elBmr = document.getElementById('val-bmr');
+      if (elBmr) elBmr.innerText = `${Math.round(s.bmr_kcal || 1780)} kcal`;
+
+      const net = Math.round(s.net_energy_balance_kcal || 0);
+      const netEl = document.getElementById('val-net-balance');
+      if (netEl) {
+        netEl.innerHTML = `${net > 0 ? '+' : ''}${net} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+        netEl.className = `text-2xl sm:text-3xl font-extrabold ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
+      }
+
+      const stEl = document.getElementById('val-net-status');
+      if (stEl) {
+        stEl.innerText = `Statut: ${s.energy_status === 'deficit' ? 'Déficit optimal' : (s.energy_status === 'surplus' ? 'Surplus calorique' : 'Maintien')}`;
+        stEl.className = `text-[11px] font-medium ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
+      }
+
+      const projChange = s.weekly_projected_weight_change_kg || ((net * 7) / 7700).toFixed(2);
+      const elProj = document.getElementById('val-projected-loss');
+      if (elProj) elProj.innerText = `Impact 7j: ~${projChange} kg`;
+
       // Donut Macros
       const m = s.macros || {};
-      document.getElementById('macro-prot-txt').innerText = `${m.protein_g || 0}g (${m.protein_pct || 0}%)`;
-      document.getElementById('macro-carbs-txt').innerText = `${m.carbs_g || 0}g (${m.carbs_pct || 0}%)`;
-      document.getElementById('macro-fat-txt').innerText = `${m.fat_g || 0}g (${m.fat_pct || 0}%)`;
+      const elProt = document.getElementById('macro-prot-txt');
+      const elCarbs = document.getElementById('macro-carbs-txt');
+      const elFat = document.getElementById('macro-fat-txt');
+      if (elProt) elProt.innerText = `${m.protein_g || 0}g (${m.protein_pct || 0}%)`;
+      if (elCarbs) elCarbs.innerText = `${m.carbs_g || 0}g (${m.carbs_pct || 0}%)`;
+      if (elFat) elFat.innerText = `${m.fat_g || 0}g (${m.fat_pct || 0}%)`;
 
       renderMacrosDonut(m);
-      renderWeightSummaryChart();
+    }
+
+    /**
+     * Applique en mémoire le `day_summary` du journal (aujourd'hui) au résumé du
+     * tableau de bord, puis ne rafraîchit que les compteurs concernés.
+     * Aucun appel /api/dashboard, aucune reconstruction de la page.
+     * @param {{total_calories?:number,total_protein_g?:number,total_carbs_g?:number,total_fat_g?:number,macros_pct?:object}} daySummary
+     */
+    function applyJournalDaySummaryToDashboard(daySummary) {
+      if (!daySummary) return;
+      if (typeof currentData === 'undefined' || !currentData) return;
+      if (!currentData.summary) currentData.summary = {};
+
+      const s = currentData.summary;
+      const intake = Number(daySummary.total_calories) || 0;
+      const prot = Number(daySummary.total_protein_g) || 0;
+      const carbs = Number(daySummary.total_carbs_g) || 0;
+      const fat = Number(daySummary.total_fat_g) || 0;
+      const macrosPct = daySummary.macros_pct || {};
+
+      const macroCal = prot * 4 + carbs * 4 + fat * 9;
+      const pctOf = (value, pct) => {
+        if (pct !== undefined && pct !== null) return Math.round(Number(pct) * 10) / 10;
+        return macroCal > 0 ? Math.round((value / macroCal) * 1000) / 10 : 0;
+      };
+
+      s.calories_intake_kcal = intake;
+      s.macros = {
+        protein_g: prot,
+        carbs_g: carbs,
+        fat_g: fat,
+        protein_pct: pctOf(prot * 4, macrosPct.protein_pct),
+        carbs_pct: pctOf(carbs * 4, macrosPct.carbs_pct),
+        fat_pct: pctOf(fat * 9, macrosPct.fat_pct)
+      };
+
+      const burned = Number(s.calories_burned_kcal) || 0;
+      const net = Math.round((intake - burned) * 10) / 10;
+      s.net_energy_balance_kcal = net;
+      s.energy_status = net <= -250 ? 'deficit' : (net >= 250 ? 'surplus' : 'maintenance');
+      s.weekly_projected_weight_change_kg = Math.round(((net * 7.0) / 7700.0) * 1000) / 1000;
+
+      // Rafraîchissement ciblé : compteurs si la Synthèse est visible, sinon
+      // la vue sera rendue (dirty) à sa prochaine ouverture.
+      if (currentActiveTab === 'summary' && typeof renderSummaryCounters === 'function') {
+        dirtyTabs.delete('summary');
+        renderSummaryCounters();
+      } else {
+        dirtyTabs.add('summary');
+      }
     }
 
     function renderMacrosDonut(m) {
