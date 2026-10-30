@@ -13,6 +13,23 @@ let currentCatalogSearch = '';
 let currentJournalDate = new Date().toISOString().split('T')[0];
 let currentJournalData = null;
 let currentActiveMealSlot = 'lunch';
+
+// --- Lot 2 (BALI-90) : cache mémoire par date, requêtes dédupliquées & mutations optimistes ---
+// journalCacheByDate[date] = { date, meals: [...], day_summary: {...} }
+// Rejouer une date déjà consultée coûte 0 requête et 0 ms de rendu.
+const journalCacheByDate = new Map();
+// Promesses de chargement en vol (déduplication : 1 seule requête par date).
+const journalInflightByDate = new Map();
+// Horodatage de la dernière lecture serveur par date (stale-while-revalidate).
+const journalFetchedAtByDate = new Map();
+const JOURNAL_REVALIDATE_MS = 30000;
+// Nombre de mutations optimistes en cours par date (garde anti-écrasement par une revalidation).
+const journalPendingMutations = new Map();
+// Préchargement de J-1 effectué (une seule fois par session).
+let journalPrefetchDone = false;
+// Cache du catalogue : chargé une fois, filtré 100 % en mémoire ensuite.
+let catalogLoaded = false;
+let catalogLoadPromise = null;
 let catalogItemPhotoBase64 = null;
 let currentNutritionLayoutMode = 'split'; // 'split' (desktop côte à côte), 'journal', 'catalog'
 
@@ -194,22 +211,33 @@ function initNutritionNavigation() {
 // 1. CATALOGUE D'ALIMENTS & PLATS
 // ============================================================================
 
-async function loadCatalogItems() {
+/**
+ * Charge le catalogue complet une seule fois puis le conserve en mémoire.
+ * Tous les filtres (type, recherche, bienfait) sont ensuite appliqués localement
+ * par renderCatalogItems() : aucune requête HTTP à la frappe (Lot 2 - BALI-90).
+ * @param {boolean} [force=false] - Force un rechargement réseau (après création/suppression).
+ */
+async function loadCatalogItems(force = false) {
   const container = document.getElementById('catalog-items-grid');
+
+  if (catalogLoaded && !force) {
+    renderCatalogItems();
+    return;
+  }
+
+  if (catalogLoadPromise && !force) {
+    await catalogLoadPromise;
+    return;
+  }
+
   if (container && currentCatalogItems.length === 0) {
     container.innerHTML = '<div class="col-span-full py-12 text-center text-slate-500 text-sm">Chargement du catalogue...</div>';
   }
 
   let url = '/api/catalog/items';
   const params = [];
-  if (currentCatalogFilter && currentCatalogFilter !== 'all') {
-    params.push(`type=${encodeURIComponent(currentCatalogFilter)}`);
-  }
   if (currentCatalogSourceFilter && currentCatalogSourceFilter !== 'all') {
     params.push(`source=${encodeURIComponent(currentCatalogSourceFilter)}`);
-  }
-  if (currentCatalogSearch && currentCatalogSearch.trim()) {
-    params.push(`q=${encodeURIComponent(currentCatalogSearch.trim())}`);
   }
   if (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) {
     params.push(`user_id=${window.currentReadOnlyFriend.friend_id}`);
@@ -218,22 +246,37 @@ async function loadCatalogItems() {
     url += '?' + params.join('&');
   }
 
-  try {
-    const res = await apiFetch(url);
-    if (res.ok) {
-      currentCatalogItems = await res.json();
-      renderCatalogItems();
-      if (document.getElementById("modal-catalog-picker-list")) {
-        renderModalCatalogList();
+  catalogLoadPromise = (async () => {
+    try {
+      const res = await apiFetch(url);
+      if (res.ok) {
+        currentCatalogItems = await res.json();
+        catalogLoaded = true;
+        renderCatalogItems();
+        if (document.getElementById("modal-catalog-picker-list")) {
+          renderModalCatalogList();
+        }
+        return true;
       }
-    } else {
       console.warn("Échec requête catalogue:", res.status);
       if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
+    } catch (err) {
+      console.error("Erreur réseau ou rendu catalogue:", err);
+      if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
     }
-  } catch (err) {
-    console.error("Erreur réseau ou rendu catalogue:", err);
-    if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
+    return false;
+  })();
+
+  try {
+    await catalogLoadPromise;
+  } finally {
+    catalogLoadPromise = null;
   }
+}
+
+/** Invalide le cache catalogue (après création, édition ou suppression d'un élément). */
+function invalidateCatalogCache() {
+  catalogLoaded = false;
 }
 
 function filterCatalog(type) {
@@ -248,7 +291,12 @@ function filterCatalog(type) {
       }
     }
   });
-  loadCatalogItems();
+  // Filtrage 100 % local : le catalogue est déjà en mémoire.
+  if (catalogLoaded) {
+    renderCatalogItems();
+  } else {
+    loadCatalogItems();
+  }
 }
 
 function filterCatalogSource(source) {
@@ -263,12 +311,61 @@ function filterCatalogSource(source) {
       }
     }
   });
-  loadCatalogItems();
+  loadCatalogItems(true);
 }
 
 function handleCatalogSearch(e) {
-  currentCatalogSearch = e.target.value;
-  loadCatalogItems();
+  currentCatalogSearch = e.target.value || '';
+  // Aucune requête réseau : on filtre currentCatalogItems en mémoire et on rend immédiatement.
+  if (catalogLoaded) {
+    renderCatalogItems();
+  } else {
+    loadCatalogItems();
+  }
+}
+
+/** Normalise un texte pour la recherche : minuscules, sans accents, espaces compactés. */
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/œ/gi, 'oe')
+    .replace(/æ/gi, 'ae')
+    .toLowerCase()
+    .trim();
+}
+
+/** Vrai si l'élément correspond à la recherche libre (tous les mots saisis doivent être présents). */
+function catalogItemMatchesSearch(item, normalizedQuery) {
+  if (!normalizedQuery) return true;
+  // L'index de recherche est calculé une seule fois par élément (et non à chaque frappe).
+  if (item.__searchHaystack === undefined) {
+    item.__searchHaystack = normalizeSearchText(`${item.name || ''} ${item.description || ''}`);
+  }
+  return normalizedQuery.split(/\s+/).filter(Boolean).every(token => item.__searchHaystack.includes(token));
+}
+
+/** Réinitialise recherche, type et bienfait du catalogue (état vide sans résultat). */
+function resetCatalogFilters() {
+  currentCatalogSearch = '';
+  currentCatalogBenefitFilter = '';
+  currentCatalogFilter = 'all';
+
+  const searchInput = document.getElementById('catalog-search-input');
+  if (searchInput) searchInput.value = '';
+
+  const benefitSelect = document.getElementById('cat-filter-benefit');
+  if (benefitSelect) benefitSelect.value = '';
+
+  ['all', 'food', 'dish'].forEach(t => {
+    const btn = document.getElementById(`cat-filter-${t}`);
+    if (!btn) return;
+    btn.className = t === 'all'
+      ? 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors'
+      : 'flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors';
+  });
+
+  renderCatalogItems();
 }
 
 function handleBenefitFilterChange(event) {
@@ -280,7 +377,20 @@ function renderCatalogItems() {
   const container = document.getElementById('catalog-items-grid');
   const countBadge = document.getElementById('catalog-items-count');
 
-  let itemsToRender = currentCatalogItems;
+  let itemsToRender = Array.isArray(currentCatalogItems) ? currentCatalogItems : [];
+
+  // 1. Filtre par type (aliments / plats) — appliqué en mémoire
+  if (currentCatalogFilter && currentCatalogFilter !== 'all') {
+    itemsToRender = itemsToRender.filter(it => it.item_type === currentCatalogFilter);
+  }
+
+  // 2. Recherche libre — appliquée en mémoire à chaque frappe (0 requête réseau)
+  const normalizedQuery = normalizeSearchText(currentCatalogSearch);
+  if (normalizedQuery) {
+    itemsToRender = itemsToRender.filter(it => catalogItemMatchesSearch(it, normalizedQuery));
+  }
+
+  // 3. Filtre par bienfait santé
   if (currentCatalogBenefitFilter) {
     itemsToRender = itemsToRender.filter(it => {
       const bList = it.benefits || [];
@@ -295,18 +405,20 @@ function renderCatalogItems() {
   if (!container) return;
 
   if (itemsToRender.length === 0) {
+    const hasFilter = Boolean(normalizedQuery || currentCatalogBenefitFilter || (currentCatalogFilter && currentCatalogFilter !== 'all'));
     container.innerHTML = `
       <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
         <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">Aucun élément ne correspond à votre filtre de bienfait ou recherche.</p>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${(currentCatalogSearch || '').trim()} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
         <div class="flex items-center justify-center gap-2 pt-2">
+          ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
           <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
           <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
         </div>
       </div>
     `;
-    if (window.lucide && lucide.createIcons) lucide.createIcons();
+    refreshIcons(container);
     return;
   }
 
@@ -431,7 +543,7 @@ function renderCatalogItems() {
     `;
   }).join('');
 
-  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  refreshIcons(container);
 
   // 3. Synthèse des bienfaits du jour (Stage 13)
   if (typeof renderJournalDayBenefitsSummary === "function" && typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.meals) {
@@ -650,7 +762,7 @@ function updateDropModalLiveMacros() {
   if (fatEl) fatEl.textContent = `${l}g`;
 }
 
-async function confirmDropPortionModal() {
+function confirmDropPortionModal() {
   if (!pendingDropItem || !pendingDropSlot) return;
   const item = pendingDropItem;
   const slot = pendingDropSlot;
@@ -666,33 +778,26 @@ async function confirmDropPortionModal() {
     return;
   }
 
+  const targetDate = currentJournalDate;
   const payload = {
-    date: currentJournalDate,
+    date: targetDate,
     food_item_id: item.id,
     quantity: qty,
     unit: item.default_unit || 'g'
   };
 
+  // 1) Fermeture immédiate de la pop-in (le focus revient à la recherche du catalogue)
   closeDropPortionModal();
 
-  try {
-    const res = await apiFetch(`/api/meals/journal/${slot}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (res.ok) {
-      if (typeof showToast === 'function') {
-        showToast(`'${item.name}' (${qty}${item.default_unit}) ajouté à votre ${slot} !`, 'success');
-      }
-      loadMealsJournal(currentJournalDate);
-    } else {
-      if (typeof showToast === 'function') showToast("Erreur lors de l'enregistrement", "error");
-    }
-  } catch (err) {
-    if (typeof showToast === 'function') showToast("Erreur réseau", "error");
+  // 2) Mise à jour optimiste en mémoire + rendu AVANT la fin de la requête réseau (< 16 ms)
+  const optimisticItem = buildOptimisticJournalItem(item, qty);
+  const snapshot = applyOptimisticItemAdded(targetDate, slot, optimisticItem);
+  if (typeof showToast === 'function') {
+    showToast(`'${item.name}' (${qty}${item.default_unit || 'g'}) ajouté !`, 'success');
   }
+
+  // 3) Persistance réseau en arrière-plan puis consolidation sans rechargement global
+  persistOptimisticAddition(payload, targetDate, slot, snapshot, item);
 }
 
 // ============================================================================
@@ -1292,7 +1397,7 @@ async function handleCatalogItemFormSubmit(event) {
 
       if (typeof showToast === 'function') showToast(`'${payload.name}' enregistré dans le catalogue !`, 'success');
       closeCatalogItemModal();
-      loadCatalogItems();
+      loadCatalogItems(true);
     } else {
       alert("Erreur lors de l'enregistrement dans le catalogue.");
     }
@@ -1310,7 +1415,7 @@ async function deleteCatalogItem(itemId) {
     const res = await apiFetch(`/api/catalog/items/${itemId}`, { method: 'DELETE' });
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`'${name}' supprimé du catalogue`, 'success');
-      loadCatalogItems();
+      loadCatalogItems(true);
     } else {
       alert("Erreur lors de la suppression.");
     }
@@ -1323,41 +1428,372 @@ async function deleteCatalogItem(itemId) {
 // 5. JOURNAL DES REPAS DU QUOTIDIEN (4 DROP ZONES MODULAIRES)
 // ============================================================================
 
-async function loadMealsJournal(dateStr) {
-  currentJournalDate = dateStr || currentJournalDate || new Date().toISOString().split('T')[0];
-  const dateInput = document.getElementById('journal-date-input');
-  if (dateInput) dateInput.value = currentJournalDate;
+// ----------------------------------------------------------------------------
+// Utilitaires cache mémoire, calcul local des totaux & mutations optimistes
+// ----------------------------------------------------------------------------
 
+function journalTodayIso() {
+  return new Date().toISOString().split('T')[0];
+}
+
+/** Décale une date ISO (YYYY-MM-DD) de N jours, sans dérive de fuseau horaire. */
+function shiftIsoDate(isoDate, days) {
+  const parts = String(isoDate || journalTodayIso()).split('-').map(Number);
+  const dt = new Date(Date.UTC(parts[0], (parts[1] || 1) - 1, parts[2] || 1));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().split('T')[0];
+}
+
+function roundJournalValue(value) {
+  return Math.round((Number(value) || 0) * 10) / 10;
+}
+
+function cloneJournalJson(value) {
   try {
-    const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
-    const res = await apiFetch(`/api/meals/journal?date=${currentJournalDate}${readOnlyParam}`);
-    if (res.ok) {
-      currentJournalData = await res.json();
-      renderMealsJournal();
-      if (typeof loadDashboardData === 'function') {
-        loadDashboardData();
-      }
-    }
-  } catch (err) {
-    console.error("Erreur chargement journal repas:", err);
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  } catch (e) {
+    return value;
   }
 }
 
+/** Récupère les données du journal d'une date (cache mémoire ou date courante). */
+function getJournalForDate(date) {
+  if (date === currentJournalDate && currentJournalData) return currentJournalData;
+  return journalCacheByDate.get(date) || null;
+}
+
+/** Écrit le journal en cache et, si la date est affichée, met à jour la référence courante. */
+function storeJournalForDate(date, journal) {
+  if (!date || !journal) return;
+  journalCacheByDate.set(date, journal);
+  if (date === currentJournalDate) currentJournalData = journal;
+}
+
+function setJournalLoading(isLoading) {
+  const container = document.getElementById('journal-slots-container');
+  if (!container) return;
+  if (isLoading) {
+    container.classList.add('opacity-50', 'pointer-events-none', 'transition-opacity');
+    container.setAttribute('aria-busy', 'true');
+  } else {
+    container.classList.remove('opacity-50', 'pointer-events-none');
+    container.removeAttribute('aria-busy');
+  }
+}
+
+/**
+ * Recalcule en mémoire les totaux des 4 repas et le day_summary de la journée,
+ * avec exactement la même formule et les mêmes arrondis que le serveur
+ * (app.py: sum des items, macros en % des kcal P/G/L).
+ */
+function recalculateJournalTotals(journal) {
+  if (!journal) return journal;
+  const meals = Array.isArray(journal.meals) ? journal.meals : (journal.meals = []);
+
+  let dayCal = 0, dayProt = 0, dayCarbs = 0, dayFat = 0, dayFiber = 0;
+
+  meals.forEach(meal => {
+    const items = Array.isArray(meal.items) ? meal.items : (meal.items = []);
+    let mCal = 0, mProt = 0, mCarbs = 0, mFat = 0, mFiber = 0;
+    items.forEach(it => {
+      mCal += Number(it.calories) || 0;
+      mProt += Number(it.protein_g) || 0;
+      mCarbs += Number(it.carbs_g) || 0;
+      mFat += Number(it.fat_g) || 0;
+      mFiber += Number(it.fiber_g) || 0;
+    });
+    meal.total_calories = roundJournalValue(mCal);
+    meal.total_protein_g = roundJournalValue(mProt);
+    meal.total_carbs_g = roundJournalValue(mCarbs);
+    meal.total_fat_g = roundJournalValue(mFat);
+    meal.total_fiber_g = roundJournalValue(mFiber);
+
+    dayCal += mCal; dayProt += mProt; dayCarbs += mCarbs; dayFat += mFat; dayFiber += mFiber;
+  });
+
+  const pCal = dayProt * 4.0;
+  const cCal = dayCarbs * 4.0;
+  const fCal = dayFat * 9.0;
+  const macroCal = pCal + cCal + fCal;
+
+  journal.day_summary = {
+    total_calories: roundJournalValue(dayCal),
+    total_protein_g: roundJournalValue(dayProt),
+    total_carbs_g: roundJournalValue(dayCarbs),
+    total_fat_g: roundJournalValue(dayFat),
+    total_fiber_g: roundJournalValue(dayFiber),
+    macros_pct: {
+      protein_pct: macroCal > 0 ? roundJournalValue((pCal / macroCal) * 100.0) : 0,
+      carbs_pct: macroCal > 0 ? roundJournalValue((cCal / macroCal) * 100.0) : 0,
+      fat_pct: macroCal > 0 ? roundJournalValue((fCal / macroCal) * 100.0) : 0
+    }
+  };
+  return journal;
+}
+
+/** Retourne le repas d'un créneau, en le créant à 0 kcal si le serveur ne l'a pas fourni. */
+function ensureJournalMealSlot(journal, slot) {
+  const meals = Array.isArray(journal.meals) ? journal.meals : (journal.meals = []);
+  let meal = meals.find(m => m.meal_type === slot);
+  if (!meal) {
+    meal = {
+      id: null,
+      date: journal.date,
+      meal_type: slot,
+      photo_url: null,
+      total_calories: 0,
+      total_protein_g: 0,
+      total_carbs_g: 0,
+      total_fat_g: 0,
+      total_fiber_g: 0,
+      items: []
+    };
+    meals.push(meal);
+  }
+  if (!Array.isArray(meal.items)) meal.items = [];
+  return meal;
+}
+
+/** Construit l'objet item affiché immédiatement, avec la formule exacte du backend. */
+function buildOptimisticJournalItem(catalogItem, quantity) {
+  const baseQty = Number(catalogItem.default_quantity) || (catalogItem.item_type === 'dish' ? 1 : 100);
+  const ratio = quantity / baseQty;
+  return {
+    id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    meal_log_id: null,
+    food_item_id: catalogItem.id,
+    name: catalogItem.name,
+    quantity: quantity,
+    unit: catalogItem.default_unit || 'g',
+    calories: roundJournalValue((catalogItem.calories_per_unit || 0) * ratio),
+    protein_g: roundJournalValue((catalogItem.protein_per_unit_g || 0) * ratio),
+    carbs_g: roundJournalValue((catalogItem.carbs_per_unit_g || 0) * ratio),
+    fat_g: roundJournalValue((catalogItem.fat_per_unit_g || 0) * ratio),
+    fiber_g: roundJournalValue((catalogItem.fiber_per_unit_g || 0) * ratio),
+    _optimistic: true
+  };
+}
+
+// --- Suivi des mutations optimistes (évite qu'une revalidation écrase l'état local) ---
+
+function beginJournalMutation(date) {
+  journalPendingMutations.set(date, (journalPendingMutations.get(date) || 0) + 1);
+}
+
+function endJournalMutation(date) {
+  const remaining = (journalPendingMutations.get(date) || 0) - 1;
+  if (remaining > 0) journalPendingMutations.set(date, remaining);
+  else journalPendingMutations.delete(date);
+}
+
+function restoreJournalSnapshot(snapshot) {
+  if (!snapshot) return;
+  const { date, data } = snapshot;
+  if (data) journalCacheByDate.set(date, data);
+  if (date === currentJournalDate) {
+    currentJournalData = data || journalCacheByDate.get(date) || null;
+    renderMealsJournal();
+    syncDashboardSummary(date, currentJournalData);
+  }
+}
+
+/** Ajout optimiste : l'item et les totaux sont calculés et rendus sans attendre le réseau. */
+function applyOptimisticItemAdded(date, slot, optimisticItem) {
+  const journal = getJournalForDate(date);
+  if (!journal) return null;
+
+  const snapshot = { date, data: cloneJournalJson(journal) };
+  ensureJournalMealSlot(journal, slot).items.push(optimisticItem);
+  recalculateJournalTotals(journal);
+  storeJournalForDate(date, journal);
+
+  if (date === currentJournalDate) {
+    renderMealsJournal();
+    syncDashboardSummary(date, journal);
+  }
+  return snapshot;
+}
+
+/** Suppression optimiste : l'item disparaît et les totaux sont recalculés avant le réseau. */
+function applyOptimisticItemRemoved(date, itemId) {
+  const journal = getJournalForDate(date);
+  if (!journal) return null;
+
+  const snapshot = { date, data: cloneJournalJson(journal) };
+  let removed = false;
+  (journal.meals || []).forEach(meal => {
+    const items = Array.isArray(meal.items) ? meal.items : [];
+    const idx = items.findIndex(it => String(it.id) === String(itemId));
+    if (idx >= 0) {
+      items.splice(idx, 1);
+      removed = true;
+    }
+  });
+  if (!removed) return null;
+
+  recalculateJournalTotals(journal);
+  storeJournalForDate(date, journal);
+
+  if (date === currentJournalDate) {
+    renderMealsJournal();
+    syncDashboardSummary(date, journal);
+  }
+  return snapshot;
+}
+
+/**
+ * Consolidation de la réponse serveur (POST/DELETE) sans aucun rechargement :
+ * on remplace uniquement le repas concerné et le day_summary renvoyés par l'API.
+ */
+function consolidateJournalMutationResponse(date, payload, slot) {
+  if (!payload) return;
+  const journal = getJournalForDate(date);
+  if (!journal) return;
+
+  const meals = Array.isArray(journal.meals) ? journal.meals : (journal.meals = []);
+  const mealLog = payload.meal_log;
+  if (mealLog) {
+    const targetSlot = mealLog.meal_type || slot;
+    const idx = meals.findIndex(m => m.meal_type === targetSlot);
+    if (idx >= 0) meals[idx] = mealLog;
+    else meals.push(mealLog);
+  }
+
+  if (payload.day_summary) journal.day_summary = payload.day_summary;
+  else recalculateJournalTotals(journal);
+
+  storeJournalForDate(date, journal);
+  journalFetchedAtByDate.set(date, Date.now());
+
+  if (date === currentJournalDate) {
+    renderMealsJournal();
+    syncDashboardSummary(date, journal);
+  }
+}
+
+/** Le résumé du tableau de bord ne suit que les modifications du jour même. */
+function syncDashboardSummary(date, journal) {
+  if (!journal || date !== journalTodayIso()) return;
+  if (typeof applyJournalDaySummaryToDashboard === 'function') {
+    applyJournalDaySummaryToDashboard(journal.day_summary);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Chargement du journal : cache mémoire (0 ms) + stale-while-revalidate
+// ----------------------------------------------------------------------------
+
+/**
+ * Charge (ou recharge) une date puis met en cache le résultat.
+ * Les requêtes concurrentes sur la même date sont dédupliquées.
+ * @param {string} targetDate
+ * @param {{render?: boolean}} [options]
+ */
+async function fetchJournalDate(targetDate, options = {}) {
+  if (!targetDate) return null;
+  const render = options.render === true;
+
+  let promise = journalInflightByDate.get(targetDate);
+  if (!promise) {
+    promise = (async () => {
+      const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+      const res = await apiFetch(`/api/meals/journal?date=${encodeURIComponent(targetDate)}${readOnlyParam}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })();
+    journalInflightByDate.set(targetDate, promise);
+    const cleanup = () => journalInflightByDate.delete(targetDate);
+    promise.then(cleanup, cleanup);
+  }
+
+  try {
+    const data = await promise;
+    // Une mutation optimiste est en cours sur cette date : la réponse est déjà obsolète.
+    if ((journalPendingMutations.get(targetDate) || 0) > 0) return null;
+
+    journalCacheByDate.set(targetDate, data);
+    journalFetchedAtByDate.set(targetDate, Date.now());
+    if (targetDate === currentJournalDate) {
+      currentJournalData = data;
+      setJournalLoading(false);
+      if (render) {
+        renderMealsJournal();
+        syncDashboardSummary(targetDate, data);
+      }
+    }
+    return data;
+  } catch (err) {
+    console.error("Erreur chargement journal repas:", err);
+    return null;
+  }
+}
+
+async function loadMealsJournal(dateStr) {
+  const targetDate = dateStr || currentJournalDate || journalTodayIso();
+  currentJournalDate = targetDate;
+
+  const dateInput = document.getElementById('journal-date-input');
+  if (dateInput && dateInput.value !== targetDate) dateInput.value = targetDate;
+
+  const cached = journalCacheByDate.get(targetDate);
+
+  if (cached) {
+    // 0 ms : la date est déjà en cache, on peint immédiatement puis on revalide en silence
+    // (uniquement si la donnée a plus de 30 s, pour ne pas spammer l'API au changement de layout).
+    currentJournalData = cached;
+    setJournalLoading(false);
+    renderMealsJournal();
+    syncDashboardSummary(targetDate, cached);
+    const lastFetch = journalFetchedAtByDate.get(targetDate) || 0;
+    if (Date.now() - lastFetch > JOURNAL_REVALIDATE_MS) {
+      fetchJournalDate(targetDate, { render: true });
+    }
+    return;
+  }
+
+  // Pas encore en cache : on estompe l'ancien jour (pas de flash de zéros) puis on rend.
+  setJournalLoading(true);
+  const data = await fetchJournalDate(targetDate, { render: true });
+  if (targetDate === currentJournalDate) {
+    setJournalLoading(false);
+    if (!data) console.warn(`[journal] date ${targetDate} indisponible`);
+  }
+}
+
+/** Précharge silencieusement J-1 à l'ouverture de l'onglet Nutrition (1 seule fois). */
+function prefetchAdjacentJournalDates() {
+  if (journalPrefetchDone) return;
+  journalPrefetchDone = true;
+
+  const yesterday = shiftIsoDate(journalTodayIso(), -1);
+  if (journalCacheByDate.has(yesterday) || yesterday === currentJournalDate) return;
+  fetchJournalDate(yesterday, { render: false });
+}
+
+/** Vide le cache journal (actualisation manuelle) pour forcer une relecture serveur. */
+function invalidateJournalCache(date) {
+  if (date) {
+    journalCacheByDate.delete(date);
+    journalFetchedAtByDate.delete(date);
+    return;
+  }
+  journalCacheByDate.clear();
+  journalFetchedAtByDate.clear();
+  journalPrefetchDone = false;
+}
+
 function changeJournalDate(offset) {
-  const d = new Date(currentJournalDate);
-  d.setDate(d.getDate() + offset);
-  currentJournalDate = d.toISOString().split('T')[0];
-  loadMealsJournal(currentJournalDate);
+  loadMealsJournal(shiftIsoDate(currentJournalDate, offset));
 }
 
 function handleJournalDateChange(e) {
-  currentJournalDate = e.target.value;
-  loadMealsJournal(currentJournalDate);
+  const value = e.target.value;
+  if (!value) return;
+  loadMealsJournal(value);
 }
 
 function setJournalToToday() {
-  currentJournalDate = new Date().toISOString().split('T')[0];
-  loadMealsJournal(currentJournalDate);
+  loadMealsJournal(journalTodayIso());
 }
 
 function renderMealsJournal() {
@@ -1437,19 +1873,25 @@ function renderMealsJournal() {
               <span>Aucun aliment composé pour ce repas.</span>
               <span class="text-[11px] text-slate-400 font-medium">Glissez un aliment depuis le catalogue de gauche 👈</span>
             </div>
-          ` : items.map(it => `
-            <div class="flex items-center justify-between p-2 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] hover:border-slate-700 transition-colors">
+          ` : items.map(it => {
+            const isPending = it._optimistic === true || String(it.id).startsWith('tmp-');
+            return `
+            <div class="flex items-center justify-between p-2 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] hover:border-slate-700 transition-colors ${isPending ? 'opacity-70' : ''}"${isPending ? ' title="Enregistrement en cours…"' : ''}>
               <div class="flex-1 pr-2">
-                <div class="text-xs font-bold text-white line-clamp-1">${it.name}</div>
+                <div class="text-xs font-bold text-white line-clamp-1">${it.name}${isPending ? ' <span class="text-[10px] font-normal text-slate-500">• en cours</span>' : ''}</div>
                 <div class="text-[11px] text-slate-400">
                   <span class="font-semibold text-slate-300">${it.quantity} ${it.unit}</span> &bull; 
                   <span class="text-brand-400 font-bold">${Math.round(it.calories)} kcal</span> 
                   (P:${Math.round(it.protein_g || 0)}g G:${Math.round(it.carbs_g || 0)}g L:${Math.round(it.fat_g || 0)}g)
                 </div>
               </div>
-              ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? '' : `<button onclick="removeMealLogItem('${it.id}')" title="Retirer l'aliment" class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 shrink-0 write-action-btn"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
+              ${(isPending || (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active)) ? '' : `
+              <button onclick="removeMealLogItem('${it.id}')" title="Retirer l'aliment" class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 shrink-0 write-action-btn">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>`}
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
 
         <!-- Boutons d'actions -->
@@ -1469,7 +1911,8 @@ function renderMealsJournal() {
     `;
   }).join('');
 
-  if (window.lucide && lucide.createIcons) lucide.createIcons();
+  // Icônes rendues uniquement dans le journal (pas de scan complet du document)
+  refreshIcons(container);
 
   // 3. Synthèse des bienfaits du jour (Stage 13)
   renderJournalDayBenefitsSummary(meals);
@@ -1554,14 +1997,44 @@ function renderJournalDayBenefitsSummary(meals) {
 }
 
 async function removeMealLogItem(itemId) {
+  // Un item encore en cours d'enregistrement n'a pas d'ID serveur : on ignore le clic.
+  if (String(itemId).startsWith('tmp-')) return;
+
+  const targetDate = currentJournalDate;
+  const journal = getJournalForDate(targetDate);
+  if (!journal) return;
+
+  const item = (journal.meals || [])
+    .flatMap(m => m.items || [])
+    .find(it => String(it.id) === String(itemId));
+  const itemName = item ? item.name : "l'aliment";
+
+  // 1) Retrait immédiat en mémoire + rendu (l'UI ne bloque plus sur le DELETE)
+  const snapshot = applyOptimisticItemRemoved(targetDate, itemId);
+  if (!snapshot) return;
+
+  // 2) Persistance en arrière-plan puis consolidation de la réponse serveur
+  beginJournalMutation(targetDate);
   try {
     const res = await apiFetch(`/api/meals/journal/items/${itemId}`, { method: 'DELETE' });
-    if (res.ok) {
-      if (typeof showToast === 'function') showToast("Aliment retiré du repas", "success");
-      loadMealsJournal(currentJournalDate);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const payload = await res.json().catch(() => null);
+    endJournalMutation(targetDate);
+    consolidateJournalMutationResponse(targetDate, payload, null);
+
+    if (typeof showToast === 'function') showToast(`${itemName} retiré du repas`, "success");
   } catch (err) {
-    alert("Erreur lors de la suppression de l'aliment");
+    endJournalMutation(targetDate);
+    console.error("[journal] Suppression impossible, rollback :", err);
+    restoreJournalSnapshot(snapshot);
+    if (typeof showToast === 'function') {
+      showToast(`Impossible de retirer ${itemName} — modification annulée`, "error");
+    } else {
+      alert("Erreur lors de la suppression de l'aliment");
+    }
+    // Réconciliation silencieuse avec le serveur (le DELETE a pu aboutir malgré l'erreur réseau)
+    fetchJournalDate(targetDate, { render: true });
   }
 }
 
@@ -1675,7 +2148,11 @@ function updatePickerLiveMacros() {
   document.getElementById('picker-live-macros').textContent = `Protéines: ${prot}g | Glucides: ${carbs}g | Lipides: ${fat}g`;
 }
 
-async function confirmAddCatalogItemToMeal() {
+/**
+ * Ajout d'un aliment au repas actif (modale de sélection) en Optimistic UI :
+ * l'item et les totaux sont affichés immédiatement, la requête part ensuite.
+ */
+function confirmAddCatalogItemToMeal() {
   if (!currentSelectedCatalogItem) return;
   const item = currentSelectedCatalogItem;
   const qty = parseFloat(document.getElementById('picker-portion-qty').value);
@@ -1684,30 +2161,57 @@ async function confirmAddCatalogItemToMeal() {
     return;
   }
 
+  const slot = currentActiveMealSlot || 'lunch';
+  const targetDate = currentJournalDate;
   const payload = {
-    date: currentJournalDate,
+    date: targetDate,
     food_item_id: item.id,
     quantity: qty,
     unit: item.default_unit || 'g'
   };
 
+  // Fermeture immédiate des modales (retour du focus utilisateur)
+  closeSelectFromCatalogModal();
+  backToPickerList();
+
+  // Mise à jour optimiste + rendu AVANT la fin de la requête réseau (< 16 ms)
+  const optimisticItem = buildOptimisticJournalItem(item, qty);
+  const snapshot = applyOptimisticItemAdded(targetDate, slot, optimisticItem);
+  if (typeof showToast === 'function') {
+    showToast(`'${item.name}' (${qty}${item.default_unit || 'g'}) ajouté !`, 'success');
+  }
+
+  persistOptimisticAddition(payload, targetDate, slot, snapshot, item);
+}
+
+/**
+ * Envoie l'ajout au serveur puis consolide la réponse (meal_log + day_summary)
+ * sans rappeler loadMealsJournal() ni loadDashboardData().
+ */
+async function persistOptimisticAddition(payload, targetDate, slot, snapshot, catalogItem) {
+  beginJournalMutation(targetDate);
   try {
-    const res = await apiFetch(`/api/meals/journal/${currentActiveMealSlot}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${slot}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    if (res.ok) {
-      if (typeof showToast === 'function') showToast(`'${item.name}' ajouté au ${currentActiveMealSlot} !`, 'success');
-      closeSelectFromCatalogModal();
-      backToPickerList();
-      loadMealsJournal(currentJournalDate);
-    } else {
-      alert("Erreur lors de l'ajout au repas.");
-    }
+    const data = await res.json().catch(() => null);
+    endJournalMutation(targetDate);
+    consolidateJournalMutationResponse(targetDate, data, slot);
   } catch (err) {
-    alert("Erreur réseau.");
+    endJournalMutation(targetDate);
+    console.error("[journal] Ajout impossible, rollback :", err);
+    restoreJournalSnapshot(snapshot);
+    if (typeof showToast === 'function') {
+      showToast(`Échec de l'ajout de '${catalogItem.name}' — modification annulée`, "error");
+    } else {
+      alert("Erreur réseau : l'ajout a été annulé.");
+    }
+    // Réconciliation silencieuse avec le serveur (le POST a pu aboutir malgré l'erreur réseau)
+    fetchJournalDate(targetDate, { render: true });
   }
 }
 
@@ -1729,7 +2233,7 @@ async function saveSlotAsDishModal(slot) {
 
     if (res.ok) {
       if (typeof showToast === 'function') showToast(`Plat '${payload.name}' créé dans votre catalogue !`, 'success');
-      loadCatalogItems();
+      loadCatalogItems(true);
     } else {
       alert("Erreur lors de la création du plat.");
     }
@@ -1781,8 +2285,6 @@ window.handleDishIngredientSelectChange = handleDishIngredientSelectChange;
 window.addIngredientToDish = addIngredientToDish;
 window.removeDishIngredient = removeDishIngredient;
 window.updateDishIngredientQuantity = updateDishIngredientQuantity;
-
-
 
 // ============================================================================
 // 8. GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85)
@@ -1928,7 +2430,7 @@ async function addFriendSubscription() {
       input.value = '';
       if (typeof showToast === 'function') showToast("Abonnement au catalogue validé avec succès !", "success");
       await loadFriendSubscriptions();
-      loadCatalogItems(); // Actualise le catalogue principal
+      loadCatalogItems(true); // Actualise le catalogue principal
     } else {
       const err = await res.json().catch(() => ({}));
       const msg = err.detail || "Impossible de trouver ou s'abonner à cet utilisateur.";
@@ -1941,7 +2443,7 @@ async function addFriendSubscription() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="user-plus" class="w-3.5 h-3.5"></i><span>S'abonner</span>';
+      btn.innerHTML = `<i data-lucide="user-plus" class="w-3.5 h-3.5"></i><span>S'abonner</span>`;
       if (window.lucide && lucide.createIcons) lucide.createIcons();
     }
   }
@@ -1963,7 +2465,7 @@ async function removeFriendSubscription(targetId, friendName) {
         closeFriendCatalogExplorer();
       }
       await loadFriendSubscriptions();
-      loadCatalogItems();
+      loadCatalogItems(true);
     } else {
       alert("Erreur lors du désabonnement.");
     }
@@ -1985,7 +2487,7 @@ async function exploreFriendCatalog(friendId, friendName) {
   explorerView.classList.remove('hidden');
   if (nameEl) nameEl.textContent = friendName;
   if (countEl) countEl.textContent = "Chargement des aliments...";
-  listEl.innerHTML = '<div class="py-6 text-center text-xs text-slate-500"><span class="animate-spin inline-block mr-2">⏳</span> Récupération du catalogue de l'ami...</div>';
+  listEl.innerHTML = `<div class="py-6 text-center text-xs text-slate-500"><span class="animate-spin inline-block mr-2">⏳</span> Récupération du catalogue de l'ami...</div>`;
 
   try {
     const res = await apiFetch(`/api/catalog/friends/${friendId}/items`);
@@ -2014,7 +2516,7 @@ function renderFriendExplorerItems(items) {
   if (!listEl) return;
 
   if (!items || items.length === 0) {
-    listEl.innerHTML = '<div class="py-4 text-center text-xs text-slate-500 italic">Cet ami n'a pas encore d'aliments dans son catalogue.</div>';
+    listEl.innerHTML = `<div class="py-4 text-center text-xs text-slate-500 italic">Cet ami n'a pas encore d'aliments dans son catalogue.</div>`;
     return;
   }
 
@@ -2095,7 +2597,7 @@ async function copyFriendItemToMyCatalog(itemId) {
       if (typeof showToast === 'function') {
         showToast(`'${item.name}' a été importé dans votre catalogue personnel !`, 'success');
       }
-      loadCatalogItems();
+      loadCatalogItems(true);
     } else {
       alert("Erreur lors de l'import de l'aliment dans votre catalogue.");
     }
@@ -2122,3 +2624,16 @@ window.closeFriendCatalogExplorer = closeFriendCatalogExplorer;
 window.copyFriendItemToMyCatalog = copyFriendItemToMyCatalog;
 window.addFriendItemDirectlyToActiveMeal = addFriendItemDirectlyToActiveMeal;
 window.filterCatalogSource = filterCatalogSource;
+
+// Lot 2 (BALI-90) : cache journal, préchargement & filtrage local du catalogue
+window.journalCacheByDate = journalCacheByDate;
+window.loadMealsJournal = loadMealsJournal;
+window.changeJournalDate = changeJournalDate;
+window.handleJournalDateChange = handleJournalDateChange;
+window.setJournalToToday = setJournalToToday;
+window.prefetchAdjacentJournalDates = prefetchAdjacentJournalDates;
+window.invalidateJournalCache = invalidateJournalCache;
+window.invalidateCatalogCache = invalidateCatalogCache;
+window.resetCatalogFilters = resetCatalogFilters;
+window.loadCatalogItems = loadCatalogItems;
+window.renderCatalogItems = renderCatalogItems;

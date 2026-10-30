@@ -397,3 +397,38 @@ def test_public_catalog_and_subscriptions(catalog_setup):
     # Bob ne voit plus l'aliment dans ses amis
     bob_friends_empty = client.get("/api/catalog/items?source=friends", headers=headers2).json()
     assert len(bob_friends_empty) == 0
+
+
+def test_get_food_items_eliminates_n_plus_1(catalog_setup, monkeypatch):
+    """Vérifie que get_food_items charge les bienfaits en une seule requête groupée sans appel N+1 unitaire."""
+    db = catalog_setup["db"]
+    client = catalog_setup["client"]
+    token1 = catalog_setup["token1"]
+    user1 = catalog_setup["user1"]
+    headers1 = {"Authorization": f"Bearer {token1}"}
+
+    for idx in range(5):
+        res = client.post(
+            "/api/catalog/items",
+            json={
+                "name": f"Aliment Perf {idx}",
+                "item_type": "food",
+                "default_unit": "g",
+                "default_quantity": 100.0,
+                "calories_per_unit": 100.0 + idx * 10,
+            },
+            headers=headers1,
+        )
+        assert res.status_code == 200
+
+    def forbidden_per_item_benefits(*args, **kwargs):
+        raise AssertionError("get_food_item_benefits ne doit pas être appelé en boucle dans get_food_items (N+1)")
+
+    monkeypatch.setattr(db, "get_food_item_benefits", forbidden_per_item_benefits)
+
+    items = db.get_food_items(user_id=user1["id"], source="all")
+    assert len(items) >= 5
+    for it in items:
+        assert hasattr(it, "benefits")
+        assert isinstance(it.benefits, list)
+

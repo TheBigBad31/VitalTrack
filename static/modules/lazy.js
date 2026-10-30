@@ -103,6 +103,8 @@ async function loadTabData(tabId) {
       if (typeof initNutritionNavigation === 'function') initNutritionNavigation();
       if (typeof loadCatalogItems === 'function') await loadCatalogItems();
       if (typeof loadMealsJournal === 'function') await loadMealsJournal();
+      // Lot 2 (BALI-90) : précharge J-1 en arrière-plan pour un ◀ instantané
+      if (typeof prefetchAdjacentJournalDates === 'function') prefetchAdjacentJournalDates();
       if (typeof renderNutritionView === 'function') renderNutritionView();
     } else if (tabId === 'activity') {
       if (typeof renderActivityView === 'function') {
@@ -161,9 +163,19 @@ function switchTab(tabId) {
     mobBtn.classList.add('text-violet-400', 'text-white');
   }
 
+  // Onglet actif (rendu ciblé : Lot 2 - BALI-90)
+  if (typeof currentActiveTab !== 'undefined') {
+    currentActiveTab = tabId;
+  }
+
   // Trigger lazy loading for on-demand tabs
   if (tabId !== 'summary') {
     loadTabData(tabId);
+  }
+
+  // Rendu différé des vues invalidées pendant qu'elles étaient masquées
+  if (typeof renderTabViewIfDirty === 'function') {
+    try { renderTabViewIfDirty(tabId); } catch (e) { console.warn('[tabs] rendu différé échoué :', e); }
   }
 
   // Resize Chart.js instances gracefully

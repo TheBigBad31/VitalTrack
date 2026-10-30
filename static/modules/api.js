@@ -68,3 +68,47 @@ window.apiFetch = apiFetch;
 window.API = API;
 window.JWT_STORAGE_KEY = JWT_STORAGE_KEY;
 window.GOOGLE_SESSION_KEY = GOOGLE_SESSION_KEY;
+
+/**
+ * Rendu des icônes Lucide limité à un conteneur (Lot 2 - BALI-90).
+ * lucide.createIcons() parcourt tout le document et reconstruit chaque <svg> :
+ * on neutralise temporairement les icônes situées hors du conteneur pour ne
+ * traiter que celles qui viennent d'être injectées. Sans conteneur, on conserve
+ * le comportement global historique.
+ * @param {Element} [root] - Conteneur dont les icônes doivent être (re)rendues.
+ */
+function refreshIcons(root) {
+  if (!window.lucide || typeof lucide.createIcons !== 'function') return;
+
+  if (!root || typeof root.querySelectorAll !== 'function') {
+    try { lucide.createIcons(); } catch (e) {}
+    return;
+  }
+
+  const DEFERRED_ATTR = 'data-lucide-deferred';
+  const pending = root.querySelectorAll('[data-lucide]');
+  if (pending.length === 0) return;
+
+  const deferred = [];
+  try {
+    document.querySelectorAll('[data-lucide]').forEach((el) => {
+      if (root.contains(el)) return;
+      const name = el.getAttribute('data-lucide');
+      deferred.push([el, name]);
+      el.removeAttribute('data-lucide');
+      el.setAttribute(DEFERRED_ATTR, name);
+    });
+    lucide.createIcons();
+  } catch (err) {
+    console.warn('[icons] Rendu Lucide ciblé impossible, repli global :', err);
+    try { lucide.createIcons(); } catch (e) {}
+  } finally {
+    deferred.forEach(([el, name]) => {
+      if (!el || !el.isConnected) return;
+      el.removeAttribute(DEFERRED_ATTR);
+      el.setAttribute('data-lucide', name);
+    });
+  }
+}
+
+window.refreshIcons = refreshIcons;

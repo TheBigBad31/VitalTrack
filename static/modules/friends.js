@@ -261,9 +261,15 @@ function applyReadOnlyUIState() {
  * Recharge toutes les vues (Dashboard, Journal repas, Catalogue) selon le profil actif
  */
 async function reloadAllViewsForCurrentProfile() {
-  // Invalider les caches d'onglets
+  // Invalider les caches d'onglets, journal et catalogue (Lot 2)
   if (typeof invalidateTabCaches === 'function') {
     invalidateTabCaches();
+  }
+  if (typeof invalidateJournalCache === 'function') {
+    invalidateJournalCache();
+  }
+  if (typeof invalidateCatalogCache === 'function') {
+    invalidateCatalogCache();
   }
 
   // 1. Dashboard
@@ -278,7 +284,7 @@ async function reloadAllViewsForCurrentProfile() {
 
   // 3. Catalogue Aliments & Plats
   if (typeof loadCatalogItems === 'function') {
-    await loadCatalogItems();
+    await loadCatalogItems(true);
   }
 
   // 4. Recréer les icônes lucide
