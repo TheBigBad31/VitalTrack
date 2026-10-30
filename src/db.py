@@ -205,7 +205,15 @@ class Database:
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
         if auto_migrate:
-            self.run_migrations()
+            try:
+                self.run_migrations()
+            except DatabaseServiceUnavailableError:
+                # Fail-closed en production : laisser remonter, géré par src/app.py (HTTP 503).
+                raise
+            except Exception as mig_err:
+                # Aucune erreur de migration/seed au cold-start ne doit faire crasher
+                # l'import du module (api/index.py sur Vercel) : 500 FUNCTION_INVOCATION_FAILED.
+                print(f"[VitalTrack DB Warning] Migrations ignorées au démarrage: {mig_err}")
 
     def _get_pool(self) -> Optional[Any]:
         """Initialise ou réutilise le pool de connexions psycopg_pool pour Neon Serverless."""
@@ -296,7 +304,12 @@ class Database:
                 self._init_db_fallback()
         except Exception as e:
             print(f"[VitalTrack DB Warning] Alembic migration warning: {e}. Application du fallback.")
-            self._init_db_fallback()
+            try:
+                self._init_db_fallback()
+            except Exception as fb_err:
+                # Ne jamais faire crasher l'initialisation (import de src.app) à cause d'une erreur de schéma :
+                # l'application doit pouvoir démarrer et les requêtes remonteront une erreur fonctionnelle.
+                print(f"[VitalTrack DB Warning] Fallback schema initialization failed: {fb_err}")
 
         # Garantir l'existence de l'utilisateur par défaut et le référentiel des bienfaits
         try:
@@ -310,6 +323,51 @@ class Database:
     def _init_db(self):
         """Alias pour rétrocompatibilité : exécute run_migrations."""
         self.run_migrations()
+
+    def _pg_bool_true(self):
+        """Valeur littérale de `true` adaptée au moteur (BOOLEAN sous PostgreSQL, INTEGER 1 sous SQLite)."""
+        return True if self.is_postgres else 1
+
+    def _safe_alter_column(self, cursor, table: str, col: str, def_val: str, pg_add: str = "IF NOT EXISTS") -> None:
+        """ALTER TABLE ADD COLUMN tolérant aux échecs.
+
+        Sous PostgreSQL, une DDL qui échoue met la transaction courante en état
+        `InFailedSqlTransaction` : toute requête suivante planterait (ex: CREATE INDEX).
+        On entoure donc chaque ALTER d'un SAVEPOINT / ROLLBACK TO SAVEPOINT pour
+        ne jamais corrompre la transaction en cours.
+        """
+        if self.is_postgres:
+            try:
+                cursor.execute("SAVEPOINT vitaltrack_safe_alter")
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {pg_add} {col} {def_val};")
+                cursor.execute("RELEASE SAVEPOINT vitaltrack_safe_alter")
+            except Exception:
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT vitaltrack_safe_alter")
+                    cursor.execute("RELEASE SAVEPOINT vitaltrack_safe_alter")
+                except Exception:
+                    pass
+        else:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
+            except Exception:
+                pass
+
+    def _safe_execute(self, cursor, sql: str, params: Optional[tuple] = None) -> None:
+        """Exécution tolérante aux échecs sous PostgreSQL (SAVEPOINT), stricte sous SQLite."""
+        if self.is_postgres:
+            try:
+                cursor.execute("SAVEPOINT vitaltrack_safe_exec")
+                cursor.execute(sql, params) if params is not None else cursor.execute(sql)
+                cursor.execute("RELEASE SAVEPOINT vitaltrack_safe_exec")
+            except Exception:
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT vitaltrack_safe_exec")
+                    cursor.execute("RELEASE SAVEPOINT vitaltrack_safe_exec")
+                except Exception:
+                    pass
+        else:
+            cursor.execute(sql, params) if params is not None else cursor.execute(sql)
 
     def _init_db_fallback(self):
         """Initialisation de secours si Alembic n'est pas disponible."""
@@ -716,6 +774,8 @@ class Database:
                 """)
 
                 # Migrations douces colonnes users pour PostgreSQL
+                # Commit préalable : garantir une transaction propre avant les DDL ALTER.
+                conn.commit()
                 for col, def_val in [
                     ("uuid", "TEXT"),
                     ("password_hash", "TEXT"),
@@ -724,10 +784,7 @@ class Database:
                     ("name", "TEXT"),
                     ("picture", "TEXT"),
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {def_val};")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, "users", col, def_val)
 
                 # Migrations douces colonnes weights et activities pour idempotence PostgreSQL
                 for table, col, def_val in [
@@ -737,10 +794,7 @@ class Database:
                     ("activities", "external_id", "TEXT"),
                     ("activities", "idempotency_key", "TEXT"),
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {def_val};")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, table, col, def_val)
 
                 # Migrations douces colonnes user_profile pour PostgreSQL
                 for col, def_val in [
@@ -762,10 +816,7 @@ class Database:
                     ("meal_distribution", "TEXT"),
                     ("is_demo_profile", "INTEGER DEFAULT 0"),
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS {col} {def_val};")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, "user_profile", col, def_val)
 
                 # Migrations douces colonnes user_devices pour PostgreSQL
                 for col, def_val in [
@@ -774,49 +825,39 @@ class Database:
                     ("last_sync_at", "TEXT"),
                     ("sync_status", "TEXT DEFAULT 'disconnected'")
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS {col} {def_val};")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, "user_devices", col, def_val)
 
-                try:
-                    cursor.execute("ALTER TABLE food_items ADD COLUMN IF NOT EXISTS recipe_items_json TEXT;")
-                except Exception:
-                    pass
-
-                try:
-                    cursor.execute("ALTER TABLE food_items ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE;")
-                except Exception:
-                    pass
+                self._safe_alter_column(cursor, "food_items", "recipe_items_json", "TEXT")
+                self._safe_alter_column(cursor, "food_items", "is_public", "BOOLEAN DEFAULT FALSE")
 
                 # Index optimisés PostgreSQL
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_weights_source_external ON weights(source, external_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_source_external ON activities(source, external_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_public ON food_items(is_public);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_sub ON catalog_subscriptions(subscriber_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_target ON catalog_subscriptions(target_user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date ON daily_metrics(user_id, date DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_source_ext ON daily_metrics(source, external_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_user_time ON workouts(user_id, start_time DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_workouts_source_ext ON workouts(source, external_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_user_date ON sleep_sessions(user_id, date DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_sessions_source_ext ON sleep_sessions(source, external_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_sleep_stages_session ON sleep_stages(sleep_session_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_intraday_samples_user_metric_time ON intraday_samples(user_id, metric_type, timestamp DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_weights_user_date ON weights(user_id, date DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_activities_user_date ON activities(user_id, date DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_weights_source_external ON weights(source, external_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_activities_source_external ON activities(source, external_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_meals_user_date ON meals(user_id, date DESC, id DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_saved_meals_user_type ON saved_meals(user_id, meal_type);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_food_items_user ON food_items(user_id, item_type);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_food_items_public ON food_items(is_public);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_sub ON catalog_subscriptions(subscriber_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_catalog_subscriptions_target ON catalog_subscriptions(target_user_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_meal_logs_user_date ON meal_logs(user_id, date);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_meal_log_items_meal ON meal_log_items(meal_log_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date ON daily_metrics(user_id, date DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_daily_metrics_source_ext ON daily_metrics(source, external_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_workouts_user_time ON workouts(user_id, start_time DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_workouts_source_ext ON workouts(source, external_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_sleep_sessions_user_date ON sleep_sessions(user_id, date DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_sleep_sessions_source_ext ON sleep_sessions(source, external_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_sleep_stages_session ON sleep_stages(sleep_session_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_intraday_samples_user_metric_time ON intraday_samples(user_id, metric_type, timestamp DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_user_id);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);")
 
             else:
                 # Schéma SQLite avec support des contraintes et migrations
@@ -1224,17 +1265,11 @@ class Database:
                     ("activities", "external_id", "TEXT"),
                     ("activities", "idempotency_key", "TEXT"),
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {def_val}")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, table, col, def_val)
 
                 # Migrations douces pour ajouter user_id si les tables SQLite existaient déjà sans user_id
                 for table in ["weights", "activities", "meals", "user_devices", "user_profile", "saved_meals"]:
-                    try:
-                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER DEFAULT 1")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, table, "user_id", "INTEGER DEFAULT 1")
 
                 # Migrations douces colonnes user_profile pour SQLite
                 for col, def_val in [
@@ -1249,10 +1284,7 @@ class Database:
                     ("meal_distribution", "TEXT"),
                     ("is_demo_profile", "INTEGER DEFAULT 0"),
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE user_profile ADD COLUMN {col} {def_val}")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, "user_profile", col, def_val)
 
                 # Migrations douces colonnes user_devices
                 for col, def_val in [
@@ -1261,20 +1293,10 @@ class Database:
                     ("last_sync_at", "TEXT"),
                     ("sync_status", "TEXT DEFAULT 'disconnected'")
                 ]:
-                    try:
-                        cursor.execute(f"ALTER TABLE user_devices ADD COLUMN {col} {def_val}")
-                    except Exception:
-                        pass
+                    self._safe_alter_column(cursor, "user_devices", col, def_val)
 
-                try:
-                    cursor.execute("ALTER TABLE food_items ADD COLUMN recipe_items_json TEXT")
-                except Exception:
-                    pass
-
-                try:
-                    cursor.execute("ALTER TABLE food_items ADD COLUMN is_public INTEGER DEFAULT 0")
-                except Exception:
-                    pass
+                self._safe_alter_column(cursor, "food_items", "recipe_items_json", "TEXT")
+                self._safe_alter_column(cursor, "food_items", "is_public", "INTEGER DEFAULT 0")
 
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS catalog_subscriptions (
@@ -2281,13 +2303,14 @@ class Database:
             where_clauses.append("user_id = ?")
             params.append(user_id)
         elif source == "public":
-            where_clauses.append("is_public = 1")
+            where_clauses.append("is_public = ?")
+            params.append(self._pg_bool_true())
         elif source == "friends":
             where_clauses.append("user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?)")
             params.append(user_id)
         elif source == "all":
-            where_clauses.append("(user_id = ? OR is_public = 1 OR user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?))")
-            params.extend([user_id, user_id])
+            where_clauses.append("(user_id = ? OR is_public = ? OR user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?))")
+            params.extend([user_id, self._pg_bool_true(), user_id])
         else:
             # Fallback par défaut: mes aliments
             where_clauses.append("user_id = ?")
@@ -2368,10 +2391,10 @@ class Database:
                 cursor.execute("""
                     SELECT * FROM food_items
                     WHERE id = ? AND (
-                        user_id = ? OR is_public = 1
+                        user_id = ? OR is_public = ?
                         OR user_id IN (SELECT target_user_id FROM catalog_subscriptions WHERE subscriber_id = ?)
                     )
-                """, (item_id, user_id, user_id))
+                """, (item_id, user_id, self._pg_bool_true(), user_id))
             else:
                 cursor.execute("SELECT * FROM food_items WHERE id = ?", (item_id,))
             r = cursor.fetchone()
@@ -2661,7 +2684,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             for it in PUBLIC_BASE_ITEMS:
-                cursor.execute("SELECT id FROM food_items WHERE name = ? AND is_public = 1", (it["name"],))
+                cursor.execute("SELECT id FROM food_items WHERE name = ? AND is_public = ?", (it["name"], self._pg_bool_true()))
                 if not cursor.fetchone():
                     is_pub_val = True if self.is_postgres else 1
                     cursor.execute("""

@@ -157,6 +157,14 @@ except DatabaseServiceUnavailableError as db_err:
     db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("NEON_DATABASE_URL")
     db.is_postgres = True
     db.db_path = get_db_path()
+except Exception as db_err:
+    # Renfort hotfix BALI-97 : aucune exception (migration, seed, import psycopg manquant, etc.)
+    # ne doit crasher l'import de src.app sinon Vercel renvoie 500 FUNCTION_INVOCATION_FAILED sur 100% des routes.
+    print(f"[VitalTrack Startup Warning] Erreur inattendue lors de l'initialisation DB: {db_err}")
+    db = Database.__new__(Database)
+    db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("NEON_DATABASE_URL")
+    db.is_postgres = bool(db.database_url)
+    db.db_path = get_db_path()
 
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
