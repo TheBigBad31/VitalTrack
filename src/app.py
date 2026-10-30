@@ -187,9 +187,8 @@ def get_current_user(
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token")
 ) -> AuthUser:
     """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer ou un token d'appareil X-Webhook-Token.
-    
-    Supporte également le compte démo/principal par défaut si aucun header n'est fourni,
-    permettant l'accès direct et la rétrocompatibilité tout en isolant par user_id.
+
+    Lève une erreur 401 explicite si aucun moyen d'authentification valide n'est fourni.
     """
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split("Bearer ", 1)[1].strip()
@@ -237,16 +236,11 @@ def get_current_user(
                 google_sub=user_data.get("google_sub")
             )
 
-    # Utilisateur par défaut (Sébastien LAMOLIATE, user_id=1)
-    default_user = db._ensure_default_user()
-    return AuthUser(
-        id=default_user["id"],
-        uuid=default_user["uuid"],
-        email=default_user["email"],
-        name=default_user.get("name"),
-        picture=default_user.get("picture"),
-        auth_provider=default_user.get("auth_provider", "google"),
-        google_sub=default_user.get("google_sub")
+    # Aucun auth valide : lever 401 explicite au lieu d'un fallback silencieux sur default_user
+    raise HTTPException(
+        status_code=401,
+        detail="Authentification requise : aucun jeton Bearer, token d'appareil ou session Google valide",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
