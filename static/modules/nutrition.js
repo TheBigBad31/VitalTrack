@@ -259,10 +259,16 @@ async function loadCatalogItems(force = false) {
         return true;
       }
       console.warn("Échec requête catalogue:", res.status);
-      if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
+      renderCatalogLoadError(container, res.status);
+      if (typeof showToast === 'function') {
+        showToast(catalogErrorMessage(res.status), "error");
+      }
     } catch (err) {
       console.error("Erreur réseau ou rendu catalogue:", err);
-      if (container) container.innerHTML = '<div class="col-span-full py-8 text-center text-rose-400 text-xs">Erreur de chargement du catalogue</div>';
+      renderCatalogLoadError(container, 0);
+      if (typeof showToast === 'function') {
+        showToast("Catalogue indisponible : erreur réseau. Vérifiez votre connexion puis réessayez.", "error");
+      }
     }
     return false;
   })();
@@ -278,6 +284,31 @@ async function loadCatalogItems(force = false) {
 function invalidateCatalogCache() {
   catalogLoaded = false;
 }
+
+/** Message d'erreur lisible selon le code HTTP (BALI-99 / Lot A). */
+function catalogErrorMessage(status) {
+  if (status === 401) return "Session expirée. Veuillez vous reconnecter pour accéder au catalogue.";
+  if (status === 404) return "Catalogue introuvable (404). Contactez le support si cela persiste.";
+  if (status >= 500) return "Erreur serveur (5xx). L'équipe technique a été notifiée, réessayez dans quelques instants.";
+  return "Erreur de chargement du catalogue (code " + status + "). Réessayez ou actualisez la page.";
+}
+
+/** Affiche une carte d'erreur explicite (avec relance) dans la grille du catalogue. */
+function renderCatalogLoadError(container, status) {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="col-span-full bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 space-y-2 text-center">
+      <p class="text-sm font-bold text-rose-300">Catalogue indisponible</p>
+      <p class="text-xs text-slate-400">${catalogErrorMessage(status)}</p>
+      <button type="button" onclick="loadCatalogItems(true)" class="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-xs font-semibold transition-colors">
+        Réessayer
+      </button>
+    </div>
+  `;
+  if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+}
+window.renderCatalogLoadError = renderCatalogLoadError;
+window.catalogErrorMessage = catalogErrorMessage;
 
 function filterCatalog(type) {
   currentCatalogFilter = type;
@@ -1436,6 +1467,39 @@ function journalTodayIso() {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Date du journal actuellement affichée (BALI-99 / Lot B).
+ * Contrat unique pour tout ajout de repas : plus aucune écriture ne doit
+ * utiliser `new Date()` en dur, sinon un plat ajouté depuis une date passée
+ * atterrit sur aujourd'hui et le clic paraît sans effet.
+ * Exposé sur `window` car `currentJournalDate` est un `let` de portée script
+ * (invisible depuis les autres modules).
+ */
+function getActiveMealDate() {
+  return currentJournalDate || journalTodayIso();
+}
+window.getActiveMealDate = getActiveMealDate;
+
+/** Force la date active du journal (sans rechargement) pour les modules appelants. */
+function setActiveMealDate(isoDate) {
+  if (!isoDate) return getActiveMealDate();
+  currentJournalDate = isoDate;
+  const dateInput = document.getElementById('journal-date-input');
+  if (dateInput && dateInput.value !== isoDate) dateInput.value = isoDate;
+  return currentJournalDate;
+}
+window.setActiveMealDate = setActiveMealDate;
+
+/** Libellé humain d'une date ISO pour les toasts et en-têtes. */
+function formatJournalDateLabel(isoDate) {
+  const target = isoDate || getActiveMealDate();
+  if (target === journalTodayIso()) return "aujourd'hui";
+  const parts = String(target).split('-');
+  if (parts.length !== 3) return target;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+window.formatJournalDateLabel = formatJournalDateLabel;
+
 /** Décale une date ISO (YYYY-MM-DD) de N jours, sans dérive de fuseau horaire. */
 function shiftIsoDate(isoDate, days) {
   const parts = String(isoDate || journalTodayIso()).split('-').map(Number);
@@ -1756,9 +1820,33 @@ async function loadMealsJournal(dateStr) {
   const data = await fetchJournalDate(targetDate, { render: true });
   if (targetDate === currentJournalDate) {
     setJournalLoading(false);
-    if (!data) console.warn(`[journal] date ${targetDate} indisponible`);
+    if (!data) {
+      // BALI-99 / Lot A : plus jamais d'échec silencieux — l'utilisateur voit
+      // que la date n'a pas pu être chargée et peut relancer.
+      renderJournalLoadError(targetDate);
+      if (typeof showToast === 'function') {
+        showToast(`Impossible de charger le journal du ${formatJournalDateLabel(targetDate)}.`, "error");
+      }
+    }
   }
 }
+
+/** Affiche une carte d'erreur explicite (avec relance) dans la zone des 4 repas. */
+function renderJournalLoadError(targetDate) {
+  const container = document.getElementById('journal-slots-container');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="col-span-full bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 space-y-2 text-center">
+      <p class="text-sm font-bold text-rose-300">Journal indisponible pour le ${formatJournalDateLabel(targetDate)}</p>
+      <p class="text-xs text-slate-400">Le serveur n'a pas pu renvoyer les repas de cette date (réseau ou erreur API).</p>
+      <button type="button" onclick="loadMealsJournal(getActiveMealDate())" class="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 text-xs font-semibold transition-colors">
+        Réessayer
+      </button>
+    </div>
+  `;
+  if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+}
+window.renderJournalLoadError = renderJournalLoadError;
 
 /** Précharge silencieusement J-1 à l'ouverture de l'onglet Nutrition (1 seule fois). */
 function prefetchAdjacentJournalDates() {
@@ -1782,19 +1870,39 @@ function invalidateJournalCache(date) {
   journalPrefetchDone = false;
 }
 
-function changeJournalDate(offset) {
-  loadMealsJournal(shiftIsoDate(currentJournalDate, offset));
+/**
+ * Change la date affichée (BALI-99 / Lot B).
+ * Après chargement, le tableau récapitulatif et l'histogramme 7 jours sont
+ * ré-alignés sur la date sélectionnée (fin de fenêtre = date affichée).
+ */
+async function changeJournalDate(offset) {
+  await loadMealsJournal(shiftIsoDate(currentJournalDate, offset));
+  refreshNutritionDayViews();
 }
 
-function handleJournalDateChange(e) {
+async function handleJournalDateChange(e) {
   const value = e.target.value;
   if (!value) return;
-  loadMealsJournal(value);
+  await loadMealsJournal(value);
+  refreshNutritionDayViews();
 }
 
-function setJournalToToday() {
-  loadMealsJournal(journalTodayIso());
+async function setJournalToToday() {
+  await loadMealsJournal(journalTodayIso());
+  refreshNutritionDayViews();
 }
+
+/** Re-rend les agrégats de la vue nutrition (tableau + histogramme) sur la date active. */
+function refreshNutritionDayViews() {
+  if (typeof renderNutritionView === 'function') {
+    try {
+      renderNutritionView();
+    } catch (err) {
+      console.warn("[journal] rafraîchissement vue nutrition impossible:", err);
+    }
+  }
+}
+window.refreshNutritionDayViews = refreshNutritionDayViews;
 
 function renderMealsJournal() {
   if (!currentJournalData) return;
