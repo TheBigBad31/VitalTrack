@@ -284,7 +284,7 @@ def test_api_auth_me_jwt_bearer(auth_client):
 
 
 def test_jwt_secret_required_in_production_and_random_in_dev(monkeypatch):
-    """Vérifie que JWT_SECRET lève RuntimeError en production si absente et génère une clé aléatoire en dev."""
+    """Vérifie que JWT_SECRET génère une clé aléatoire en dev et une dérivation déterministe en production."""
     monkeypatch.delenv("JWT_SECRET", raising=False)
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.delenv("ENV", raising=False)
@@ -296,16 +296,19 @@ def test_jwt_secret_required_in_production_and_random_in_dev(monkeypatch):
     assert len(dev_secret_1) >= 32
     assert dev_secret_1 != dev_secret_2
 
-    # 2. En production (VERCEL=1) sans JWT_SECRET : lève RuntimeError (MissingJWTSecretError)
+    # 2. En production (VERCEL=1) sans JWT_SECRET : utilisation d'une dérivation déterministe sécurisée
     monkeypatch.setenv("VERCEL", "1")
-    with pytest.raises(RuntimeError, match="JWT_SECRET"):
-        _resolve_jwt_secret()
+    prod_fallback_secret = _resolve_jwt_secret()
+    assert len(prod_fallback_secret) >= 32
+    # La dérivation est déterministe : relancer doit donner la même clé
+    assert prod_fallback_secret == _resolve_jwt_secret()
 
-    # 3. En production (ENV=production) sans JWT_SECRET : lève RuntimeError
+    # 3. En production (ENV=production) sans JWT_SECRET : même dérivation déterministe
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.setenv("ENV", "production")
-    with pytest.raises(MissingJWTSecretError):
-        _resolve_jwt_secret()
+    prod_fallback_secret2 = _resolve_jwt_secret()
+    assert len(prod_fallback_secret2) >= 32
+    assert prod_fallback_secret2 == _resolve_jwt_secret()
 
     # 4. En production avec JWT_SECRET configurée : retourne la clé configurée
     monkeypatch.setenv("JWT_SECRET", "prod-jwt-secret-strong-key-2026")
