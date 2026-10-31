@@ -77,12 +77,56 @@ def test_bcrypt_hashing_and_verification():
 
 
 def test_password_strength_rule():
-    """Vérifie la contrainte minimale de 8 caractères."""
+    """Vérifie la contrainte minimale de 8 caractères et de diversité des caractères."""
     assert validate_password_strength("12345678") is True
     assert validate_password_strength("VitalTrack2026") is True
     assert validate_password_strength("court") is False
     assert validate_password_strength("") is False
     assert validate_password_strength("       ") is False
+    assert validate_password_strength("aaaaaaaa") is False
+    assert validate_password_strength("11111111") is False
+    assert validate_password_strength("!@#$%^&*") is False
+
+
+def test_bcrypt_long_password_over_72_bytes_no_truncation():
+    """Vérifie que le pré-hachage SHA-256 empêche la troncature à 72 octets sur bcrypt."""
+    base_72 = "A" * 72
+    pw1 = base_72 + "_suffixe_secret_1"
+    pw2 = base_72 + "_suffixe_secret_2"
+
+    hashed_pw1 = hash_password(pw1, method="bcrypt")
+    assert verify_password(pw1, hashed_pw1) is True
+    # Sans pré-hachage SHA-256, pw2 aurait été accepté à cause de la troncature à 72 octets
+    assert verify_password(pw2, hashed_pw1) is False
+
+
+def test_pbkdf2_600k_iterations_and_backward_compatibility():
+    """Vérifie le hachage PBKDF2 à >= 600 000 itérations et la rétrocompatibilité (PBKDF2 100k et bcrypt legacy)."""
+    import bcrypt
+    import hashlib
+    import secrets
+    from src.auth import PBKDF2_ITERATIONS
+
+    assert PBKDF2_ITERATIONS >= 600_000
+
+    # 1. Nouveau hash PBKDF2 (>= 600 000 itérations)
+    plain = "MotDePassePBKDF2Fort2026!"
+    new_pbkdf2 = hash_password(plain, method="pbkdf2")
+    assert "600000" in new_pbkdf2
+    assert verify_password(plain, new_pbkdf2) is True
+    assert verify_password("AutreMotDePasse", new_pbkdf2) is False
+
+    # 2. Rétrocompatibilité avec ancien hash PBKDF2 à 100 000 itérations (format salt$hex)
+    legacy_salt = secrets.token_hex(16)
+    legacy_digest = hashlib.pbkdf2_hmac("sha256", plain.encode("utf-8"), legacy_salt.encode("utf-8"), 100_000).hex()
+    legacy_pbkdf2_hash = f"{legacy_salt}${legacy_digest}"
+    assert verify_password(plain, legacy_pbkdf2_hash) is True
+    assert verify_password("MauvaisMotDePasse", legacy_pbkdf2_hash) is False
+
+    # 3. Rétrocompatibilité avec ancien hash bcrypt direct (sans pré-hachage SHA-256)
+    legacy_bcrypt_hash = bcrypt.hashpw(plain.encode("utf-8")[:72], bcrypt.gensalt(rounds=12)).decode("utf-8")
+    assert verify_password(plain, legacy_bcrypt_hash) is True
+    assert verify_password("MauvaisMotDePasse", legacy_bcrypt_hash) is False
 
 
 # =====================================================================

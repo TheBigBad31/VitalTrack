@@ -107,44 +107,95 @@ class AuthUser(BaseModel):
     google_sub: Optional[str] = None
 
 
+PBKDF2_ITERATIONS = 600_000
+PBKDF2_LEGACY_ITERATIONS = 100_000
+
+
+def _bcrypt_prepare_password(password: str, prehash: bool = True) -> bytes:
+    """Prépare les octets du mot de passe pour bcrypt.
+
+    Par défaut, applique un pré-hachage SHA-256 (64 octets hex ASCII) pour éviter
+    la troncature silencieuse à 72 octets de bcrypt sur les mots de passe longs.
+    """
+    raw_bytes = password.encode("utf-8")
+    if prehash:
+        return hashlib.sha256(raw_bytes).hexdigest().encode("ascii")
+    return raw_bytes[:72]
+
+
 def validate_password_strength(password: str) -> bool:
-    """Valide les critères minimaux de complexité du mot de passe (min 8 caractères)."""
-    return bool(password and len(password.strip()) >= 8)
+    """Valide les critères minimaux de complexité du mot de passe.
+
+    Exige au minimum 8 caractères (hors espaces), au moins un caractère alphabétique
+    ou numérique, et interdit les suites uniformes composées d'un seul caractère répété.
+    """
+    if not password:
+        return False
+    stripped = password.strip()
+    if len(stripped) < 8:
+        return False
+    if not any(c.isalnum() for c in stripped):
+        return False
+    if len(set(stripped)) < 2:
+        return False
+    return True
 
 
-def hash_password(password: str, method: str = "bcrypt") -> str:
-    """Hache le mot de passe avec bcrypt par défaut (avec fallback/support PBKDF2)."""
+def hash_password(password: str, method: str = "bcrypt", iterations: int = PBKDF2_ITERATIONS) -> str:
+    """Hache le mot de passe avec bcrypt par défaut (pré-hachage SHA-256) ou PBKDF2 (>= 600 000 itérations)."""
     if method == "bcrypt":
-        pw_bytes = password.encode("utf-8")[:72]
+        pw_bytes = _bcrypt_prepare_password(password, prehash=True)
         salt = bcrypt.gensalt(rounds=12)
         return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
 
-    # Hash PBKDF2-HMAC-SHA256
+    # Hash PBKDF2-HMAC-SHA256 (format : pbkdf2_sha256$<iterations>$<salt>$<hex>)
+    eff_iterations = max(int(iterations), PBKDF2_ITERATIONS)
     salt = secrets.token_hex(16)
-    pwd_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
-    return f"{salt}${pwd_hash.hex()}"
+    pwd_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), eff_iterations)
+    return f"pbkdf2_sha256${eff_iterations}${salt}${pwd_hash.hex()}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Vérifie un mot de passe en clair contre un hash stocké (bcrypt ou PBKDF2)."""
-    if not hashed_password:
+    """Vérifie un mot de passe en clair contre un hash stocké (bcrypt avec/sans prehash SHA256, ou PBKDF2 600k/legacy 100k)."""
+    if not plain_password or not hashed_password:
         return False
 
     # Détection hash bcrypt ($2b$, $2a$, $2y$)
     if hashed_password.startswith(("$2b$", "$2a$", "$2y$")):
         try:
-            pw_bytes = plain_password.encode("utf-8")[:72]
-            return bcrypt.checkpw(pw_bytes, hashed_password.encode("utf-8"))
+            hashed_bytes = hashed_password.encode("utf-8")
+            # 1. Vérification standard avec pré-hachage SHA-256 (évite la troncature à 72 octets)
+            prehashed_pw = _bcrypt_prepare_password(plain_password, prehash=True)
+            if bcrypt.checkpw(prehashed_pw, hashed_bytes):
+                return True
+            # 2. Rétrocompatibilité avec les anciens hashs bcrypt directs (tronqués à 72 octets)
+            legacy_pw = _bcrypt_prepare_password(plain_password, prehash=False)
+            return bcrypt.checkpw(legacy_pw, hashed_bytes)
         except Exception:
             return False
 
-    # Format PBKDF2 : salt$hex
+    # Format PBKDF2 (pbkdf2_sha256$iterations$salt$hex ou salt$hex ou iterations$salt$hex)
     if "$" in hashed_password:
         try:
-            parts = hashed_password.split("$", 1)
-            salt, stored_hash = parts[0], parts[1]
-            calc_hash = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), 100_000)
-            return secrets.compare_digest(calc_hash.hex(), stored_hash)
+            parts = hashed_password.split("$")
+            if len(parts) == 4 and parts[0] == "pbkdf2_sha256":
+                iterations = int(parts[1])
+                salt, stored_hash = parts[2], parts[3]
+                calc_hash = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), iterations)
+                return secrets.compare_digest(calc_hash.hex(), stored_hash)
+            elif len(parts) == 3 and parts[0].isdigit():
+                iterations = int(parts[0])
+                salt, stored_hash = parts[1], parts[2]
+                calc_hash = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), iterations)
+                return secrets.compare_digest(calc_hash.hex(), stored_hash)
+            elif len(parts) == 2:
+                salt, stored_hash = parts[0], parts[1]
+                # Tenter d'abord avec 600 000 itérations puis fallback legacy 100 000 itérations
+                for iters in (PBKDF2_ITERATIONS, PBKDF2_LEGACY_ITERATIONS):
+                    calc_hash = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), iters)
+                    if secrets.compare_digest(calc_hash.hex(), stored_hash):
+                        return True
+                return False
         except Exception:
             return False
 
