@@ -15,16 +15,19 @@ Endpoints :
 
 from datetime import datetime, timezone
 import datetime as dt_module
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+import yaml
 
 import src.app as app_module
 from src.auth import AuthUser
 from src.connectors.registry import DeviceConnectorRegistry, get_connector
 from src.db import Database
 
+logger = logging.getLogger("vitaltrack.devices")
 
 router = APIRouter(tags=["devices"])
 
@@ -215,7 +218,7 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
         try:
             sync_device_targeted(connect_in.device_id, current_user=current_user)
         except Exception:
-            pass
+            logger.exception("Échec de la synchronisation initiale lors de la connexion de l'appareil '%s'", connect_in.device_id)
 
     return {
         "status": "success",
@@ -241,7 +244,8 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(app_mo
 
     try:
         connector = get_connector(device_id, custom_config=custom_cfg)
-    except Exception:
+    except (KeyError, ValueError, TypeError, OSError, yaml.YAMLError):
+        logger.exception("Impossible d'instancier le connecteur '%s' avec sa configuration personnalisée, repli sur le registre", device_id)
         connector = app_module.device_registry.get(device_id)
 
     if not connector:

@@ -32,8 +32,10 @@ Endpoints :
 - POST /api/meals/journal/{type}/save-as-dish : transforme un repas en plat réutilisable
 """
 
+import binascii
 from datetime import date
 import datetime as dt_module
+import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -55,6 +57,7 @@ from src.nutrition_rules import evaluate_dish_benefits
 from src.rate_limit import rate_limit_photo_analysis
 from src.routers.friends import verify_view_access
 
+logger = logging.getLogger("vitaltrack.meals")
 
 router = APIRouter(tags=["meals"])
 
@@ -329,7 +332,8 @@ def estimate_meal_calories(req: MealEstimateRequest):
             elif "image/webp" in header:
                 mime_type = "image/webp"
             image_bytes = base64.b64decode(encoded)
-        except Exception:
+        except (binascii.Error, ValueError):
+            logger.exception("Échec du décodage base64 de la photo de repas")
             image_bytes = None
 
     calorie_estimator = app_module.calorie_estimator

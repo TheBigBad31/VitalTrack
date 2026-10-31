@@ -158,7 +158,7 @@ async def performance_and_latency_middleware(request: Request, call_next):
             span.set_attribute("http.route", request.url.path)
             span.set_attribute("http.duration_ms", duration_ms)
         except Exception:
-            pass
+            logger.debug("Impossible de définir les attributs du span OpenTelemetry", exc_info=True)
 
         # Header Server-Timing conforme au W3C: app;dur=...
         timing_value = f'app;dur={duration_ms:.2f};desc="App Processing"'
@@ -903,8 +903,8 @@ def get_goals_presets():
                 data = yaml.safe_load(f)
                 if data and "profiles" in data:
                     return data
-        except Exception:
-            pass
+        except (OSError, yaml.YAMLError):
+            logger.exception("Erreur lors du chargement de la configuration des profils d'objectifs (%s)", GOALS_CONFIG_FILE)
     return DEFAULT_GOALS_PRESETS
 
 

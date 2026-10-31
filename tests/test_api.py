@@ -789,4 +789,61 @@ def test_strict_auth_mode_raises_401(client, monkeypatch):
     assert "Authentification requise" in res.json()["detail"]
 
 
+def test_silent_exceptions_are_logged(client, monkeypatch, caplog):
+    """Vérifie que les erreurs d'exceptions ciblées (photo base64, connecteur, presets YAML) sont journalisées sans casser le comportement (BALI-128)."""
+    import logging
+    import yaml
+
+    # 1. Décodage photo base64 invalide (padding impair non divisible par 4) -> loggé et repli gracieux
+    with caplog.at_level(logging.ERROR, logger="vitaltrack.meals"):
+        res_meal = client.post(
+            "/api/meals/analyze-photo",
+            json={
+                "photo_data_url": "data:image/jpeg;base64,abc",
+                "description": "Salade César",
+                "portion_scale": 1.0,
+            },
+        )
+    assert res_meal.status_code == 200
+    assert any("Échec du décodage base64" in rec.message for rec in caplog.records)
+
+    # 2. Chargement YAML presets en erreur -> loggé et repli sur DEFAULT_GOALS_PRESETS
+    caplog.clear()
+    monkeypatch.setattr(yaml, "safe_load", lambda *_args, **_kwargs: (_ for _ in ()).throw(yaml.YAMLError("YAML corrompu")))
+    with caplog.at_level(logging.ERROR, logger="vitaltrack.observability"):
+        res_goals = client.get("/api/goals/presets")
+    assert res_goals.status_code == 200
+    assert "profiles" in res_goals.json()
+    assert any("Erreur lors du chargement de la configuration des profils d'objectifs" in rec.message for rec in caplog.records)
+
+    # 3. Instanciation connecteur en erreur -> loggé et repli sur le registre
+    caplog.clear()
+    import src.routers.devices as devices_router_module
+    monkeypatch.setattr(
+        devices_router_module,
+        "get_connector",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("Config connecteur invalide")),
+    )
+    with caplog.at_level(logging.ERROR, logger="vitaltrack.devices"):
+        res_sync = client.post("/api/devices/ringconn/sync")
+    assert res_sync.status_code == 200
+    assert any("Impossible d'instancier le connecteur" in rec.message for rec in caplog.records)
+
+    # 4. Synchro initiale en erreur lors de la connexion d'appareil -> loggée et connexion réussie
+    caplog.clear()
+    monkeypatch.setattr(
+        devices_router_module,
+        "sync_device_targeted",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Erreur réseau synchro")),
+    )
+    with caplog.at_level(logging.ERROR, logger="vitaltrack.devices"):
+        res_conn = client.post(
+            "/api/devices/connect",
+            json={"device_id": "ringconn", "connected": True},
+        )
+    assert res_conn.status_code == 200
+    assert any("Échec de la synchronisation initiale" in rec.message for rec in caplog.records)
+
+
+
 

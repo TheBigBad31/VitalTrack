@@ -8,6 +8,7 @@ Prend en charge :
 - DELETE /api/friends/{friend_id} : Révocation d'une amitié ou annulation de demande
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from src.auth import AuthUser, decode_access_token
 from src.db import Database
 
+logger = logging.getLogger("vitaltrack.friends")
 
 router = APIRouter(prefix="/api/friends", tags=["friends"])
 
@@ -28,8 +30,8 @@ def get_db() -> Database:
         import src.app as app_module
         if hasattr(app_module, "db") and app_module.db is not None:
             return app_module.db
-    except Exception:
-        pass
+    except ImportError:
+        logger.debug("Module src.app non disponible lors de la résolution de la base de données", exc_info=True)
     if _db_instance is None:
         _db_instance = Database()
     return _db_instance
