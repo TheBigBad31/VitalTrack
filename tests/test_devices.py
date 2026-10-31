@@ -16,6 +16,8 @@ from fastapi.testclient import TestClient
 from src.app import app
 from src.db import Database
 from src.crypto import (
+    MissingEncryptionKeyError,
+    _resolve_key_seed,
     encrypt_data,
     decrypt_data,
     encrypt_credentials,
@@ -77,6 +79,36 @@ def test_crypto_encryption_and_decryption():
     # Rétrocompatibilité : chaînes déjà en clair
     assert decrypt_data("plain_key_123") == "plain_key_123"
     assert decrypt_credentials("plain_key_123") == {"api_key": "plain_key_123"}
+
+
+def test_data_encryption_key_required_in_production_and_random_in_dev(monkeypatch):
+    """Vérifie que DATA_ENCRYPTION_KEY lève RuntimeError en production si absente et génère une clé aléatoire en dev."""
+    monkeypatch.delenv("DATA_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    # 1. En dev : génère une clé aléatoire
+    seed1 = _resolve_key_seed()
+    seed2 = _resolve_key_seed()
+    assert len(seed1) >= 32
+    assert seed1 != seed2
+
+    # 2. En production (VERCEL=1) sans DATA_ENCRYPTION_KEY : lève RuntimeError (MissingEncryptionKeyError)
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(RuntimeError, match="DATA_ENCRYPTION_KEY"):
+        _resolve_key_seed()
+
+    # 3. En production (ENV=production) sans DATA_ENCRYPTION_KEY : lève RuntimeError
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setenv("ENV", "production")
+    with pytest.raises(MissingEncryptionKeyError):
+        _resolve_key_seed()
+
+    # 4. En production avec DATA_ENCRYPTION_KEY configurée : retourne la clé configurée
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "prod-encryption-key-strong-2026")
+    assert _resolve_key_seed() == "prod-encryption-key-strong-2026"
 
 
 def test_devices_endpoints_lifecycle(isolated_client):

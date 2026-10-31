@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 from typing import Any, Dict, Optional, Union
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -34,14 +35,16 @@ def _is_production() -> bool:
 
 
 def _resolve_key_seed() -> str:
-    """Résout la clé de chiffrement ou utilise une clé par défaut sécurisée."""
-    key_seed = (
-        os.getenv("DATA_ENCRYPTION_KEY")
-        or os.getenv("SECRET_KEY")
-        or os.getenv("JWT_SECRET")
-        or "vitaltrack-encryption-secret-key-neon-secure-2026"
-    )
-    return key_seed
+    """Résout la clé de chiffrement depuis DATA_ENCRYPTION_KEY (ou SECRET_KEY), échoue en production ou génère une clé aléatoire en dev."""
+    key_seed = (os.getenv("DATA_ENCRYPTION_KEY") or os.getenv("SECRET_KEY") or "").strip()
+    if key_seed:
+        return key_seed
+    if _is_production():
+        raise MissingEncryptionKeyError(
+            "[VitalTrack Security Error] DATA_ENCRYPTION_KEY doit obligatoirement être configurée en production (VERCEL/ENV=production). "
+            "Aucune clé par défaut n'est autorisée."
+        )
+    return secrets.token_urlsafe(32)
 
 
 def _get_fernet_key(seed: str) -> bytes:

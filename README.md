@@ -63,7 +63,8 @@ VitalTrack est optimisé pour un déploiement Vercel Serverless sans configurati
 - **Persistance Serverless** : Base PostgreSQL Neon en production ou fallback SQLite dans `/tmp/vitaltrack.db` sur les lambdas avec seed de 30 jours de pesées et d'activités démo.
 - **Variables d'environnement (production)** :
   - `DATABASE_URL` / `POSTGRES_URL` : Chaîne de connexion PostgreSQL Serverless Neon (SSL activé).
-  - `JWT_SECRET` : Clé secrète pour la signature des jetons de session JWT.
+  - `JWT_SECRET` (**obligatoire en production**) : Clé secrète pour la signature des jetons de session JWT (HS256). Une `RuntimeError` (`MissingJWTSecretError`) est levée au démarrage si elle est absente lorsque `VERCEL=1` ou `ENV=production` / `ENVIRONMENT=production`. En développement local, une clé aléatoire éphémère est générée automatiquement.
+  - `DATA_ENCRYPTION_KEY` (**obligatoire en production**, ou fallback `SECRET_KEY`) : Clé maîtresse pour le chiffrement symétrique au repos (Fernet AES-128-CBC + HMAC-SHA256) des clés d'API et jetons d'objets connectés. Une `RuntimeError` (`MissingEncryptionKeyError`) est levée au démarrage si elle est absente en production. En développement local, une clé aléatoire éphémère est générée automatiquement.
   - `GOOGLE_CLIENT_ID` : Client ID OAuth 2.0 pour Google Identity Services (GIS).
   - `GEMINI_API_KEY` : Clé API Google Gemini Vision pour l'analyse photo multimodale temps réel.
   - `WITHINGS_CLIENT_ID` & `WITHINGS_ACCESS_TOKEN` : Identifiants API OAuth Withings.

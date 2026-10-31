@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 from src.app import app
 import src.app as app_module
 from src.auth import (
+    MissingJWTSecretError,
+    _resolve_jwt_secret,
     create_access_token,
     decode_access_token,
     decode_jwt_unverified,
@@ -235,3 +237,33 @@ def test_api_auth_me_jwt_bearer(auth_client):
     assert me_body["current_user"]["email"] == "me.test@vitaltrack.app"
     assert me_body["profile"] is not None
     assert "access_token" in me_body
+
+
+def test_jwt_secret_required_in_production_and_random_in_dev(monkeypatch):
+    """Vérifie que JWT_SECRET lève RuntimeError en production si absente et génère une clé aléatoire en dev."""
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    # 1. En dev : génère une clé aléatoire à chaque appel
+    dev_secret_1 = _resolve_jwt_secret()
+    dev_secret_2 = _resolve_jwt_secret()
+    assert len(dev_secret_1) >= 32
+    assert dev_secret_1 != dev_secret_2
+
+    # 2. En production (VERCEL=1) sans JWT_SECRET : lève RuntimeError (MissingJWTSecretError)
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        _resolve_jwt_secret()
+
+    # 3. En production (ENV=production) sans JWT_SECRET : lève RuntimeError
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setenv("ENV", "production")
+    with pytest.raises(MissingJWTSecretError):
+        _resolve_jwt_secret()
+
+    # 4. En production avec JWT_SECRET configurée : retourne la clé configurée
+    monkeypatch.setenv("JWT_SECRET", "prod-jwt-secret-strong-key-2026")
+    assert _resolve_jwt_secret() == "prod-jwt-secret-strong-key-2026"
+

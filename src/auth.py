@@ -20,7 +20,33 @@ import jwt
 from jwt import PyJWKClient
 from pydantic import BaseModel, Field
 
-JWT_SECRET = os.getenv("JWT_SECRET", "vitaltrack-insecure-secret-key-change-in-prod-2026")
+class MissingJWTSecretError(RuntimeError):
+    """Exception levée en production si JWT_SECRET n'est pas configurée."""
+    pass
+
+
+def _is_production() -> bool:
+    """Détecte si l'application tourne en environnement de production ou cloud."""
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return True
+    env_name = os.getenv("ENVIRONMENT") or os.getenv("ENV") or os.getenv("NODE_ENV") or ""
+    return env_name.lower() in ("production", "prod", "staging")
+
+
+def _resolve_jwt_secret() -> str:
+    """Résout JWT_SECRET depuis l'environnement, échoue en production ou génère une clé aléatoire en dev."""
+    secret = os.getenv("JWT_SECRET", "").strip()
+    if secret:
+        return secret
+    if _is_production():
+        raise MissingJWTSecretError(
+            "[VitalTrack Security Error] JWT_SECRET doit obligatoirement être configurée en production (VERCEL/ENV=production). "
+            "Aucune clé par défaut n'est autorisée."
+        )
+    return secrets.token_urlsafe(32)
+
+
+JWT_SECRET = _resolve_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(30 * 24 * 3600)))  # 30 jours par défaut
 
