@@ -52,6 +52,7 @@ from src.models import (
 )
 from src.nutrition_engine import NutritionEngine
 from src.nutrition_rules import evaluate_dish_benefits
+from src.rate_limit import rate_limit_photo_analysis
 from src.routers.friends import verify_view_access
 
 
@@ -307,8 +308,8 @@ def get_analyze_photo_info():
     }
 
 
-@router.post("/api/meals/analyze-photo")
-@router.post("/api/meals/estimate")
+@router.post("/api/meals/analyze-photo", dependencies=[Depends(rate_limit_photo_analysis)])
+@router.post("/api/meals/estimate", dependencies=[Depends(rate_limit_photo_analysis)])
 def estimate_meal_calories(req: MealEstimateRequest):
     """Estime les calories et macronutriments à partir d'une photo ou d'une description.
 

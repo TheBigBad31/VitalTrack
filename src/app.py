@@ -72,6 +72,14 @@ from src.auth import (
 )
 from src.routers.friends import verify_view_access
 from src.otel import get_tracer, record_http_metric, setup_otel
+from src.rate_limit import (
+    RateLimitExceeded,
+    limiter,
+    rate_limit_exceeded_handler,
+    rate_limit_login,
+    rate_limit_photo_analysis,
+    rate_limit_register,
+)
 
 
 # Initialisation de FastAPI
@@ -82,6 +90,8 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Instrumentation OpenTelemetry + Prometheus (/metrics) avec protection Serverless Vercel (BALI-117)
 setup_otel(app, service_name="vitaltrack")

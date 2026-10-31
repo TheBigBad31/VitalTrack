@@ -30,6 +30,7 @@ from src.auth import (
     verify_password
 )
 from src.db import Database
+from src.rate_limit import rate_limit_login, rate_limit_register
 
 
 router = APIRouter(tags=["auth"])
@@ -59,7 +60,9 @@ def update_auth_config(payload: GoogleConfigUpdate):
     }
 
 
-@router.post("/api/auth/register")
+@router.post("/api/auth/register", dependencies=[Depends(rate_limit_register)])
+@router.post("/api/register", dependencies=[Depends(rate_limit_register)], include_in_schema=False)
+@router.post("/register", dependencies=[Depends(rate_limit_register)], include_in_schema=False)
 def register_user(payload: RegisterRequest):
     """Inscription classique avec email et mot de passe sécurisé (hash bcrypt / PBKDF2)."""
     db = get_db()
@@ -88,7 +91,9 @@ def register_user(payload: RegisterRequest):
     }
 
 
-@router.post("/api/auth/login")
+@router.post("/api/auth/login", dependencies=[Depends(rate_limit_login)])
+@router.post("/api/login", dependencies=[Depends(rate_limit_login)], include_in_schema=False)
+@router.post("/login", dependencies=[Depends(rate_limit_login)], include_in_schema=False)
 def login_user(payload: LoginRequest):
     """Connexion classique par email et mot de passe."""
     db = get_db()
