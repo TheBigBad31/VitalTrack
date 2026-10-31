@@ -87,18 +87,24 @@ app = FastAPI(
 setup_otel(app, service_name="vitaltrack")
 tracer = get_tracer("vitaltrack.observability")
 
-# CORS restreint aux origines connues (BALI-103 — spec CORS : allow_credentials interdit
-# allow_origins=["*"]). Origines configurables via CORS_ALLOWED_ORIGINS
+# CORS restreint aux origines connues (BALI-103 / BALI-126 — spec CORS : allow_credentials interdit
+# allow_origins=["*"]). Origines configurables via CORS_ORIGINS (ou alias CORS_ALLOWED_ORIGINS)
 # (séparées par des virgules), par défaut production Vercel + localhost.
-_cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
-if _cors_origins_env:
-    allow_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
-else:
-    allow_origins = [
-        "https://vital-track-one.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+DEFAULT_CORS_ORIGINS: List[str] = [
+    "https://vital-track-one.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+def get_cors_origins() -> List[str]:
+    """Résout la liste des origines CORS autorisées depuis CORS_ORIGINS / CORS_ALLOWED_ORIGINS."""
+    raw = os.getenv("CORS_ORIGINS") or os.getenv("CORS_ALLOWED_ORIGINS") or ""
+    parsed = [o.strip() for o in raw.split(",") if o.strip()]
+    return parsed if parsed else list(DEFAULT_CORS_ORIGINS)
+
+
+allow_origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,

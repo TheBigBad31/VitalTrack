@@ -745,8 +745,11 @@ def test_prometheus_metrics_and_otel_resilience(client):
     assert "http_requests_total" in res_metrics.text or "http_request" in res_metrics.text
 
 
-def test_cors_allowed_origins_restriction(client):
-    """Vérifie que les origines CORS autorisées excluent le wildcard '*' avec credentials (BALI-103)."""
+def test_cors_allowed_origins_restriction(client, monkeypatch):
+    """Vérifie que les origines CORS autorisées excluent le wildcard '*' avec credentials et lisent CORS_ORIGINS (BALI-103, BALI-126)."""
+    from src.app import DEFAULT_CORS_ORIGINS, get_cors_origins
+
+    # 1. Requête preflight depuis une origine autorisée par défaut (Vercel)
     res = client.options(
         "/api/health",
         headers={
@@ -757,6 +760,25 @@ def test_cors_allowed_origins_restriction(client):
     assert res.status_code == 200
     assert res.headers.get("access-control-allow-origin") == "https://vital-track-one.vercel.app"
     assert res.headers.get("access-control-allow-credentials") == "true"
+
+    # 2. Requête preflight depuis une origine non autorisée -> rejetée (pas d'en-tête allow-origin ni wildcard '*')
+    res_denied = client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://evil-attacker.example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert res_denied.headers.get("access-control-allow-origin") is None
+
+    # 3. Parsing de la variable d'environnement CORS_ORIGINS et valeurs par défaut
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    assert get_cors_origins() == DEFAULT_CORS_ORIGINS
+    assert "*" not in get_cors_origins()
+
+    monkeypatch.setenv("CORS_ORIGINS", " https://app.example.com , http://localhost:5173 ")
+    assert get_cors_origins() == ["https://app.example.com", "http://localhost:5173"]
 
 
 def test_strict_auth_mode_raises_401(client, monkeypatch):
