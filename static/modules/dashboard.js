@@ -1728,7 +1728,10 @@
       }
       const dateInp = document.getElementById('meal-date-input');
       if (dateInp && !dateInp.value) {
-        dateInp.value = new Date().toISOString().split('T')[0];
+        const activeDate = (typeof window.getActiveMealDate === 'function')
+          ? window.getActiveMealDate()
+          : new Date().toISOString().split('T')[0];
+        dateInp.value = activeDate;
       }
       document.getElementById('modal-meal').classList.remove('hidden');
     }
@@ -2019,29 +2022,34 @@
     }
 
     async function logSavedMealDirectly(savedMealId, mealType) {
-      const today = new Date().toISOString().split('T')[0];
+      const activeDate = (typeof window.getActiveMealDate === 'function')
+        ? window.getActiveMealDate()
+        : new Date().toISOString().split('T')[0];
       try {
         if (typeof showToast === 'function') showToast("Ajout au journal alimentaire...", "info");
         const res = await apiFetch(`/api/meals/saved/${savedMealId}/log`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            date: today,
+            date: activeDate,
             meal_type: mealType,
             portion_factor: 1.0
           })
         });
 
         if (res.ok) {
-          if (typeof showToast === 'function') showToast("Plat ajouté au journal avec succès ! 🥐🥗🍎🍲", "success");
+          const label = (typeof window.formatJournalDateLabel === 'function')
+            ? window.formatJournalDateLabel(activeDate)
+            : activeDate;
+          if (typeof showToast === 'function') showToast("Plat ajouté au journal " + label + " avec succès ! 🥐🥗🍎🍲", "success");
           closeSavedMealsLibraryModal();
           await loadDashboardData();
           switchTab('nutrition');
         } else {
-          alert("Erreur lors de l'ajout du plat au journal.");
+          if (typeof showToast === 'function') showToast("Erreur lors de l'ajout du plat au journal.", "error");
         }
       } catch (err) {
-        alert("Erreur réseau lors de l'ajout du plat.");
+        if (typeof showToast === 'function') showToast("Erreur réseau lors de l'ajout du plat.", "error");
       }
     }
 

@@ -735,3 +735,36 @@ def test_api_serve_frontend_modules(client):
         assert res.status_code == 200, f"Échec pour {path}"
 
 
+def test_prometheus_metrics_and_otel_resilience(client):
+    """Vérifie l'exposition Prometheus /metrics et la résilience Serverless OTel (BALI-117)."""
+    res_health = client.get("/api/health")
+    assert res_health.status_code == 200
+
+    res_metrics = client.get("/metrics")
+    assert res_metrics.status_code == 200
+    assert "http_requests_total" in res_metrics.text or "http_request" in res_metrics.text
+
+
+def test_cors_allowed_origins_restriction(client):
+    """Vérifie que les origines CORS autorisées excluent le wildcard '*' avec credentials (BALI-103)."""
+    res = client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://vital-track-one.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert res.status_code == 200
+    assert res.headers.get("access-control-allow-origin") == "https://vital-track-one.vercel.app"
+    assert res.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_strict_auth_mode_raises_401(client, monkeypatch):
+    """Vérifie que REQUIRE_STRICT_AUTH=1 ou get_strict_user lève 401 sans jeton valide (BALI-104)."""
+    monkeypatch.setenv("REQUIRE_STRICT_AUTH", "1")
+    res = client.get("/api/dashboard")
+    assert res.status_code == 401
+    assert "Authentification requise" in res.json()["detail"]
+
+
+

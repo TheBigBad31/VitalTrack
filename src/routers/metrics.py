@@ -1,55 +1,77 @@
-"""Routeur FastAPI pour les endpoints Métriques Biométriques & Visualisations."""
+"""Router FastAPI pour les endpoints de métriques biométriques et visualisations avancées (Palier 3) (VitalTrack).
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
-from typing import Optional
+Endpoints :
+- GET /api/daily-metrics : liste des métriques quotidiennes biométriques (pas, sommeil, HRV, etc.)
+- GET /api/metrics       : agrégat biométrique complet pour les visualisations Palier 3
+"""
 
-from src.app import app, db, AuthUser, nutrition_engine, get_current_user
-from src.models import DailyMetricsEntry
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
-router = APIRouter(prefix="/api/metrics", tags=["metrics"])
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+import src.app as app_module
+from src.auth import AuthUser
+from src.biometrics_math import DailyBiometrics
+from src.db import Database
+from src.routers.friends import verify_view_access
+from src.analytics import BiometricsAnalyticsService
 
 
-@router.get("/daily-metrics")
+router = APIRouter(tags=["metrics"])
+
+
+def get_db() -> Database:
+    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
+    return app_module.db
+
+
+@router.get("/api/daily-metrics")
 def get_daily_metrics_list(
-    limit: int = 30,
-    source: Optional[str] = None,
-    user_id: Optional[int] = None,
-    current_user: AuthUser = Depends(get_current_user),
+    limit: int = Query(30, ge=1, le=180, description="Nombre d'entrées"),
+    source: Optional[str] = Query(None, description="Filtre source"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(app_module.get_current_user)
 ):
     """Retourne la liste des métriques quotidiennes biométriques (pas, sommeil, HRV, etc.)."""
+    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     metrics = db.get_daily_metrics(limit=limit, source=source, user_id=target_uid)
     return [m.model_dump() for m in metrics]
 
 
-@router.get("")
+@router.get("/api/metrics")
 def get_biometrics_metrics(
-    days: int = 30,
-    user_id: Optional[int] = None,
-    current_user: AuthUser = Depends(get_current_user),
+    days: int = Query(30, ge=7, le=90, description="Nombre de jours d'historique (30 à 90)"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(app_module.get_current_user)
 ):
-    """Agrégat biométrique complet pour les visualisations."""
+    """Agrégat biométrique complet pour les visualisations Palier 3 pour l'utilisateur connecté ou un ami."""
+    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
-    profile = db.get_user_profile(user_id=target_uid)
+    user_id = target_uid
+
+    profile = db.get_user_profile(user_id=user_id)
     is_demo = bool(profile.get("is_demo_profile"))
 
-    from src.analytics import BiometricsAnalyticsService
+    # Récupération des données brutes
+    daily_metrics_list = db.get_daily_metrics(limit=days, user_id=user_id)
+    workouts_list = db.get_workouts(limit=days, user_id=user_id)
+    sleep_sessions_list = db.get_sleep_sessions(limit=days, user_id=user_id)
+    intraday_hr_samples = db.get_intraday_samples(metric_type="hr", limit=288, user_id=user_id)
 
-    daily_metrics_list = db.get_daily_metrics(limit=days, user_id=target_uid)
-    from src.models import WorkoutEntry, SleepSessionEntry, DailyBiometrics
-
-    workouts_list = db.get_workouts(limit=days, user_id=target_uid)
-    sleep_sessions_list = db.get_sleep_sessions(limit=days, user_id=target_uid)
+    # Pesées et activités pour corrélations
+    weights_list = db.get_weights(limit=days, user_id=user_id, exclude_simulation=not is_demo)
+    activities_list = db.get_activities(limit=days, user_id=user_id, exclude_simulation=not is_demo)
 
     # Convertir en DailyBiometrics pour le moteur mathématique
     bio_history = []
-    weights_list = db.get_weights(limit=days, user_id=target_uid, exclude_simulation=not is_demo)
-    activities_list = db.get_activities(limit=days, user_id=target_uid, exclude_simulation=not is_demo)
-
+    # Map date -> weight
     weights_by_date = {w.date.isoformat(): w.weight_kg for w in weights_list}
+    # Map date -> activity
     acts_by_date = {a.date.isoformat(): a for a in activities_list}
 
     for m in daily_metrics_list:
@@ -71,9 +93,11 @@ def get_biometrics_metrics(
 
     analytics_svc = BiometricsAnalyticsService(target_sleep_hours=float(profile.get("target_sleep_hours", 8.0) or 8.0))
 
+    # Dernier jour disponible
     today_bio = bio_history[-1] if bio_history else None
     prior_history = bio_history[:-1] if len(bio_history) > 1 else bio_history
 
+    # Score de Récupération & Bandes de normalité
     recovery_data = None
     corridors_data = {}
     anomalies_data = []
@@ -211,11 +235,99 @@ def get_biometrics_metrics(
             "recovery_score": m.recovery_score
         })
 
-    # Intraday FC 24h (données simplifiées)
-    intraday_hr = []
+    # Intraday FC 24h
+    intraday_hr = [
+        {
+            "timestamp": s.timestamp,
+            "value": s.value,
+            "source": s.source
+        }
+        for s in intraday_hr_samples
+    ]
 
     # Séances / Workouts
     workouts_data = [w.model_dump() for w in workouts_list]
+
+    # Analyse Croisée & Corrélations (Poids vs Calories, Sommeil vs HRV)
+    correlations_weight_calories = []
+    # Créer un map des calories consommées ou brûlées
+    for d_iso, w_kg in weights_by_date.items():
+        act = acts_by_date.get(d_iso)
+        if act and w_kg is not None:
+            correlations_weight_calories.append({
+                "date": d_iso,
+                "weight_kg": w_kg,
+                "calories_burned": act.total_burned_kcal,
+                "active_calories": act.active_calories_kcal
+            })
+
+    correlations_sleep_hrv = []
+    for tr in trends:
+        if tr["sleep_score"] is not None and tr["hrv_rmssd_ms"] is not None:
+            correlations_sleep_hrv.append({
+                "date": tr["date"],
+                "sleep_score": tr["sleep_score"],
+                "hrv_rmssd_ms": tr["hrv_rmssd_ms"]
+            })
+
+    # Heatmap d'assiduité (30 à 90 jours : activité quotidienne présente)
+    heatmap = []
+    today_dt = date.today()
+    for day_idx in range(days - 1, -1, -1):
+        d_val = today_dt - timedelta(days=day_idx)
+        d_str = d_val.isoformat()
+        act = acts_by_date.get(d_str)
+        m_item = next((m for m in daily_metrics_list if m.date.isoformat() == d_str), None)
+        has_workout = any(w.start_time.startswith(d_str) for w in workouts_list)
+
+        steps = (act.steps if act else (m_item.steps if m_item else 0)) or 0
+        intensity = 0
+        if steps >= 10000 or has_workout:
+            intensity = 3  # Haut
+        elif steps >= 6000:
+            intensity = 2  # Moyen
+        elif steps > 0:
+            intensity = 1  # Faible
+
+        heatmap.append({
+            "date": d_str,
+            "steps": steps,
+            "has_workout": has_workout,
+            "intensity": intensity
+        })
+
+    # Objectifs / Anneaux du jour
+    target_steps = int(profile.get("target_steps", 10000) or 10000)
+    target_calories = float(profile.get("target_calories_intake", 2000.0) or 2000.0)
+    target_sleep_h = float(profile.get("target_sleep_hours", 8.0) or 8.0)
+
+    today_str = today_dt.isoformat()
+    today_act = acts_by_date.get(today_str)
+    today_metric = next((m for m in daily_metrics_list if m.date.isoformat() == today_str), None)
+
+    current_steps = (today_act.steps if today_act else (today_metric.steps if today_metric else 0)) or 0
+    current_active_cals = (today_act.active_calories_kcal if today_act else (today_metric.active_calories_kcal if today_metric else 0.0)) or 0.0
+    current_sleep_h = (latest_sleep.duration_minutes / 60.0) if latest_sleep else 0.0
+    current_rec_score = recovery_data["score"] if recovery_data else None
+
+    rings = {
+        "steps": {
+            "current": current_steps,
+            "target": target_steps,
+            "pct": min(100.0, round((current_steps / target_steps) * 100, 1)) if target_steps > 0 else 0.0
+        },
+        "active_calories": {
+            "current": round(current_active_cals, 1),
+            "target": 500.0,  # Cible d'exercice actif standard 500 kcal
+            "pct": min(100.0, round((current_active_cals / 500.0) * 100, 1))
+        },
+        "sleep_recovery": {
+            "current_sleep_hours": round(current_sleep_h, 1),
+            "target_sleep_hours": round(target_sleep_h, 1),
+            "recovery_score": current_rec_score,
+            "pct": min(100.0, round((current_rec_score or (current_sleep_h / target_sleep_h * 100) if target_sleep_h > 0 else 0.0), 1))
+        }
+    }
 
     has_real_data = bool(
         daily_metrics_list or workouts_list or sleep_sessions_list or
@@ -226,11 +338,7 @@ def get_biometrics_metrics(
         "status": "success",
         "has_real_data": has_real_data,
         "is_demo_profile": is_demo,
-        "rings": {
-            "steps": {"current": 0, "target": 10000, "pct": 0.0},
-            "active_calories": {"current": 0.0, "target": 500.0, "pct": 0.0},
-            "sleep_recovery": {"current_sleep_hours": 0.0, "target_sleep_hours": 8.0, "recovery_score": None, "pct": 0.0}
-        },
+        "rings": rings,
         "recovery": recovery_data,
         "corridors": corridors_data,
         "anomalies": anomalies_data,
@@ -239,9 +347,9 @@ def get_biometrics_metrics(
         "intraday_hr": intraday_hr,
         "workouts": workouts_data,
         "correlations": {
-            "weight_vs_calories": [],
-            "sleep_vs_hrv": []
+            "weight_vs_calories": correlations_weight_calories,
+            "sleep_vs_hrv": correlations_sleep_hrv
         },
-        "heatmap": [],
-        "generated_at": "2026-10-31T00:00:00Z"
+        "heatmap": heatmap,
+        "generated_at": datetime.now(timezone.utc).isoformat()
     }
