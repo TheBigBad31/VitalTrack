@@ -1,0 +1,49 @@
+name: Frontend Check
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        default: '20'
+        required: false
+        type: string
+      js-glob:
+        description: 'Globs to check for JavaScript syntax and assets'
+        default: 'static/modules/*.js'
+        required: false
+        type: string
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Validate JavaScript syntax
+        run: |
+          for module in ${{ inputs.js-glob }}; do
+            for js_file in $module; do
+              if [ -f "$js_file" ]; then
+                node --check "$js_file" || exit 1
+              fi
+            done
+          done
+
+      - name: Verify critical assets exist
+        run: |
+          if [ ! -f static/index.html ]; then
+            echo "ERROR: static/index.html not found"
+            exit 1
+          fi
+
+          if [ ! -f manifest.json ]; then
+            echo "ERROR: manifest.json not found"
+            exit 1
+          fi

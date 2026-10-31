@@ -1,0 +1,109 @@
+name: Python Quality
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        default: '3.11'
+        required: false
+        type: string
+      working-directory:
+        description: 'Working directory containing requirements.txt and tests'
+        default: '.'
+        required: false
+        type: string
+      run-lint:
+        description: 'Run linting step (ruff/flake8)'
+        default: 'true'
+        required: false
+        type: boolean
+      run-tests:
+        description: 'Run pytest suite'
+        default: 'true'
+        required: false
+        type: boolean
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('.requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ inputs.python-version }}-
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Syntax check with py_compile
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          find . -name '*.py' -not -path './.venv/*' -not -path './build/*' | while read -r f; do
+            python -m py_compile "$f" || exit 1
+          done
+
+      - name: Lint with ruff (non-blocking)
+        if: inputs.run-lint == true
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install ruff
+          ruff check . || true
+
+      - name: Lint with flake8 (non-blocking)
+        if: inputs.run-lint == true
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F6,F7,W501 || true
+
+  test:
+    runs-on: ubuntu-latest
+    needs: syntax-check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('.requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ inputs.python-version }}-
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: ${{ inputs.working-directory }}
+        if: inputs.run-tests == true
+        run: |
+          uv run pytest -v
+
+          # Run postgres compatibility tests if available
+          if [ -f tests/test_postgres_compat.py ]; then
+            uv run pytest tests/test_postgres_compat.py -v
+          fi

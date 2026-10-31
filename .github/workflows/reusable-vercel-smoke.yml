@@ -1,0 +1,47 @@
+name: Vercel Smoke Test
+
+on:
+  workflow_call:
+    inputs:
+      target-url:
+        description: 'Vercel deployment URL to test'
+        default: 'https://vital-track-one.vercel.app'
+        required: false
+        type: string
+      health-path:
+        description: 'Health check endpoint path'
+        default: '/api/health'
+        required: false
+        type: string
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait and retry health check
+        run: |
+          set -e
+          max_retries=5
+          retry_delay=10
+          url="${{ inputs.target-url }}${{ inputs.health-path }}"
+
+          for attempt in $(seq 1 $max_retries); do
+            echo "Attempt $attempt: Checking $url"
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+
+            if [ "$http_code" = "200" ]; then
+              echo "✅ Health check passed: $url returned 200"
+              exit 0
+            fi
+
+            if [ "$attempt" -lt $max_retries ]; then
+              echo "⏳ Attempt $attempt failed (HTTP $http_code). Retrying in ${retry_delay}s..."
+              sleep $retry_delay
+            else
+              echo "❌ Health check failed after $max_retries attempts. HTTP $http_code"
+              exit 1
+            fi
+          done

@@ -7,29 +7,19 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+  python-quality:
+    uses: ./.github/workflows/reusable-python-quality.yml
+    with:
+      python-version: '3.11'
+      working-directory: '.'
+      run-lint: true
+      run-tests: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: |
-          uv sync --dev
-
-      - name: Run tests with pytest
-        run: |
-          uv run pytest -v
+  frontend-check:
+    uses: ./.github/workflows/reusable-frontend-check.yml
+    with:
+      node-version: '20'
+      js-glob: 'static/modules/*.js'
 
   lighthouse-audit:
     name: Lighthouse Performance Budget
@@ -50,3 +40,9 @@ jobs:
       - name: Run Lighthouse CI (Audit & Budget Assertions)
         run: |
           lhci autorun --config=./lighthouserc.json
+
+  vercel-smoke-test:
+    uses: ./.github/workflows/reusable-vercel-smoke.yml
+    with:
+      target-url: 'https://vital-track-one.vercel.app'
+      health-path: '/api/health'
