@@ -141,6 +141,16 @@ function switchTab(tabId) {
     activeView.classList.remove('hidden');
   }
 
+  // Gestion de la bandeau "Prise de repas instantanée" : visible uniquement sur l'onglet Nutrition
+  const quickMealBanner = document.getElementById('quick-meal-banner');
+  if (quickMealBanner) {
+    if (tabId === 'nutrition') {
+      quickMealBanner.classList.remove('hidden');
+    } else {
+      quickMealBanner.classList.add('hidden');
+    }
+  }
+
   // Desktop tab button active classes (Electric Violet / Cyan accent)
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.remove('nav-tab-active', 'text-white', 'border-violet-500');

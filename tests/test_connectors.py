@@ -459,7 +459,16 @@ def test_production_protection_blocks_simulation():
         with pytest.raises(SimulationNotAllowedInProductionError):
             oura.sync_activities(date.today() - timedelta(days=2), date.today())
 
-        # 3. Avec confirmation explicite d'un profil de démonstration (allow_simulation=True ou is_demo_profile=True)
+        # 3. Health Connect non configuré en production sans profil démo -> Doit lever SimulationNotAllowedInProductionError
+        from src.connectors.health_connect import GoogleHealthConnectConnector
+        hc = GoogleHealthConnectConnector()
+        assert not hc.is_configured
+        with pytest.raises(SimulationNotAllowedInProductionError):
+            hc.sync_weights(date.today() - timedelta(days=2), date.today())
+        with pytest.raises(SimulationNotAllowedInProductionError):
+            hc.sync_activities(date.today() - timedelta(days=2), date.today())
+
+        # 4. Avec confirmation explicite d'un profil de démonstration (allow_simulation=True ou is_demo_profile=True)
         withings_confirmed = WithingsScaleConnector(config={"allow_simulation": True})
         sim_weights = withings_confirmed.sync_weights(date.today() - timedelta(days=2), date.today())
         assert len(sim_weights) == 3
@@ -471,3 +480,106 @@ def test_production_protection_blocks_simulation():
             os.environ["ENVIRONMENT"] = old_env
         else:
             os.environ.pop("ENVIRONMENT", None)
+
+
+def test_google_health_connect_weight_sync_demo():
+    """Teste la synchronisation des pesées en mode démo pour Google Health Connect."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+    from datetime import date, timedelta
+
+    conn = GoogleHealthConnectConnector(config={"user_height_m": 1.80})
+    assert not conn.is_configured
+
+    start = date.today() - timedelta(days=6)
+    end = date.today()
+    weights = conn.sync_weights(start, end)
+    assert len(weights) == 7
+    assert all(w.source in ("health_connect", "simulation") for w in weights)
+    assert all(w.is_simulated is True for w in weights)
+    assert all(70.0 < w.weight_kg < 85.0 for w in weights)
+    assert all(w.body_fat_pct is not None for w in weights)
+    assert all(w.muscle_mass_kg is not None for w in weights)
+    assert all(w.water_pct is not None for w in weights)
+    assert all(w.bmi is not None for w in weights)
+
+
+def test_google_health_connect_weight_parsing():
+    """Teste le parsing d'un bucket aggregate de poids de l'API Google Fitness / Health Connect."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+
+    conn = GoogleHealthConnectConnector(config={"client_id": "test_id", "access_token": "valid_token", "user_height_m": 1.80})
+
+    bucket = {
+        "startTimeMillis": "1760572800000",  # 2025-10-16
+        "endTimeMillis": "1760659200000",
+        "dataset": [
+            {
+                "dataSourceId": "derived:com.google.weight:com.google.android.gms:merge_weight",
+                "point": [
+                    {"value": [{"fpVal": 78.5}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.body.fat.percentage:com.google.android.gms:merge_body_fat",
+                "point": [
+                    {"value": [{"fpVal": 18.2}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.muscle.mass:com.google.android.gms:merge_muscle_mass",
+                "point": [
+                    {"value": [{"fpVal": 39.5}]}
+                ]
+            },
+            {
+                "dataSourceId": "derived:com.google.hydration:com.google.android.gms:merge_water",
+                "point": [
+                    {"value": [{"fpVal": 58.0}]}
+                ]
+            }
+        ]
+    }
+
+    entry = conn.parse_google_fit_weight(bucket)
+    assert entry.date == date(2025, 10, 16)
+    assert entry.weight_kg == 78.5
+    assert entry.body_fat_pct == 18.2
+    assert entry.muscle_mass_kg == 39.5
+    assert entry.water_pct == 58.0
+    assert entry.bmi == round(78.5 / (1.80 ** 2), 1)
+    assert entry.source == "health_connect"
+
+
+def test_google_health_connect_weight_mock_buckets():
+    """Teste la synchronisation des pesées avec mock_weight_buckets injecté."""
+    from src.connectors.health_connect import GoogleHealthConnectConnector
+    from datetime import date, timedelta
+
+    mock_buckets = [
+        {
+            "startTimeMillis": "1760572800000",
+            "dataset": [
+                {"dataSourceId": "derived:com.google.weight:com.google.android.gms:merge_weight", "point": [{"value": [{"fpVal": 78.5}]}]},
+                {"dataSourceId": "derived:com.google.body.fat.percentage:com.google.android.gms:merge_body_fat", "point": [{"value": [{"fpVal": 18.0}]}]}
+            ]
+        },
+        {
+            "startTimeMillis": "1760659200000",
+            "dataset": [
+                {"dataSourceId": "derived:com.google.weight:com.google.android.gms:merge_weight", "point": [{"value": [{"fpVal": 78.2}]}]},
+                {"dataSourceId": "derived:com.google.body.fat.percentage:com.google.android.gms:merge_body_fat", "point": [{"value": [{"fpVal": 17.8}]}]}
+            ]
+        }
+    ]
+
+    conn = GoogleHealthConnectConnector(config={"client_id": "test_id", "access_token": "valid_token", "mock_weight_buckets": mock_buckets, "user_height_m": 1.80})
+    assert conn.is_configured
+
+    start = date.today() - timedelta(days=6)
+    end = date.today()
+    weights = conn.sync_weights(start, end)
+    assert len(weights) == 2
+    assert weights[0].weight_kg == 78.5
+    assert weights[0].body_fat_pct == 18.0
+    assert weights[1].weight_kg == 78.2
+    assert weights[1].body_fat_pct == 17.8

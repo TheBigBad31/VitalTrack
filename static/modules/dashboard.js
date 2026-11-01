@@ -110,7 +110,74 @@
       if (typeof loadFriendsData === 'function') {
         loadFriendsData();
       }
+      initGoalWeightInput();
     });
+
+    // Gestion du poids cible dans l'onglet Objectifs
+    function initGoalWeightInput() {
+      const targetWeightInput = document.getElementById('goal-target-weight-input');
+      const targetWeightValue = document.getElementById('goal-target-weight-value');
+      if (!targetWeightInput) return;
+
+      let saving = false;
+
+      const saveTargetWeight = async (weightKg) => {
+        if (saving) return;
+        saving = true;
+        try {
+          const res = await apiFetch('/api/profile', {
+            method: 'PUT',
+            body: JSON.stringify({ target_weight_kg: weightKg })
+          });
+          if (res.ok) {
+            const profile = await res.json();
+            // Mettre à jour l'affichage
+            if (targetWeightValue) targetWeightValue.innerText = `${profile.target_weight_kg} kg`;
+            // Re-render le graphique avec la nouvelle cible
+            if (typeof renderWeightSummaryChart === 'function') {
+              renderWeightSummaryChart();
+            }
+            if (typeof renderWeightView === 'function') {
+              renderWeightView();
+            }
+          }
+        } catch (err) {
+          console.warn("Erreur mise à jour poids cible :", err);
+        } finally {
+          saving = false;
+        }
+      };
+
+      // Écoute Entrée ou départ de la champ
+      targetWeightInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const weight = parseFloat(targetWeightInput.value) || 77;
+          if (weight >= 30 && weight <= 300) {
+            saveTargetWeight(weight);
+          }
+        }
+      });
+
+      // Pérsistance sur perte de focus (delay pour éviter les sauvegardes involontaires)
+      let focusLossTimeout = null;
+      targetWeightInput.addEventListener('blur', () => {
+        clearTimeout(focusLossTimeout);
+        focusLossTimeout = setTimeout(() => {
+          const weight = parseFloat(targetWeightInput.value) || 77;
+          if (weight >= 30 && weight <= 300) {
+            saveTargetWeight(weight);
+          }
+        }, 500);
+      });
+
+      // Mise à jour visuelle en temps réel de la valeur affichée
+      targetWeightInput.addEventListener('input', () => {
+        const weight = parseFloat(targetWeightInput.value) || 77;
+        if (targetWeightValue) targetWeightValue.innerText = `${weight} kg`;
+      });
+    }
+
 
     function initDates() {
       const todayIso = new Date().toISOString().split('T')[0];
@@ -388,6 +455,17 @@
       const labels = history.map(w => w.date.slice(5)); // MM-DD
       const weights = history.map(w => w.weight_kg);
       const trends = history.map(w => w.trend_7d_kg);
+      const targetWeight = currentData.summary && currentData.summary.target_weight_kg
+        ? currentData.summary.target_weight_kg
+        : 77.0;
+
+      // Calculer l'étendue Y pour inclure à la fois les pesées et la cible
+      const allWeights = [...weights, targetWeight];
+      const maxWeight = Math.max(...allWeights) * 1.1; // 10% de marge au-dessus
+      const minWeight = Math.min(...allWeights) * 0.9; // 10% de marge en-dessous
+      // S'assurer que les bornes sont raisonnables
+      const safeMin = Math.max(20, minWeight);
+      const safeMax = Math.min(300, maxWeight);
 
       chartWeightSummary = new Chart(ctx, {
         type: 'line',
@@ -413,6 +491,16 @@
               fill: true,
               pointRadius: 0,
               tension: 0.3
+            },
+            {
+              label: 'Objectif Cible',
+              data: labels.map(() => targetWeight),
+              borderColor: '#f59e0b',
+              borderDash: [5, 5],
+              borderWidth: 2,
+              pointRadius: 0,
+              fill: false,
+              yAxisID: 'yWeight'
             }
           ]
         },
@@ -422,7 +510,22 @@
           interaction: { mode: 'index', intersect: false },
           scales: {
             x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 8 } },
-            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+            y: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b' },
+              suggestedMin: safeMin * 0.9,
+              suggestedMax: safeMax * 1.1
+            },
+            'yWeight': {
+              type: 'linear',
+              position: 'right',
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#f59e0b' },
+              suggestedMin: safeMin * 0.9,
+              suggestedMax: safeMax * 1.1,
+              // Afficher la ligne de cible avec un style distinct
+              borderDash: [5, 5]
+            }
           },
           plugins: {
             legend: { position: 'top', labels: { color: '#cbd5e1', boxWidth: 12 } }

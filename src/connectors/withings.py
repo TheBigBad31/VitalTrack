@@ -5,6 +5,8 @@ Gère :
 - La persistance sécurisée des tokens OAuth2 Withings chiffrés au repos
 - L'appel API Withings `measure?action=getmeas` avec gestion des timeouts, backoff et rate limits (code 429 / 2555)
 - La synchronisation incrémentale et idempotente avec curseur `lastupdate` (timestamp epoch)
+- **Abonnement Webhook Withings (`notify/subscribe`)** pour notifications temps réel
+- **Catch-up sync (rattrapage)** pour récupérer les pesées manquantes
 - Le parsing des mesures corporelles :
   * Type 1: Poids (kg)
   * Type 6: Masse grasse (%)
@@ -18,6 +20,7 @@ Gère :
 import math
 import os
 import time
+import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -26,6 +29,8 @@ import httpx
 from src.connectors.base import BaseHealthConnector, SimulationNotAllowedInProductionError
 from src.crypto import decrypt_credentials, encrypt_credentials
 from src.models import ActivityEntry, WeightEntry
+
+logger = logging.getLogger("vitaltrack.withings")
 
 
 class WithingsAPIError(RuntimeError):
@@ -43,6 +48,7 @@ class WithingsScaleConnector(BaseHealthConnector):
     AUTHORIZE_URL = "https://account.withings.com/oauth2_user/authorize2"
     TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
     MEASURE_URL = "https://wbsapi.withings.net/measure"
+    NOTIFY_URL = "https://wbsapi.withings.net/notify"
 
     # Constantes Withings Measure Types
     TYPE_WEIGHT = 1           # Poids en kg
@@ -53,6 +59,9 @@ class WithingsScaleConnector(BaseHealthConnector):
 
     # Catégorie 1 = Real measurements (vs 2 = user objectives)
     CATEGORY_REAL_MEASURES = 1
+
+    # Appli Withings pour notifications (ID à configurer dans le dev portal Withings)
+    DEFAULT_CALLBACK_URL = "/api/webhooks/withings"
 
     def __init__(
         self,
@@ -251,6 +260,198 @@ class WithingsScaleConnector(BaseHealthConnector):
         )
 
     # -------------------------------------------------------------------------
+    # Webhook Subscription (Notify/Subscribe) - Notifications temps réel
+    # -------------------------------------------------------------------------
+
+    def subscribe_webhook(
+        self,
+        callback_url: Optional[str] = None,
+        client: Optional[httpx.Client] = None
+    ) -> Dict[str, Any]:
+        """S'abonner aux notifications temps réel Withings (notify/subscribe).
+
+        Args:
+            callback_url: URL de callback HTTPS (ex: https://vitaltrack.app/api/webhooks/withings)
+            client: Client HTTPX optionnel pour réutiliser la connexion
+
+        Returns:
+            Dict avec statut d'abonnement et détails
+
+        Note: Nécessite que l'application Withings soit configurée avec l'URL de callback
+        dans le portail développeur Withings (Applications > Edit > Callback URL).
+        """
+        if not self.is_configured:
+            raise WithingsAPIError("Connecteur Withings non configuré (OAuth2 requis).")
+
+        access_token = self.refresh_access_token_if_needed(client=client)
+        if not access_token:
+            raise WithingsAPIError("Impossible d'obtenir un access_token valide.")
+
+        cb_url = callback_url or self.config.get("webhook_callback_url") or os.getenv("WITHINGS_WEBHOOK_URL")
+        if not cb_url:
+            raise WithingsAPIError("URL de callback webhook manquante. Configurez WITHINGS_WEBHOOK_URL ou webhook_callback_url.")
+
+        params = {
+            "action": "subscribe",
+            "callbackurl": cb_url,
+            "comment": "VitalTrack auto-sync subscription",
+            "appli": 1,  # 1 = Weight/Scale notifications
+        }
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        def do_subscribe(c: httpx.Client) -> Dict[str, Any]:
+            resp = c.post(self.NOTIFY_URL, headers=headers, data=params, timeout=10.0)
+            if resp.status_code != 200:
+                raise WithingsAPIError(
+                    f"Échec subscription webhook (HTTP {resp.status_code}): {resp.text}",
+                    status_code=resp.status_code
+                )
+            res_json = resp.json()
+            status = res_json.get("status", -1)
+            if status != 0:
+                err_msg = res_json.get("error") or res_json.get("message") or f"Status: {status}"
+                raise WithingsAPIError(f"Erreur Withings subscribe: {err_msg}", withings_status=status)
+            return res_json.get("body", {})
+
+        if client:
+            return do_subscribe(client)
+        with httpx.Client() as c:
+            return do_subscribe(c)
+
+    def unsubscribe_webhook(
+        self,
+        callback_url: Optional[str] = None,
+        client: Optional[httpx.Client] = None
+    ) -> Dict[str, Any]:
+        """Se désabonner des notifications Withings (notify/unsubscribe)."""
+        if not self.is_configured:
+            return {"ok": False, "message": "Non configuré"}
+
+        access_token = self.refresh_access_token_if_needed(client=client)
+        if not access_token:
+            return {"ok": False, "message": "Pas de token valide"}
+
+        cb_url = callback_url or self.config.get("webhook_callback_url") or os.getenv("WITHINGS_WEBHOOK_URL")
+        if not cb_url:
+            return {"ok": False, "message": "URL callback manquante"}
+
+        params = {"action": "unsubscribe", "callbackurl": cb_url}
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        def do_unsub(c: httpx.Client) -> Dict[str, Any]:
+            resp = c.post(self.NOTIFY_URL, headers=headers, data=params, timeout=10.0)
+            if resp.status_code != 200:
+                return {"ok": False, "message": f"HTTP {resp.status_code}"}
+            res_json = resp.json()
+            return {"ok": res_json.get("status") == 0, "body": res_json.get("body", {})}
+
+        if client:
+            return do_unsub(client)
+        with httpx.Client() as c:
+            return do_unsub(c)
+
+    def list_webhook_subscriptions(
+        self,
+        client: Optional[httpx.Client] = None
+    ) -> List[Dict[str, Any]]:
+        """Lister les abonnements webhook actifs."""
+        if not self.is_configured:
+            return []
+
+        access_token = self.refresh_access_token_if_needed(client=client)
+        if not access_token:
+            return []
+
+        params = {"action": "list"}
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        def do_list(c: httpx.Client) -> List[Dict[str, Any]]:
+            resp = c.post(self.NOTIFY_URL, headers=headers, data=params, timeout=10.0)
+            if resp.status_code != 200:
+                return []
+            res_json = resp.json()
+            if res_json.get("status") != 0:
+                return []
+            return res_json.get("body", {}).get("profiles", [])
+
+        if client:
+            return do_list(client)
+        with httpx.Client() as c:
+            return do_list(c)
+
+    # -------------------------------------------------------------------------
+    # Catch-up Sync (Rattrapage) - Récupération pesées manquantes
+    # -------------------------------------------------------------------------
+
+    def catchup_sync(
+        self,
+        days_back: int = 30,
+        client: Optional[httpx.Client] = None
+    ) -> List[WeightEntry]:
+        """Synchronisation de rattrapage pour récupérer les pesées manquantes.
+
+        Effectue une synchronisation complète sur la fenêtre demandée sans utiliser
+        le curseur lastupdate, pour garantir qu'aucune pesée n'est manquée.
+
+        Args:
+            days_back: Nombre de jours en arrière à récupérer (défaut: 30)
+            client: Client HTTPX optionnel
+
+        Returns:
+            Liste des WeightEntry récupérées (dédupliquées par date)
+        """
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days_back)
+
+        logger.info(f"[Withings] Catch-up sync: {start_date} → {end_date} ({days_back} jours)")
+
+        # Sauvegarder le lastupdate actuel
+        saved_lastupdate = self.config.get("lastupdate")
+
+        try:
+            # Forcer la sync sans curseur (startdate/enddate au lieu de lastupdate)
+            # -1 est un sentinel pour "pas de curseur" (mode catch-up)
+            weights = self._fetch_live_measures(
+                start_date=start_date,
+                end_date=end_date,
+                last_sync_timestamp=-1,
+                client=client
+            )
+            logger.info(f"[Withings] Catch-up sync terminé: {len(weights)} pesées récupérées")
+            return weights
+        finally:
+            # Restaurer le lastupdate original pour ne pas casser la sync incrémentale future
+            if saved_lastupdate:
+                self.config["lastupdate"] = saved_lastupdate
+
+    def sync_weights_incremental(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        client: Optional[httpx.Client] = None
+    ) -> List[WeightEntry]:
+        """Synchronisation incrémentale standard utilisant le curseur lastupdate.
+
+        Utilise le timestamp de la dernière synchronisation réussie (lastupdate)
+        pour ne récupérer que les nouvelles mesures depuis le dernier sync.
+        """
+        today = date.today()
+        end_d = end_date or today
+        start_d = start_date or (end_d - timedelta(days=7))
+
+        if not self.is_configured:
+            self.assert_simulation_allowed()
+            return self._generate_simulated_weights(start_d, end_d)
+
+        return self._fetch_live_measures(
+            start_date=start_d,
+            end_date=end_d,
+            last_sync_timestamp=self.config.get("lastupdate"),
+            client=client
+        )
+
+    # -------------------------------------------------------------------------
     # Parsing Withings Measure Groups
     # -------------------------------------------------------------------------
 
@@ -318,9 +519,19 @@ class WithingsScaleConnector(BaseHealthConnector):
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         last_sync_timestamp: Optional[int] = None,
-        client: Optional[httpx.Client] = None
+        client: Optional[httpx.Client] = None,
+        force_catchup: bool = False
     ) -> List[WeightEntry]:
-        """Récupère les pesées depuis l'API Withings ou génère une simulation réaliste."""
+        """Récupère les pesées depuis l'API Withings ou génère une simulation réaliste.
+
+        Args:
+            start_date: Date de début (défaut: aujourd'hui - 7 jours)
+            end_date: Date de fin (défaut: aujourd'hui)
+            last_sync_timestamp: Curseur lastupdate forcé (optionnel)
+            client: Client HTTPX optionnel
+            force_catchup: Si True, ignore le curseur lastupdate et fait un sync complet
+                           sur la fenêtre demandée (rattrapage pesées manquantes)
+        """
         today = date.today()
         end_d = end_date or today
         start_d = start_date or (end_d - timedelta(days=7))
@@ -329,10 +540,13 @@ class WithingsScaleConnector(BaseHealthConnector):
             self.assert_simulation_allowed()
             return self._generate_simulated_weights(start_d, end_d)
 
-        return self._fetch_live_measures(
+        if force_catchup:
+            logger.info(f"[Withings] Mode catch-up activé pour {start_d} → {end_d}")
+            return self.catchup_sync(days_back=(end_d - start_d).days, client=client)
+
+        return self.sync_weights_incremental(
             start_date=start_d,
             end_date=end_d,
-            last_sync_timestamp=last_sync_timestamp,
             client=client
         )
 
@@ -359,7 +573,13 @@ class WithingsScaleConnector(BaseHealthConnector):
         end_epoch = int(datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc).timestamp())
 
         # Déterminer le curseur lastupdate pour synchronisation incrémentale
-        cursor_update = last_sync_timestamp if last_sync_timestamp is not None else self.config.get("lastupdate")
+        # last_sync_timestamp=-1 signifie "pas de curseur" (mode catch-up explicite)
+        if last_sync_timestamp == -1:
+            cursor_update = None
+        elif last_sync_timestamp is not None:
+            cursor_update = last_sync_timestamp
+        else:
+            cursor_update = self.config.get("lastupdate")
 
         params: Dict[str, Any] = {
             "action": "getmeas",
@@ -424,11 +644,12 @@ class WithingsScaleConnector(BaseHealthConnector):
         headers: Dict[str, str],
         data: Dict[str, Any],
         client: Optional[httpx.Client] = None,
-        max_retries: int = 3
+        max_retries: int = 2
     ) -> Dict[str, Any]:
-        """Exécute un appel HTTP vers l'API Withings avec reprise sur timeouts et rate limits."""
-        last_exception = None
+        """Exécute un appel HTTP vers l'API Withings avec reprise sur timeouts et rate limits.
 
+        Respecte les règles de résilience: max 2 essais (1 retry).
+        """
         def do_request(c: httpx.Client, attempt: int) -> Dict[str, Any]:
             try:
                 resp = c.request(method, url, headers=headers, data=data, timeout=12.0)
@@ -436,6 +657,7 @@ class WithingsScaleConnector(BaseHealthConnector):
                 if attempt < max_retries - 1:
                     time.sleep(0.5 * (2 ** attempt))
                     return do_request(c, attempt + 1)
+                logger.error(f"[Withings] Erreur réseau après {max_retries} essais: {e}")
                 raise WithingsAPIError(f"Erreur de communication Withings (Timeout/Réseau) après {max_retries} essais: {e}")
 
             if resp.status_code == 429:
@@ -443,9 +665,11 @@ class WithingsScaleConnector(BaseHealthConnector):
                     retry_after = float(resp.headers.get("Retry-After", 1.0))
                     time.sleep(min(retry_after, 2.0))
                     return do_request(c, attempt + 1)
+                logger.warning("[Withings] Rate limit HTTP 429 dépassé")
                 raise WithingsAPIError("Rate limit dépassé auprès de l'API Withings (HTTP 429).", status_code=429)
 
             if resp.status_code != 200:
+                logger.error(f"[Withings] Erreur HTTP {resp.status_code}: {resp.text[:200]}")
                 raise WithingsAPIError(
                     f"Erreur HTTP API Withings (code {resp.status_code}): {resp.text}",
                     status_code=resp.status_code
@@ -459,23 +683,27 @@ class WithingsScaleConnector(BaseHealthConnector):
                 if attempt < max_retries - 1:
                     time.sleep(1.0 * (attempt + 1))
                     return do_request(c, attempt + 1)
+                logger.warning("[Withings] Rate limit Withings status 2555 dépassé")
                 raise WithingsAPIError("Withings API status 2555: Too many requests.", withings_status=2555)
 
-            # Code 401 ou statut Withings 401 (token non autorisé/expiré)
+            # Code 401 ou statut Withings 401/2554 (token non autorisé/expiré)
             if status == 401 or status == 2554:
-                # Tentative unique de rafraîchissement
+                # Tentative unique de rafraîchissement du token
                 if attempt == 0:
                     try:
                         new_tok = self.refresh_access_token_if_needed(client=c)
                         if new_tok:
                             headers["Authorization"] = f"Bearer {new_tok}"
+                            logger.info("[Withings] Token rafraîchi avec succès, retry de la requête")
                             return do_request(c, attempt + 1)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"[Withings] Échec rafraîchissement token: {e}")
+                logger.error(f"[Withings] Erreur d'authentification status {status}")
                 raise WithingsAPIError(f"Erreur d'authentification Withings (status {status}).", withings_status=status)
 
             if status != 0:
                 err_msg = res_json.get("error") or res_json.get("message") or f"Statut non-zéro: {status}"
+                logger.error(f"[Withings] Erreur API status {status}: {err_msg}")
                 raise WithingsAPIError(f"Erreur Withings: {err_msg}", withings_status=status)
 
             return res_json.get("body", {})

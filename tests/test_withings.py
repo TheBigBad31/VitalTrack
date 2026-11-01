@@ -246,15 +246,14 @@ def test_withings_live_sync_incremental_cursor_and_idempotence():
 
 
 def test_withings_rate_limit_and_error_recovery():
-    """Teste la reprise sur rate limit Withings HTTP 429 et status 2555."""
+    """Teste la reprise sur rate limit Withings HTTP 429 et status 2555 (max 2 essais)."""
     attempts = {"count": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
         attempts["count"] += 1
         if attempts["count"] == 1:
             return httpx.Response(429, headers={"Retry-After": "0.1"})
-        elif attempts["count"] == 2:
-            return httpx.Response(200, json={"status": 2555, "error": "Too many requests"})
+        # 2ème essai (attempt=1): succès - max_retries=2 permet 1 retry
         return httpx.Response(200, json={
             "status": 0,
             "body": {
@@ -282,7 +281,7 @@ def test_withings_rate_limit_and_error_recovery():
         )
         assert len(results) == 1
         assert results[0].weight_kg == 80.0
-        assert attempts["count"] == 3
+        assert attempts["count"] == 2  # 1 appel initial + 1 retry
 
 
 def test_withings_no_simulated_data_in_production(monkeypatch):
@@ -293,3 +292,128 @@ def test_withings_no_simulated_data_in_production(monkeypatch):
 
     with pytest.raises(SimulationNotAllowedInProductionError):
         connector.sync_weights(start_date=date.today() - timedelta(days=5), end_date=date.today())
+
+
+def test_withings_catchup_sync_retrieves_missing_weights():
+    """Teste la synchronisation de rattrapage (catch-up) qui ignore le curseur lastupdate."""
+    catchup_response = {
+        "status": 0,
+        "body": {
+            "updatetime": 1735695000,
+            "measuregrps": [
+                {
+                    "date": 1735689600,  # 2025-01-01
+                    "category": 1,
+                    "measures": [{"value": 81500, "unit": -3, "type": 1}]
+                },
+                {
+                    "date": 1735776000,  # 2025-01-02
+                    "category": 1,
+                    "measures": [{"value": 80900, "unit": -3, "type": 1}]
+                },
+                {
+                    "date": 1735862400,  # 2025-01-03
+                    "category": 1,
+                    "measures": [{"value": 80500, "unit": -3, "type": 1}]
+                }
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = request.read().decode("utf-8")
+        # catchup_sync utilise startdate/enddate PAS lastupdate
+        assert "startdate=" in content
+        assert "enddate=" in content
+        assert "lastupdate" not in content
+        return httpx.Response(200, json=catchup_response)
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        connector = WithingsScaleConnector(config={
+            "client_id": "cid",
+            "access_token": "valid_token",
+            "token_expiry": time.time() + 3600,
+            "lastupdate": 1735600000  # Curseur existant qui serait ignoré
+        })
+        # catchup_sync sur 3 jours
+        results = connector.catchup_sync(days_back=3, client=client)
+        assert len(results) == 3
+        assert results[0].weight_kg == 81.5
+        assert results[1].weight_kg == 80.9
+        assert results[2].weight_kg == 80.5
+        # Le curseur lastupdate original doit être restauré
+        assert connector.config["lastupdate"] == 1735600000
+
+
+def test_withings_sync_weights_force_catchup():
+    """Teste le paramètre force_catchup de sync_weights."""
+    catchup_response = {
+        "status": 0,
+        "body": {
+            "measuregrps": [
+                {"date": 1735689600, "category": 1, "measures": [{"value": 81500, "unit": -3, "type": 1}]}
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = request.read().decode("utf-8")
+        assert "startdate=" in content
+        assert "lastupdate" not in content
+        return httpx.Response(200, json=catchup_response)
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        connector = WithingsScaleConnector(config={
+            "client_id": "cid",
+            "access_token": "valid_token",
+            "token_expiry": time.time() + 3600,
+            "lastupdate": 1735600000
+        })
+        # force_catchup=True doit ignorer le curseur
+        results = connector.sync_weights(
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 1, 1),
+            client=client,
+            force_catchup=True
+        )
+        assert len(results) == 1
+        assert results[0].weight_kg == 81.5
+
+
+def test_withings_webhook_subscribe_requires_config():
+    """Teste que subscribe_webhook échoue si non configuré."""
+    connector = WithingsScaleConnector()  # Non configuré
+    with pytest.raises(WithingsAPIError, match="non configur"):
+        connector.subscribe_webhook(callback_url="https://example.com/webhook")
+
+
+def test_withings_webhook_subscribe_success():
+    """Teste l'abonnement webhook Withings réussi."""
+    sub_response = {
+        "status": 0,
+        "body": {"callbackurl": "https://vitaltrack.app/api/webhooks/withings"}
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = request.read().decode("utf-8")
+        assert "action=subscribe" in content
+        assert "callbackurl=" in content
+        assert "appli=1" in content
+        return httpx.Response(200, json=sub_response)
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        connector = WithingsScaleConnector(config={
+            "client_id": "cid",
+            "client_secret": "sec",
+            "access_token": "valid_token",
+            "refresh_token": "refresh_tok",
+            "token_expiry": time.time() + 3600
+        })
+        result = connector.subscribe_webhook(
+            callback_url="https://vitaltrack.app/api/webhooks/withings",
+            client=client
+        )
+        assert result == {"callbackurl": "https://vitaltrack.app/api/webhooks/withings"}

@@ -18,6 +18,49 @@ let currentActiveMealSlot = 'lunch';
 // journalCacheByDate[date] = { date, meals: [...], day_summary: {...} }
 // Rejouer une date déjà consultée coûte 0 requête et 0 ms de rendu.
 const journalCacheByDate = new Map();
+
+// --- BALI-143 : États de chargement boutons & prévention double-clic ---
+/** Déclencher l'état "chargement" sur un bouton (afficher micro-spinner + désactiver) */
+function setButtonLoading(btn, state = true) {
+  if (!btn) return;
+  if (state) {
+    btn.classList.add('btn-loading');
+    const spinner = btn.querySelector('.spinner');
+    if (!spinner) {
+      const s = document.createElement('div');
+      s.className = 'spinner';
+      btn.appendChild(s);
+    }
+    btn.disabled = true;
+    btn.title = 'En cours...';
+  } else {
+    btn.classList.remove('btn-loading');
+    const spinner = btn.querySelector('.spinner');
+    if (spinner) spinner.remove();
+    btn.disabled = false;
+    btn.title = '';
+  }
+}
+
+/** Empêcher les double-clics sur un bouton en le désactivant temporairement */
+function preventDoubleClick(btn) {
+  if (!btn) return;
+  let clicked = false;
+  btn.addEventListener('click', (e) => {
+    if (clicked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    clicked = true;
+    setButtonLoading(btn, true);
+    // Réactiver après 300ms (délai de double-clic + temps de chargement)
+    setTimeout(() => {
+      clicked = false;
+      setButtonLoading(btn, false);
+    }, 300);
+  });
+}
 // Promesses de chargement en vol (déduplication : 1 seule requête par date).
 const journalInflightByDate = new Map();
 // Horodatage de la dernière lecture serveur par date (stale-while-revalidate).
@@ -199,11 +242,11 @@ function initNutritionNavigation() {
   if (btnQuickAdd && !btnQuickAdd.dataset.bound) {
     btnQuickAdd.dataset.bound = "true";
     btnQuickAdd.addEventListener('click', (e) => {
-      e.preventDefault();
       if (typeof openSelectFromCatalogModal === 'function') {
         openSelectFromCatalogModal(currentActiveMealSlot || 'lunch');
       }
     });
+    preventDoubleClick(btnQuickAdd);
   }
 }
 

@@ -10,11 +10,13 @@ try {
 
 /**
  * Main HTTP wrapper injecting Bearer token and handling global auth errors.
+ * Shows global loading bar at start, hides it when request completes.
  * @param {string} url - API endpoint
  * @param {RequestInit} [options={}] - fetch options
  * @returns {Promise<Response>}
  */
 async function apiFetch(url, options = {}) {
+  window.showGlobalLoading(true);
   const opts = Object.assign({}, options);
   opts.headers = Object.assign({}, opts.headers || {});
 
@@ -42,6 +44,8 @@ async function apiFetch(url, options = {}) {
     return response;
   } catch (err) {
     throw err;
+  } finally {
+    window.showGlobalLoading(false);
   }
 }
 
