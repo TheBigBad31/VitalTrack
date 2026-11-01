@@ -216,8 +216,8 @@
       const s = currentData.summary || {};
       
       // Jauges
-      document.getElementById('val-weight').innerHTML = `${s.current_weight_kg || '--'} <span class="text-xs font-normal text-slate-400">kg</span>`;
-      document.getElementById('val-weight-trend').innerHTML = `<span class="text-brand-400">Tendance 7j: ${s.weight_trend_7d_kg || '--'} kg</span>`;
+      document.getElementById('val-weight').innerHTML = `${escapeHtml(s.current_weight_kg || '--')} <span class="text-xs font-normal text-slate-400">kg</span>`;
+      document.getElementById('val-weight-trend').innerHTML = `<span class="text-brand-400">Tendance 7j: ${escapeHtml(s.weight_trend_7d_kg || '--')} kg</span>`;
       const diff = s.weight_7d_variation_kg;
       const diffTxt = diff !== undefined ? (diff > 0 ? `+${diff} kg (7j)` : `${diff} kg (7j)`) : '--';
       document.getElementById('val-weight-diff').innerText = `Variation 7j: ${diffTxt}`;
@@ -226,7 +226,7 @@
       // les mises à jour ciblées du journal, sans reconstruire les graphiques)
       renderSummaryCounters();
 
-      document.getElementById('val-steps').innerHTML = `${(s.steps || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400">/ 10k</span>`;
+      document.getElementById('val-steps').innerHTML = `${escapeHtml((s.steps || 0).toLocaleString())} <span class="text-xs font-normal text-slate-400">/ 10k</span>`;
       const stepsPct = Math.min(100, Math.round(((s.steps || 0) / (s.steps_target || 10000)) * 100));
       document.getElementById('val-steps-pct').innerText = `Progression: ${stepsPct}%`;
       document.getElementById('bar-steps').style.width = `${stepsPct}%`;
@@ -249,7 +249,7 @@
       const s = (currentData && currentData.summary) || {};
 
       const elCalsIn = document.getElementById('val-cals-in');
-      if (elCalsIn) elCalsIn.innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+      if (elCalsIn) elCalsIn.innerHTML = `${escapeHtml(Math.round(s.calories_intake_kcal || 0))} <span class="text-xs font-normal text-slate-400">kcal</span>`;
       const barCalsIn = document.getElementById('bar-cals-in');
       if (barCalsIn) {
         const inPct = Math.min(100, Math.round(((s.calories_intake_kcal || 0) / (s.target_calories_intake || 2000)) * 100));
@@ -257,7 +257,7 @@
       }
 
       const elCalsOut = document.getElementById('val-cals-out');
-      if (elCalsOut) elCalsOut.innerHTML = `${Math.round(s.calories_burned_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+      if (elCalsOut) elCalsOut.innerHTML = `${escapeHtml(Math.round(s.calories_burned_kcal || 0))} <span class="text-xs font-normal text-slate-400">kcal</span>`;
 
       // Mise à jour des Anneaux d'objectifs (Palier 3)
       renderSummaryRings();
@@ -267,7 +267,7 @@
       const net = Math.round(s.net_energy_balance_kcal || 0);
       const netEl = document.getElementById('val-net-balance');
       if (netEl) {
-        netEl.innerHTML = `${net > 0 ? '+' : ''}${net} <span class="text-xs font-normal text-slate-400">kcal</span>`;
+        netEl.innerHTML = `${escapeHtml(net > 0 ? '+' : '')}${escapeHtml(net)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
         netEl.className = `text-2xl sm:text-3xl font-extrabold ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
       }
 
@@ -434,9 +434,9 @@
     // 2. Rendu Vue Poids & Composition
     function renderWeightView() {
       const s = currentData.summary || {};
-      document.getElementById('val-body-fat').innerHTML = `${s.body_fat_pct || '--'} <span class="text-xs font-normal text-slate-400">%</span>`;
-      document.getElementById('val-muscle-mass').innerHTML = `${s.muscle_mass_kg || '--'} <span class="text-xs font-normal text-slate-400">kg</span>`;
-      document.getElementById('val-water-pct').innerHTML = `${s.water_pct || '--'} <span class="text-xs font-normal text-slate-400">%</span>`;
+      document.getElementById('val-body-fat').innerHTML = `${escapeHtml(s.body_fat_pct || '--')} <span class="text-xs font-normal text-slate-400">%</span>`;
+      document.getElementById('val-muscle-mass').innerHTML = `${escapeHtml(s.muscle_mass_kg || '--')} <span class="text-xs font-normal text-slate-400">kg</span>`;
+      document.getElementById('val-water-pct').innerHTML = `${escapeHtml(s.water_pct || '--')} <span class="text-xs font-normal text-slate-400">%</span>`;
       document.getElementById('val-bmi').innerText = s.bmi || '--';
 
       // Graphique détaillé
@@ -501,14 +501,14 @@
         const history = [...(currentData.weights_history || [])].reverse();
         tbody.innerHTML = history.slice(0, 10).map(w => `
           <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
-            <td class="py-2.5 px-3 font-medium text-white">${w.date}</td>
-            <td class="py-2.5 px-3 font-bold text-white">${w.weight_kg} kg</td>
-            <td class="py-2.5 px-3 text-slate-300">${w.trend_7d_kg ? w.trend_7d_kg + ' kg' : '--'}</td>
-            <td class="py-2.5 px-3 text-slate-400">${w.body_fat_pct ? w.body_fat_pct + '%' : '--'}</td>
-            <td class="py-2.5 px-3 text-slate-400">${w.muscle_mass_kg ? w.muscle_mass_kg + ' kg' : '--'}</td>
+            <td class="py-2.5 px-3 font-medium text-white">${escapeHtml(w.date)}</td>
+            <td class="py-2.5 px-3 font-bold text-white">${escapeHtml(w.weight_kg)} kg</td>
+            <td class="py-2.5 px-3 text-slate-300">${w.trend_7d_kg ? escapeHtml(w.trend_7d_kg + ' kg') : '--'}</td>
+            <td class="py-2.5 px-3 text-slate-400">${w.body_fat_pct ? escapeHtml(w.body_fat_pct + '%') : '--'}</td>
+            <td class="py-2.5 px-3 text-slate-400">${w.muscle_mass_kg ? escapeHtml(w.muscle_mass_kg + ' kg') : '--'}</td>
             <td class="py-2.5 px-3">
               <span class="px-2 py-0.5 rounded text-[10px] ${w.source === 'withings' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-slate-800 text-slate-400'}">
-                ${w.source}
+                ${escapeHtml(w.source)}
               </span>
             </td>
           </tr>
@@ -627,7 +627,7 @@
             <tr class="hover:bg-[#1F2A3C]/40 transition-colors ${isToday ? 'bg-indigo-500/10 font-medium' : ''}">
               <td class="py-2.5 px-3">
                 <div class="flex items-center space-x-1.5">
-                  <span class="font-bold text-white">${day}</span>
+                  <span class="font-bold text-white">${escapeHtml(day)}</span>
                   ${isToday ? `<span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 font-bold">Aujourd'hui</span>` : ""}
                 </div>
               </td>
@@ -673,16 +673,16 @@
 
         container.innerHTML = meals.map(m => {
           const typeInfo = mealTypeLabels[m.meal_type] || { label: m.meal_type, color: "text-slate-400" };
-          const itemsStr = (m.items || []).map(i => `${i.name} (${Math.round(i.portion_g || 100)}g)`).join(', ');
+          const itemsStr = (m.items || []).map(i => `${escapeHtml(i.name)} (${Math.round(i.portion_g || 100)}g)`).join(', ');
           
           return `
             <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-4 flex flex-col justify-between space-y-3">
               <div class="flex items-start justify-between">
                 <div>
                   <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeInfo.color}">
-                    ${typeInfo.label}
+                    ${escapeHtml(typeInfo.label)}
                   </span>
-                  <div class="text-xs text-slate-400 mt-1">${m.date}</div>
+                  <div class="text-xs text-slate-400 mt-1">${escapeHtml(m.date)}</div>
                 </div>
                 <div class="text-right">
                   <span class="text-base font-extrabold text-white">${Math.round(m.total_calories_kcal)}</span>
@@ -693,13 +693,13 @@
               <!-- Photo éventuelle -->
               ${m.photo_data_url ? `
                 <div class="rounded-lg overflow-hidden border border-[#1F2A3C] max-h-32">
-                  <img src="${m.photo_data_url}" alt="Photo repas" class="w-full h-full object-cover">
+                  <img src="${escapeHtml(m.photo_data_url)}" alt="Photo repas" class="w-full h-full object-cover">
                 </div>
               ` : ''}
 
               <!-- Aliments -->
               <p class="text-xs text-slate-300 line-clamp-2">
-                <span class="font-medium text-slate-400">Aliments:</span> ${itemsStr || 'Repas composé'}
+                <span class="font-medium text-slate-400">Aliments:</span> ${escapeHtml(itemsStr) || 'Repas composé'}
               </p>
 
               <!-- Macros -->
@@ -950,10 +950,13 @@
           const widthPct = Math.max(0.5, ((st.duration_seconds || 60) / totalSec) * 100);
           const colorCls = stageColors[st.stage] || 'bg-slate-600';
           const mins = Math.round(st.duration_seconds / 60);
+          const stageLabel = escapeHtml(stageLabels[st.stage] || st.stage);
+          const startStr = st.start_time ? escapeHtml(String(st.start_time).slice(11, 16)) : '';
+          const endStr = st.end_time ? escapeHtml(String(st.end_time).slice(11, 16)) : '';
           return `
             <div class="${colorCls} h-full transition-all cursor-pointer rounded-sm"
                  style="width: ${widthPct}%;"
-                 title="${stageLabels[st.stage] || st.stage}: ${mins} min (${st.start_time ? st.start_time.slice(11,16) : ''} - ${st.end_time ? st.end_time.slice(11,16) : ''})">
+                 title="${stageLabel}: ${mins} min (${startStr} - ${endStr})">
             </div>
           `;
         }).join('');
@@ -1188,8 +1191,8 @@
                 <i data-lucide="${iconName}" class="w-4 h-4"></i>
               </div>
               <div>
-                <div class="text-xs font-bold text-white capitalize">${w.workout_type || 'Séance'}</div>
-                <div class="text-[10px] text-slate-400">${startFormatted} • ${w.duration_minutes || 0} min</div>
+                <div class="text-xs font-bold text-white capitalize">${escapeHtml(w.workout_type || 'Séance')}</div>
+                <div class="text-[10px] text-slate-400">${escapeHtml(startFormatted)} • ${w.duration_minutes || 0} min</div>
               </div>
             </div>
             <div class="text-right">
@@ -1368,7 +1371,7 @@
             const workoutBadge = d.has_workout ? '• Entraînement' : '';
             return `
               <div class="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded cursor-pointer transition-transform hover:scale-125 ${cls}"
-                   title="${d.date}: ${d.steps} pas ${workoutBadge}">
+                   title="${escapeHtml(d.date)}: ${escapeHtml(d.steps)} pas ${workoutBadge}">
               </div>
             `;
           }).join('')}
@@ -1503,7 +1506,7 @@
         const syncLabel = relativeTime ? `Synchronisé ${relativeTime.toLowerCase()} ✓` : 'Synchronisé ✓';
         if (badgeEl) {
           badgeEl.className = "text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1";
-          badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span id="live-hc-status-text">${syncLabel}</span>`;
+          badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span id="live-hc-status-text">${escapeHtml(syncLabel)}</span>`;
         }
         if (iconContainerEl) iconContainerEl.className = "w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0";
         banner.className = "p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#151D2A] to-[#151D2A] border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300";
@@ -1592,7 +1595,7 @@
                   <span>Dernière pesée reçue :</span>
                 </span>
                 <div class="text-white font-medium">
-                  <strong>${w.weight_kg} kg</strong> ${w.body_fat_pct ? `• ${w.body_fat_pct}% MG` : ''} ${w.muscle_mass_kg ? `• ${w.muscle_mass_kg} kg Muscle` : ''}
+                  <strong>${escapeHtml(w.weight_kg)} kg</strong> ${w.body_fat_pct ? `• ${escapeHtml(w.body_fat_pct)}% MG` : ''} ${w.muscle_mass_kg ? `• ${escapeHtml(w.muscle_mass_kg)} kg Muscle` : ''}
                 </div>
               </div>
             `;
@@ -1621,7 +1624,7 @@
                   <i data-lucide="${d.device_type === 'ring' ? 'circle-dot' : (d.device_type === 'scale' ? 'scale' : 'smartphone')}" class="w-5 h-5"></i>
                 </div>
                 <div>
-                  <h4 class="font-bold text-white text-sm">${d.name}</h4>
+                  <h4 class="font-bold text-white text-sm">${escapeHtml(d.name)}</h4>
                   <span class="text-[10px] text-brand-400 font-medium">${devId === 'health_connect' ? 'Passerelle Android Santé Connect' : (devId === 'withings' ? 'Balance Wi-Fi & Impédancemètre' : d.device_type)}</span>
                 </div>
               </div>
@@ -1633,7 +1636,7 @@
             <div class="text-xs text-slate-300">
               <div class="flex justify-between py-1 border-b border-[#1F2A3C]/50">
                 <span class="text-slate-400">Dernière synchronisation :</span>
-                <span class="text-slate-200 font-medium">${lastSyncLabel}</span>
+                <span class="text-slate-200 font-medium">${escapeHtml(lastSyncLabel)}</span>
               </div>
               <div class="flex justify-between py-1">
                 <span class="text-slate-400">Statut liaison :</span>
@@ -1834,7 +1837,7 @@
       listEl.innerHTML = (currentEstimatedMeal.items || []).map(item => `
         <div class="flex items-center justify-between p-2 rounded-lg bg-[#151D2A] border border-[#1F2A3C]">
           <div>
-            <span class="font-bold text-white text-xs">${item.name}</span>
+            <span class="font-bold text-white text-xs">${escapeHtml(item.name)}</span>
             <span class="text-[10px] text-slate-400 block">${Math.round(item.portion_g)}g • ${Math.round(item.calories_kcal)} kcal</span>
           </div>
           <div class="text-[10px] text-slate-300">
@@ -1977,7 +1980,7 @@
             <div class="space-y-1.5">
               <div class="flex items-start justify-between gap-1">
                 <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeInfo.color}">
-                  ${typeInfo.label}
+                  ${escapeHtml(typeInfo.label)}
                 </span>
                 <div class="flex items-center space-x-1">
                   ${m.is_favorite ? '<span class="text-xs text-amber-400">⭐</span>' : ''}
@@ -1989,13 +1992,13 @@
 
               ${m.photo_url ? `
                 <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-24 w-full">
-                  <img src="${m.photo_url}" alt="${m.name}" class="w-full h-full object-cover">
+                  <img src="${escapeHtml(m.photo_url)}" alt="${escapeHtml(m.name)}" class="w-full h-full object-cover">
                 </div>
               ` : ''}
 
               <div>
-                <h4 class="font-bold text-white text-xs leading-tight line-clamp-1">${m.name}</h4>
-                <div class="text-[10px] text-slate-400 mt-0.5">${m.serving_size || '1 portion'} ${m.quantity_grams ? '(' + Math.round(m.quantity_grams) + 'g)' : ''}</div>
+                <h4 class="font-bold text-white text-xs leading-tight line-clamp-1">${escapeHtml(m.name)}</h4>
+                <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(m.serving_size || '1 portion')} ${m.quantity_grams ? '(' + Math.round(m.quantity_grams) + 'g)' : ''}</div>
               </div>
 
               <!-- Macros -->
@@ -2009,7 +2012,7 @@
 
             <!-- Bouton Ajouter au Journal 1-clic -->
             <div class="pt-2">
-              <button onclick="logSavedMealDirectly(${m.id}, '${m.meal_type}')" class="w-full py-1.5 px-2 rounded-lg bg-brand-600/20 hover:bg-brand-600 text-brand-300 hover:text-white border border-brand-500/30 text-[11px] font-bold flex items-center justify-center space-x-1.5 transition-all active:scale-95">
+              <button onclick="logSavedMealDirectly(${m.id}, '${escapeHtml(m.meal_type)}')" class="w-full py-1.5 px-2 rounded-lg bg-brand-600/20 hover:bg-brand-600 text-brand-300 hover:text-white border border-brand-500/30 text-[11px] font-bold flex items-center justify-center space-x-1.5 transition-all active:scale-95">
                 <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
                 <span>+ Ajouter au Journal</span>
               </button>
@@ -2650,7 +2653,7 @@
           if (hasSync) {
             const relTime = formatRelativeTime(d.last_sync_at || d.last_sync) || 'Récemment';
             badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
-            badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Synchronisé (${relTime})</span>`;
+            badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Synchronisé (${escapeHtml(relTime)})</span>`;
           } else {
             badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1";
             badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>En attente du 1er envoi depuis votre téléphone</span>';
@@ -3019,7 +3022,7 @@
       const iconName = type === 'success' ? 'check-circle' : (type === 'error' ? 'alert-triangle' : 'info');
       toast.innerHTML = `
         <i data-lucide="${iconName}" class="w-4 h-4 shrink-0 ${type === 'success' ? 'text-emerald-400' : (type === 'error' ? 'text-red-400' : 'text-blue-400')}"></i>
-        <div class="flex-1 leading-snug">${message}</div>
+        <div class="flex-1 leading-snug">${escapeHtml(message)}</div>
       `;
       container.appendChild(toast);
       if (window.lucide && lucide.createIcons) {
@@ -3499,11 +3502,11 @@
         // Header : Avatar utilisateur connecté avec menu déroulant
         if (headerContainer) {
           headerContainer.innerHTML = `
-            <button type="button" onclick="toggleUserDropdown()" id="btn-header-avatar" class="flex items-center space-x-1.5 p-1 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-brand-500/40 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${name} (${email})">
+            <button type="button" onclick="toggleUserDropdown()" id="btn-header-avatar" class="flex items-center space-x-1.5 p-1 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-brand-500/40 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${escapeHtml(name)} (${escapeHtml(email)})">
               <div class="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-xs shrink-0">
-                ${picture ? `<img src="${picture}" class="w-full h-full object-cover" alt="Avatar">` : `<span>${initials}</span>`}
+                ${picture ? `<img src="${escapeHtml(picture)}" class="w-full h-full object-cover" alt="Avatar">` : `<span>${escapeHtml(initials)}</span>`}
               </div>
-              <span class="hidden sm:inline font-semibold px-1 text-brand-300">${name.split(' ')[0]}</span>
+              <span class="hidden sm:inline font-semibold px-1 text-brand-300">${escapeHtml(name.split(' ')[0])}</span>
               <span class="w-2 h-2 rounded-full bg-brand-400 mr-1"></span>
               <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 hidden sm:inline"></i>
             </button>
@@ -3511,8 +3514,8 @@
             <!-- Menu Déroulant Profil -->
             <div id="header-user-dropdown" class="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#151D2A] border border-[#1F2A3C] shadow-2xl p-2 space-y-1 z-50 hidden">
               <div class="px-3 py-2 border-b border-[#1F2A3C] mb-1">
-                <div class="text-xs font-bold text-white truncate">${name}</div>
-                <div class="text-[10px] text-brand-400 truncate">${email}</div>
+                <div class="text-xs font-bold text-white truncate">${escapeHtml(name)}</div>
+                <div class="text-[10px] text-brand-400 truncate">${escapeHtml(email)}</div>
                 <span class="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">${isGoogle ? 'Compte Google' : 'Compte Email'}</span>
               </div>
               <button onclick="toggleUserDropdown(); openProfileModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
@@ -3545,8 +3548,8 @@
         if (profEmail) profEmail.innerText = `${email} (${isGoogle ? 'Google' : 'Email'})`;
         if (profAvatar) {
           profAvatar.innerHTML = picture
-            ? `<img src="${picture}" class="w-full h-full object-cover">`
-            : `<div class="w-full h-full bg-brand-600 flex items-center justify-center text-white font-bold text-xs">${initials}</div>`;
+            ? `<img src="${escapeHtml(picture)}" class="w-full h-full object-cover">`
+            : `<div class="w-full h-full bg-brand-600 flex items-center justify-center text-white font-bold text-xs">${escapeHtml(initials)}</div>`;
         }
         if (profActionBtn) {
           profActionBtn.innerText = "Gérer Compte";

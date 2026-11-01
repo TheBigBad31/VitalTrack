@@ -320,7 +320,7 @@ function renderProfileSelector() {
         <div class="w-2.5 h-2.5 rounded-full ${isReadOnly ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'} shrink-0"></div>
         <div class="flex items-center space-x-1.5 max-w-[140px] sm:max-w-[180px] truncate">
           <i data-lucide="${isReadOnly ? 'eye' : 'book-open'}" class="w-3.5 h-3.5 ${isReadOnly ? 'text-amber-400' : 'text-brand-400'} shrink-0"></i>
-          <span class="truncate">${currentName}</span>
+          <span class="truncate">${escapeHtml(currentName)}</span>
         </div>
         <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i>
       </button>
@@ -366,21 +366,25 @@ function renderProfileSelector() {
               const fpic = f.friend_picture;
               const initials = fname.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT';
               const isSelected = isReadOnly && window.currentReadOnlyFriend.friend_id === fid;
+              // Littéraux JS sûrs pour l'attribut inline (nom, email, avatar).
+              const fnameJs = escapeHtml(JSON.stringify(String(fname)));
+              const femailJs = escapeHtml(JSON.stringify(String(f.friend_email || '')));
+              const fpicJs = escapeHtml(JSON.stringify(String(fpic || '')));
 
               return `
                 <button 
                   type="button"
-                  onclick="enterReadOnlyMode(${fid}, '${fname.replace(/'/g, "\\'")}', '${(f.friend_email || '').replace(/'/g, "\\'")}', '${fpic || ''}'); toggleProfileDropdown();" 
+                  onclick="enterReadOnlyMode(${fid}, ${fnameJs}, ${femailJs}, ${fpicJs}); toggleProfileDropdown();" 
                   class="w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
                     isSelected ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-slate-200 hover:bg-[#1F2A3C]'
                   }"
                 >
                   <div class="flex items-center space-x-2.5 min-w-0">
                     <div class="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-xs shrink-0">
-                      ${fpic ? `<img src="${fpic}" class="w-full h-full object-cover">` : initials}
+                      ${fpic ? `<img src="${escapeHtml(fpic)}" class="w-full h-full object-cover">` : escapeHtml(initials)}
                     </div>
                     <div class="min-w-0">
-                      <div class="font-semibold text-white truncate">${fname}</div>
+                      <div class="font-semibold text-white truncate">${escapeHtml(fname)}</div>
                       <div class="text-[10px] text-amber-400/80 flex items-center space-x-1">
                         <i data-lucide="eye" class="w-2.5 h-2.5"></i>
                         <span>Lecture seule</span>
@@ -509,16 +513,20 @@ function renderFriendsView() {
         const initials = fname.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT';
         const dateStr = f.created_at ? new Date(f.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
         const isCurrentView = window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id === f.friend_id;
+        // Littéraux JS sûrs pour les attributs inline (nom, email, avatar).
+        const fnameJs = escapeHtml(JSON.stringify(String(fname)));
+        const femailJs = escapeHtml(JSON.stringify(String(f.friend_email || '')));
+        const fpicJs = escapeHtml(JSON.stringify(String(fpic || '')));
 
         return `
           <div class="bg-[#0B0B1A] border ${isCurrentView ? 'border-amber-500/60 ring-2 ring-amber-500/30' : 'border-[#25254A]'} rounded-2xl p-4 flex flex-col justify-between space-y-3.5 hover:border-slate-600 transition-all">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-sm shrink-0">
-                ${fpic ? `<img src="${fpic}" class="w-full h-full object-cover">` : initials}
+                ${fpic ? `<img src="${escapeHtml(fpic)}" class="w-full h-full object-cover">` : escapeHtml(initials)}
               </div>
               <div class="min-w-0 flex-1">
-                <div class="font-bold text-white text-sm truncate">${fname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${f.friend_email}</div>
+                <div class="font-bold text-white text-sm truncate">${escapeHtml(fname)}</div>
+                <div class="text-[11px] text-slate-400 truncate">${escapeHtml(f.friend_email)}</div>
                 <div class="text-[10px] text-brand-400/80 font-medium">Ami depuis le ${dateStr}</div>
               </div>
             </div>
@@ -536,7 +544,7 @@ function renderFriendsView() {
               ` : `
                 <button 
                   type="button" 
-                  onclick="enterReadOnlyMode(${f.friend_id}, '${fname.replace(/'/g, "\\'")}', '${(f.friend_email || '').replace(/'/g, "\\'")}', '${fpic || ''}')" 
+                  onclick="enterReadOnlyMode(${f.friend_id}, ${fnameJs}, ${femailJs}, ${fpicJs})" 
                   class="flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
                 >
                   <i data-lucide="eye" class="w-3.5 h-3.5"></i>
@@ -545,7 +553,7 @@ function renderFriendsView() {
               `}
               <button 
                 type="button" 
-                onclick="revokeOrDeleteFriend(${f.friend_id}, 'Voulez-vous vraiment révoquer le partage avec ${fname.replace(/'/g, "\\'")} ?')" 
+                onclick="revokeOrDeleteFriend(${f.friend_id}, ${escapeHtml(JSON.stringify(`Voulez-vous vraiment révoquer le partage avec ${fname} ?`))})" 
                 title="Révoquer le partage" 
                 class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-center transition-colors"
               >
@@ -575,11 +583,11 @@ function renderFriendsView() {
           <div class="bg-[#0B0B1A] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between space-y-3">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl bg-violet-600/30 border border-violet-500/40 text-violet-300 flex items-center justify-center font-bold text-sm shrink-0">
-                ${r.sender_picture ? `<img src="${r.sender_picture}" class="w-full h-full object-cover rounded-xl">` : initial}
+                ${r.sender_picture ? `<img src="${escapeHtml(r.sender_picture)}" class="w-full h-full object-cover rounded-xl">` : escapeHtml(initial)}
               </div>
               <div class="min-w-0 flex-1">
-                <div class="font-bold text-white text-sm truncate">${sname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${r.sender_email}</div>
+                <div class="font-bold text-white text-sm truncate">${escapeHtml(sname)}</div>
+                <div class="text-[11px] text-slate-400 truncate">${escapeHtml(r.sender_email)}</div>
                 <div class="text-[10px] text-indigo-400 font-medium">Souhaite partager ses données en lecture seule</div>
               </div>
             </div>
@@ -624,11 +632,11 @@ function renderFriendsView() {
           <div class="bg-[#0B0B1A] border border-[#25254A] rounded-2xl p-4 flex items-center justify-between space-x-3">
             <div class="flex items-center space-x-3 min-w-0">
               <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs shrink-0">
-                ${rname[0].toUpperCase()}
+                ${escapeHtml(rname.charAt(0).toUpperCase())}
               </div>
               <div class="min-w-0">
-                <div class="font-bold text-white text-xs truncate">${rname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${r.recipient_email}</div>
+                <div class="font-bold text-white text-xs truncate">${escapeHtml(rname)}</div>
+                <div class="text-[11px] text-slate-400 truncate">${escapeHtml(r.recipient_email)}</div>
                 <div class="text-[10px] text-amber-400/90 font-medium flex items-center space-x-1">
                   <i data-lucide="clock" class="w-3 h-3"></i>
                   <span>Invitation en attente</span>

@@ -468,7 +468,7 @@ function renderCatalogItems() {
       sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Aliment du socle public"><i data-lucide="globe" class="w-2.5 h-2.5"></i><span>Public</span></span>`;
     } else if (isFriend) {
       const friendLabel = item.owner_name || item.friend_name || "Ami";
-      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${friendLabel}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${friendLabel}</span></span>`;
+      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${escapeHtml(friendLabel)}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${escapeHtml(friendLabel)}</span></span>`;
     } else {
       sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Ma création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i><span>Perso</span></span>`;
     }
@@ -486,9 +486,9 @@ function renderCatalogItems() {
         ${benefitsList.map(b => `
           <span 
             class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-brand-500/15 border border-brand-500/30 text-xs cursor-help hover:scale-110 hover:bg-brand-500/25 transition-all shadow-sm"
-            title="${b.title || b.benefit_id}${b.explanation ? ' : ' + b.explanation : ''}"
+            title="${escapeHtml(b.title || b.benefit_id)}${b.explanation ? ' : ' + escapeHtml(b.explanation) : ''}"
           >
-            ${b.icon || '🛡️'}
+            ${escapeHtml(b.icon || '🛡️')}
           </span>
         `).join('')}
       </div>
@@ -510,7 +510,7 @@ function renderCatalogItems() {
               <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
             </div>
             ${typeBadge}
-            <h4 class="font-bold text-xs text-white truncate" title="${item.name}">${item.name}</h4>
+            <h4 class="font-bold text-xs text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
             ${sourceBadge}
           </div>
           <div class="text-right shrink-0">
@@ -521,7 +521,7 @@ function renderCatalogItems() {
 
         ${item.photo_url ? `
           <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-14 bg-[#151D2A]">
-            <img src="${item.photo_url}" alt="${item.name}" class="w-full h-full object-cover pointer-events-none">
+            <img src="${escapeHtml(item.photo_url)}" alt="${escapeHtml(item.name)}" class="w-full h-full object-cover pointer-events-none">
           </div>
         ` : ''}
 
@@ -535,9 +535,9 @@ function renderCatalogItems() {
         </div>
 
         ${isDish && item.recipe_items && item.recipe_items.length > 0 ? `
-          <div class="px-2 py-0.5 bg-[#151D2A]/80 rounded-lg border border-indigo-500/20 text-[10px] text-slate-400 truncate" title="${item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', ')}">
+          <div class="px-2 py-0.5 bg-[#151D2A]/80 rounded-lg border border-indigo-500/20 text-[10px] text-slate-400 truncate" title="${escapeHtml(item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', '))}">
             <span class="text-indigo-300 font-bold">🥗 ${item.recipe_items.length} ingr. :</span>
-            <span class="text-slate-300 font-medium">${item.recipe_items.map(ing => ing.name).join(', ')}</span>
+            <span class="text-slate-300 font-medium">${escapeHtml(item.recipe_items.map(ing => ing.name).join(', '))}</span>
           </div>
         ` : ''}
 
@@ -612,7 +612,7 @@ function handleCatalogDragStart(event, itemId) {
   ghost.innerHTML = `
     <span class="text-base">${item.item_type === 'dish' ? '🍲' : '🥗'}</span>
     <div>
-      <div class="font-bold text-xs text-white">${item.name}</div>
+      <div class="font-bold text-xs text-white">${escapeHtml(item.name)}</div>
       <div class="text-[10px] text-brand-300">${Math.round(item.calories_per_unit)} kcal &bull; ${item.default_quantity} ${item.default_unit}</div>
     </div>
   `;
@@ -876,14 +876,14 @@ function populateDishIngredientSelect() {
   if (catalogFoods.length > 0) {
     html += '<optgroup label="📋 Aliments de mon catalogue">';
     catalogFoods.forEach(f => {
-      html += `<option value="cat_${f.id}">${f.name} (${f.default_quantity}${f.default_unit} = ${Math.round(f.calories_per_unit)} kcal)</option>`;
+      html += `<option value="cat_${f.id}">${escapeHtml(f.name)} (${f.default_quantity}${f.default_unit} = ${Math.round(f.calories_per_unit)} kcal)</option>`;
     });
     html += '</optgroup>';
   }
 
   html += '<optgroup label="🥖 Ingrédients essentiels recommandés">';
   RECOMMENDED_STAPLE_INGREDIENTS.forEach((s, idx) => {
-    html += `<option value="staple_${idx}">${s.emoji || '🥗'} ${s.label}</option>`;
+    html += `<option value="staple_${idx}">${escapeHtml(s.emoji || '🥗')} ${escapeHtml(s.label)}</option>`;
   });
   html += '</optgroup>';
 
@@ -1107,7 +1107,7 @@ function renderDishIngredientsList() {
       <div class="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#151D2A] border border-[#1F2A3C] hover:border-indigo-500/40 transition-colors">
         <div class="flex-1 min-w-0">
           <div class="flex items-center space-x-1.5">
-            <span class="text-xs font-bold text-white truncate">${ing.name}</span>
+            <span class="text-xs font-bold text-white truncate">${escapeHtml(ing.name)}</span>
             <span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 font-mono">Ingrédient</span>
           </div>
           <div class="text-[10px] text-slate-400">
@@ -1233,8 +1233,8 @@ function renderModalSelectedBenefits() {
 
   container.innerHTML = modalSelectedBenefits.map((b, idx) => `
     <span class="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
-      <span>${b.icon || '🛡️'}</span>
-      <span>${b.title || b.benefit_id}</span>
+      <span>${escapeHtml(b.icon || '🛡️')}</span>
+      <span>${escapeHtml(b.title || b.benefit_id)}</span>
       <button type="button" onclick="removeBenefitFromModalSelection(${idx})" class="hover:text-rose-400 ml-1">
         &times;
       </button>
@@ -1326,19 +1326,23 @@ function renderModalAutoBenefits(results) {
 
   container.innerHTML = results.map(r => {
     const alreadySelected = modalSelectedBenefits.some(b => b.benefit_id === r.benefit_id);
+    // Littéraux JS sûrs pour l'attribut inline (id, titre, icône, explication).
+    const jsArgs = [r.benefit_id, r.title, r.icon, r.explanation]
+      .map(v => escapeHtml(JSON.stringify(String(v == null ? '' : v))))
+      .join(', ');
     return `
       <button 
         type="button"
-        onclick="applyAutoBenefitToModal('${r.benefit_id}', '${r.title.replace(/'/g, "\\'")}', '${r.icon}', '${r.explanation.replace(/'/g, "\\'")}')"
+        onclick="applyAutoBenefitToModal(${jsArgs})"
         class="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded-md font-semibold transition-all ${
           alreadySelected 
             ? 'bg-brand-500 text-white font-bold' 
             : 'bg-brand-500/10 text-brand-300 border border-brand-500/30 hover:bg-brand-500/25'
         }"
-        title="${r.explanation}"
+        title="${escapeHtml(r.explanation)}"
       >
-        <span>${r.icon}</span>
-        <span>${r.title}</span>
+        <span>${escapeHtml(r.icon)}</span>
+        <span>${escapeHtml(r.title)}</span>
         <span>${alreadySelected ? '✓' : '+'}</span>
       </button>
     `;
@@ -1986,7 +1990,7 @@ function renderMealsJournal() {
             return `
             <div class="flex items-center justify-between p-2 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] hover:border-slate-700 transition-colors ${isPending ? 'opacity-70' : ''}"${isPending ? ' title="Enregistrement en cours…"' : ''}>
               <div class="flex-1 pr-2">
-                <div class="text-xs font-bold text-white line-clamp-1">${it.name}${isPending ? ' <span class="text-[10px] font-normal text-slate-500">• en cours</span>' : ''}</div>
+                <div class="text-xs font-bold text-white line-clamp-1">${escapeHtml(it.name)}${isPending ? ' <span class="text-[10px] font-normal text-slate-500">• en cours</span>' : ''}</div>
                 <div class="text-[11px] text-slate-400">
                   <span class="font-semibold text-slate-300">${it.quantity} ${it.unit}</span> &bull; 
                   <span class="text-brand-400 font-bold">${Math.round(it.calories)} kcal</span> 
@@ -2096,9 +2100,9 @@ function renderJournalDayBenefitsSummary(meals) {
   container.innerHTML = benefitsList.map(b => `
     <div 
       class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs shadow-sm cursor-help hover:bg-brand-500/20 hover:scale-105 transition-all"
-      title="${b.title} : ${b.explanation ? b.explanation : ''} (Apporté par : ${(b.foodNames || []).join(', ')})"
+      title="${escapeHtml(b.title)} : ${b.explanation ? escapeHtml(b.explanation) : ''} (Apporté par : ${escapeHtml((b.foodNames || []).join(', '))})"
     >
-      <span class="text-base">${b.icon || '🛡️'}</span>
+      <span class="text-base">${escapeHtml(b.icon || '🛡️')}</span>
       <span class="text-[10px] font-bold text-brand-300 font-mono">${(b.foodNames || []).length}</span>
     </div>
   `).join('');
@@ -2202,7 +2206,7 @@ function renderModalCatalogList(searchQuery = '') {
     if (isPublic) {
       badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">Public</span>';
     } else if (isFriend) {
-      badge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">${it.owner_name || it.friend_name || 'Ami'}</span>`;
+      badge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">${escapeHtml(it.owner_name || it.friend_name || 'Ami')}</span>`;
     } else {
       badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Perso</span>';
     }
@@ -2210,7 +2214,7 @@ function renderModalCatalogList(searchQuery = '') {
       <div onclick="selectCatalogItemForPortion('${it.id}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
         <div class="flex-1 pr-2">
           <div class="flex items-center space-x-1.5">
-            <span class="text-xs font-bold text-white">${it.name}</span>
+            <span class="text-xs font-bold text-white">${escapeHtml(it.name)}</span>
             ${badge}
           </div>
           <div class="text-[11px] text-slate-400">Réf: ${it.default_quantity} ${it.default_unit} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
@@ -2465,29 +2469,32 @@ function renderFriendSubscriptionsList(subs) {
     const friendEmail = sub.friend_email || sub.email || '';
     const itemsCount = sub.items_count !== undefined ? sub.items_count : (sub.total_items || '--');
     const targetId = sub.target_user_id || sub.id;
+    // Littéraux JS sûrs pour les attributs inline (évite toute évasion HTML/JS).
+    const friendNameJs = escapeHtml(JSON.stringify(String(friendName)));
+    const targetIdJs = escapeHtml(JSON.stringify(String(targetId)));
 
     return `
       <div class="bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/40 rounded-xl p-3 flex items-center justify-between gap-3 transition-all">
         <div class="flex items-center space-x-3 min-w-0 flex-1">
           <div class="w-9 h-9 rounded-xl bg-brand-500/20 border border-brand-500/30 text-brand-300 font-bold flex items-center justify-center shrink-0 text-xs">
-            ${friendName.charAt(0).toUpperCase()}
+            ${escapeHtml(friendName.charAt(0).toUpperCase())}
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center space-x-2">
-              <span class="font-bold text-xs text-white truncate">${friendName}</span>
+              <span class="font-bold text-xs text-white truncate">${escapeHtml(friendName)}</span>
               <span class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Synchronisé</span>
               </span>
             </div>
-            <div class="text-[11px] text-slate-400 truncate">${friendEmail || 'Utilisateur partagé'} &bull; ${itemsCount} aliments partagés</div>
+            <div class="text-[11px] text-slate-400 truncate">${escapeHtml(friendEmail || 'Utilisateur partagé')} &bull; ${itemsCount} aliments partagés</div>
           </div>
         </div>
 
         <div class="flex items-center gap-1.5 shrink-0">
           <button 
             type="button" 
-            onclick="exploreFriendCatalog('${targetId}', '${friendName}')" 
+            onclick="exploreFriendCatalog(${targetIdJs}, ${friendNameJs})" 
             class="px-2.5 py-1.5 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 text-brand-300 text-xs font-semibold flex items-center space-x-1 transition-all"
             title="Explorer le catalogue de cet ami"
           >
@@ -2496,7 +2503,7 @@ function renderFriendSubscriptionsList(subs) {
           </button>
           <button 
             type="button" 
-            onclick="removeFriendSubscription('${targetId}', '${friendName}')" 
+            onclick="removeFriendSubscription(${targetIdJs}, ${friendNameJs})" 
             class="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
             title="Se désabonner de ce catalogue"
           >
@@ -2641,7 +2648,7 @@ function renderFriendExplorerItems(items) {
         <div class="flex items-center space-x-2 min-w-0 flex-1">
           <span class="text-base shrink-0">${isDish ? '🍽️' : '🍎'}</span>
           <div class="min-w-0 flex-1">
-            <h5 class="text-xs font-bold text-white truncate">${it.name}</h5>
+            <h5 class="text-xs font-bold text-white truncate">${escapeHtml(it.name)}</h5>
             <div class="text-[10px] text-slate-400 font-mono">
               ${unit} &bull; <span class="text-amber-400 font-bold">${cal} kcal</span> (P:${p}g G:${g}g L:${l}g)
             </div>

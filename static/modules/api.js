@@ -112,3 +112,25 @@ function refreshIcons(root) {
 }
 
 window.refreshIcons = refreshIcons;
+
+/**
+ * Échappement HTML pour neutraliser les injections XSS.
+ * Remplace les caractères sensibles par leurs entités HTML afin qu'aucune
+ * donnée utilisateur (ou provenant de l'API) ne puisse être interprétée
+ * comme du HTML/JS lorsqu'elle est injectée dans le DOM.
+ * @param {string} unsafe - Chaîne brute à échapper
+ * @returns {string} Chaîne échappée, safe pour une injection innerHTML
+ */
+function escapeHtml(unsafe) {
+  if (unsafe == null) return '';
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/`/g, '&#x60;');
+}
+
+// Expose globalement pour les modules views (nutrition, dashboard, friends).
+window.escapeHtml = escapeHtml;
