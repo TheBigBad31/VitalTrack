@@ -14,18 +14,39 @@ on:
         required: false
         type: string
       run-lint:
-        description: 'Run linting step (ruff/flake8)'
-        default: 'true'
+        description: 'Run ruff lint gates'
+        default: true
+        required: false
+        type: boolean
+      run-mypy:
+        description: 'Run mypy type checking (ratchet on .github/mypy-baseline.txt)'
+        default: true
         required: false
         type: boolean
       run-tests:
-        description: 'Run pytest suite'
-        default: 'true'
+        description: 'Run pytest suite with coverage threshold'
+        default: true
         required: false
         type: boolean
+      run-audit:
+        description: 'Audit dependencies with pip-audit'
+        default: true
+        required: false
+        type: boolean
+      coverage-threshold:
+        description: 'Minimum line coverage (%) enforced by pytest-cov'
+        default: '80'
+        required: false
+        type: string
+      ruff-critical-rules:
+        description: 'Rule selectors that fail the build (blocking lint gate)'
+        default: 'E9,F63,F7,F82'
+        required: false
+        type: string
 
 jobs:
-  syntax-check:
+  lint:
+    name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -40,7 +61,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('.requirements.txt') }}
+          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-python-${{ inputs.python-version }}-
 
@@ -49,31 +70,33 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ruff
 
       - name: Syntax check with py_compile
+        if: inputs.run-lint == true
         working-directory: ${{ inputs.working-directory }}
         run: |
           find . -name '*.py' -not -path './.venv/*' -not -path './build/*' | while read -r f; do
             python -m py_compile "$f" || exit 1
           done
 
-      - name: Lint with ruff (non-blocking)
+      - name: Ruff — erreurs critiques (bloquant)
         if: inputs.run-lint == true
         working-directory: ${{ inputs.working-directory }}
         run: |
-          pip install ruff
-          ruff check . || true
+          ruff check . --select "${{ inputs.ruff-critical-rules }}" --output-format=github
 
-      - name: Lint with flake8 (non-blocking)
+      - name: Ruff — rapport complet (non bloquant)
         if: inputs.run-lint == true
+        continue-on-error: true
         working-directory: ${{ inputs.working-directory }}
         run: |
-          pip install flake8
-          flake8 . --count --select=E9,F6,F7,W501 || true
+          ruff check . --output-format=github --statistics
 
-  test:
+  mypy:
+    name: Typage (mypy)
     runs-on: ubuntu-latest
-    needs: syntax-check
+    if: inputs.run-mypy == true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,7 +110,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('.requirements.txt') }}
+          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-python-${{ inputs.python-version }}-
 
@@ -96,14 +119,118 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install mypy
 
-      - name: Run pytest
+      - name: mypy — ratchet sur le nombre d'erreurs (bloquant)
         working-directory: ${{ inputs.working-directory }}
-        if: inputs.run-tests == true
         run: |
-          uv run pytest -v
+          set -u
+          baseline_file=".github/mypy-baseline.txt"
 
-          # Run postgres compatibility tests if available
-          if [ -f tests/test_postgres_compat.py ]; then
-            uv run pytest tests/test_postgres_compat.py -v
+          if [ ! -f "$baseline_file" ]; then
+            echo "::error::Baseline mypy introuvable : $baseline_file"
+            exit 1
           fi
+
+          baseline=$(tr -dc '0-9' < "$baseline_file")
+          mypy src --no-error-summary 2>&1 | tee mypy.log || true
+
+          errors=$(grep -c ': error: ' mypy.log || true)
+          errors=${errors:-0}
+
+          {
+            echo "### mypy"
+            echo ""
+            echo "| Erreurs | Baseline |"
+            echo "| --- | --- |"
+            echo "| $errors | $baseline |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$errors" -gt "$baseline" ]; then
+            echo "::error::mypy : $errors erreurs (> baseline $baseline). Corrigez les nouvelles erreurs de typage."
+            exit 1
+          fi
+
+          if [ "$errors" -lt "$baseline" ]; then
+            echo "::notice::mypy : progrès détecté ($errors < $baseline). Mettez à jour .github/mypy-baseline.txt vers $errors."
+          fi
+
+          echo "mypy : $errors erreur(s), baseline $baseline — OK."
+
+      - name: Upload mypy log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-report
+          path: ${{ inputs.working-directory }}/mypy.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  test:
+    name: Tests (pytest + couverture)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-${{ inputs.python-version }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ inputs.python-version }}-
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run pytest with coverage gate
+        if: inputs.run-tests == true
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m pytest -v \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=${{ inputs.coverage-threshold }}
+
+      - name: Upload coverage report
+        if: always() && inputs.run-tests == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ inputs.working-directory }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  audit:
+    name: Audit dépendances (pip-audit)
+    runs-on: ubuntu-latest
+    if: inputs.run-audit == true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Audit des dépendances (bloquant)
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m pip_audit -r requirements.txt --desc --progress-spinner off

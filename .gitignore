@@ -3,6 +3,10 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .venv/
+.ci-venv/
+.coverage
+coverage.xml
+mypy.log
 data/vitaltrack.db
 data/*.db
 /tmp/vitaltrack.db

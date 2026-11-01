@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-quality:
     uses: ./.github/workflows/reusable-python-quality.yml
@@ -13,7 +20,10 @@ jobs:
       python-version: '3.11'
       working-directory: '.'
       run-lint: true
+      run-mypy: true
       run-tests: true
+      run-audit: true
+      coverage-threshold: '80'
 
   frontend-check:
     uses: ./.github/workflows/reusable-frontend-check.yml
