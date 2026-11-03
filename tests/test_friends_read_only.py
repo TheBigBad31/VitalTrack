@@ -401,3 +401,31 @@ def test_read_only_dashboard_and_daily_metrics(client_env):
     assert c.get(f"/api/dashboard?user_id={u_a['id']}", headers=h_c).status_code == 403
     assert c.get(f"/api/daily-metrics?user_id={u_a['id']}", headers=h_c).status_code == 403
     assert c.get(f"/api/metrics?user_id={u_a['id']}", headers=h_c).status_code == 403
+def test_friend_name_xss_escaped_in_api(client_env):
+    """Verifie que les charges XSS dans les noms d'amis sont stockees et restituees
+    correctement par l'API sans alteration et requierent le traitement escapeHtml du frontend (BALI-180)."""
+    c = client_env["client"]
+    h_a = client_env["headers_a"]
+    h_b = client_env["headers_b"]
+    u_a = client_env["user_a"]
+    u_b = client_env["user_b"]
+    db = client_env["db"]
+
+    # Alice met a jour son profil avec un payload XSS
+    xss_payload = '<img src=x onerror=alert("xss_friend")>'
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET name = ? WHERE id = ?", (xss_payload, u_a["id"]))
+        conn.commit()
+
+    # Bob consulte la liste d'amis apres acceptation
+    req = c.post("/api/friends/request", json={"identifier": u_b["email"]}, headers=h_a).json()
+    c.post(f"/api/friends/{req['friendship']['id']}/accept", headers=h_b)
+
+    friends_res = c.get("/api/friends", headers=h_b)
+    assert friends_res.status_code == 200
+    friends_data = friends_res.json()
+    friends_list = friends_data.get("friends", [])
+    assert len(friends_list) >= 1
+    found = any(f.get("friend_name") == xss_payload for f in friends_list)
+    assert found is True

@@ -303,6 +303,7 @@ function renderProfileSelector() {
   const friends = (window.currentFriendsData && window.currentFriendsData.friends) || [];
   const isReadOnly = Boolean(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active);
   const currentName = isReadOnly ? (window.currentReadOnlyFriend.friend_name || window.currentReadOnlyFriend.friend_email) : 'Mon Journal';
+  const escapedCurrentName = escapeHtml(currentName);
 
   container.innerHTML = `
     <div class="relative">
@@ -320,7 +321,7 @@ function renderProfileSelector() {
         <div class="w-2.5 h-2.5 rounded-full ${isReadOnly ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'} shrink-0"></div>
         <div class="flex items-center space-x-1.5 max-w-[140px] sm:max-w-[180px] truncate">
           <i data-lucide="${isReadOnly ? 'eye' : 'book-open'}" class="w-3.5 h-3.5 ${isReadOnly ? 'text-amber-400' : 'text-brand-400'} shrink-0"></i>
-          <span class="truncate">${currentName}</span>
+          <span class="truncate">${escapedCurrentName}</span>
         </div>
         <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i>
       </button>
@@ -361,17 +362,23 @@ function renderProfileSelector() {
           </div>
           <div class="max-h-48 overflow-y-auto space-y-0.5">
             ${friends.map(f => {
-              const fid = f.friend_id;
-              const fname = f.friend_name || f.friend_email.split('@')[0];
-              const fpic = f.friend_picture;
-              const initials = fname.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT';
-              const isSelected = isReadOnly && window.currentReadOnlyFriend.friend_id === fid;
+              const fid = parseInt(f.friend_id, 10) || 0;
+              const rawName = f.friend_name || (f.friend_email ? f.friend_email.split('@')[0] : 'Ami');
+              const fname = escapeHtml(rawName);
+              const fpic = sanitizeUrl(f.friend_picture);
+              const email = escapeHtml(f.friend_email || '');
+              const initials = escapeHtml(rawName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT');
+              const isSelected = isReadOnly && window.currentReadOnlyFriend && window.currentReadOnlyFriend.friend_id === fid;
 
               return `
                 <button 
                   type="button"
-                  onclick="enterReadOnlyMode(${fid}, '${fname.replace(/'/g, "\\'")}', '${(f.friend_email || '').replace(/'/g, "\\'")}', '${fpic || ''}'); toggleProfileDropdown();" 
-                  class="w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                  data-action="enter-readonly"
+                  data-friend-id="${fid}"
+                  data-friend-name="${fname}"
+                  data-friend-email="${email}"
+                  data-friend-picture="${fpic}"
+                  class="btn-friend-select-profile w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
                     isSelected ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-slate-200 hover:bg-[#1F2A3C]'
                   }"
                 >
@@ -408,6 +415,18 @@ function renderProfileSelector() {
       </div>
     </div>
   `;
+
+  container.querySelectorAll('.btn-friend-select-profile').forEach(btn => {
+    btn.addEventListener('click', () => {
+      enterReadOnlyMode(
+        parseInt(btn.dataset.friendId, 10),
+        btn.dataset.friendName,
+        btn.dataset.friendEmail,
+        btn.dataset.friendPicture
+      );
+      toggleProfileDropdown();
+    });
+  });
 
   if (window.lucide && lucide.createIcons) lucide.createIcons();
 }
@@ -504,21 +523,24 @@ function renderFriendsView() {
       `;
     } else {
       containerFriends.innerHTML = data.friends.map(f => {
-        const fname = f.friend_name || f.friend_email.split('@')[0];
-        const fpic = f.friend_picture;
-        const initials = fname.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT';
-        const dateStr = f.created_at ? new Date(f.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-        const isCurrentView = window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id === f.friend_id;
+        const rawName = f.friend_name || (f.friend_email ? f.friend_email.split('@')[0] : 'Ami');
+        const fname = escapeHtml(rawName);
+        const fpic = sanitizeUrl(f.friend_picture);
+        const email = escapeHtml(f.friend_email || '');
+        const initials = escapeHtml(rawName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT');
+        const dateStr = f.created_at ? escapeHtml(new Date(f.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })) : '';
+        const fid = parseInt(f.friend_id, 10) || 0;
+        const isCurrentView = window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id === fid;
 
         return `
-          <div class="bg-[#0B0B1A] border ${isCurrentView ? 'border-amber-500/60 ring-2 ring-amber-500/30' : 'border-[#25254A]'} rounded-2xl p-4 flex flex-col justify-between space-y-3.5 hover:border-slate-600 transition-all">
+          <div class="bg-[#0B0F17] border ${isCurrentView ? 'border-amber-500/60 ring-2 ring-amber-500/30' : 'border-[#25254A]'} rounded-2xl p-4 flex flex-col justify-between space-y-3.5 hover:border-slate-600 transition-all">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-sm shrink-0">
                 ${fpic ? `<img src="${fpic}" class="w-full h-full object-cover">` : initials}
               </div>
               <div class="min-w-0 flex-1">
                 <div class="font-bold text-white text-sm truncate">${fname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${f.friend_email}</div>
+                <div class="text-[11px] text-slate-400 truncate">${email}</div>
                 <div class="text-[10px] text-brand-400/80 font-medium">Ami depuis le ${dateStr}</div>
               </div>
             </div>
@@ -536,8 +558,12 @@ function renderFriendsView() {
               ` : `
                 <button 
                   type="button" 
-                  onclick="enterReadOnlyMode(${f.friend_id}, '${fname.replace(/'/g, "\\'")}', '${(f.friend_email || '').replace(/'/g, "\\'")}', '${fpic || ''}')" 
-                  class="flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
+                  data-action="enter-readonly"
+                  data-friend-id="${fid}"
+                  data-friend-name="${fname}"
+                  data-friend-email="${email}"
+                  data-friend-picture="${fpic}"
+                  class="btn-friend-enter-readonly flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
                 >
                   <i data-lucide="eye" class="w-3.5 h-3.5"></i>
                   <span>Consulter le journal</span>
@@ -545,9 +571,11 @@ function renderFriendsView() {
               `}
               <button 
                 type="button" 
-                onclick="revokeOrDeleteFriend(${f.friend_id}, 'Voulez-vous vraiment révoquer le partage avec ${fname.replace(/'/g, "\\'")} ?')" 
+                data-action="revoke-friend"
+                data-friend-id="${fid}"
+                data-friend-name="${fname}"
                 title="Révoquer le partage" 
-                class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-center transition-colors"
+                class="btn-friend-revoke p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-center transition-colors"
               >
                 <i data-lucide="user-x" class="w-4 h-4"></i>
               </button>
@@ -555,6 +583,25 @@ function renderFriendsView() {
           </div>
         `;
       }).join('');
+
+      containerFriends.querySelectorAll('.btn-friend-enter-readonly').forEach(btn => {
+        btn.addEventListener('click', () => {
+          enterReadOnlyMode(
+            parseInt(btn.dataset.friendId, 10),
+            btn.dataset.friendName,
+            btn.dataset.friendEmail,
+            btn.dataset.friendPicture
+          );
+        });
+      });
+
+      containerFriends.querySelectorAll('.btn-friend-revoke').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const fid = parseInt(btn.dataset.friendId, 10);
+          const fname = btn.dataset.friendName;
+          revokeOrDeleteFriend(fid, `Voulez-vous vraiment révoquer le partage avec ${fname} ?`);
+        });
+      });
     }
   }
 
@@ -569,17 +616,22 @@ function renderFriendsView() {
       `;
     } else {
       containerIncoming.innerHTML = data.incoming_requests.map(r => {
-        const sname = r.sender_name || r.sender_email.split('@')[0];
-        const initial = sname[0].toUpperCase();
+        const rawName = r.sender_name || (r.sender_email ? r.sender_email.split('@')[0] : 'Expéditeur');
+        const sname = escapeHtml(rawName);
+        const initial = escapeHtml(rawName[0] ? rawName[0].toUpperCase() : '?');
+        const semail = escapeHtml(r.sender_email || '');
+        const spic = sanitizeUrl(r.sender_picture);
+        const reqId = parseInt(r.request_id, 10) || 0;
+
         return `
-          <div class="bg-[#0B0B1A] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between space-y-3">
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between space-y-3">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl bg-violet-600/30 border border-violet-500/40 text-violet-300 flex items-center justify-center font-bold text-sm shrink-0">
-                ${r.sender_picture ? `<img src="${r.sender_picture}" class="w-full h-full object-cover rounded-xl">` : initial}
+                ${spic ? `<img src="${spic}" class="w-full h-full object-cover rounded-xl">` : initial}
               </div>
               <div class="min-w-0 flex-1">
                 <div class="font-bold text-white text-sm truncate">${sname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${r.sender_email}</div>
+                <div class="text-[11px] text-slate-400 truncate">${semail}</div>
                 <div class="text-[10px] text-indigo-400 font-medium">Souhaite partager ses données en lecture seule</div>
               </div>
             </div>
@@ -587,16 +639,18 @@ function renderFriendsView() {
             <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
               <button 
                 type="button" 
-                onclick="acceptFriendRequest(${r.request_id})" 
-                class="flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-sm"
+                data-action="accept-request"
+                data-request-id="${reqId}"
+                class="btn-friend-accept flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-sm"
               >
                 <i data-lucide="check" class="w-3.5 h-3.5"></i>
                 <span>Accepter</span>
               </button>
               <button 
                 type="button" 
-                onclick="rejectFriendRequest(${r.request_id})" 
-                class="flex-1 py-1.5 px-3 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors"
+                data-action="reject-request"
+                data-request-id="${reqId}"
+                class="btn-friend-reject flex-1 py-1.5 px-3 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors"
               >
                 <i data-lucide="x" class="w-3.5 h-3.5"></i>
                 <span>Refuser</span>
@@ -605,6 +659,18 @@ function renderFriendsView() {
           </div>
         `;
       }).join('');
+
+      containerIncoming.querySelectorAll('.btn-friend-accept').forEach(btn => {
+        btn.addEventListener('click', () => {
+          acceptFriendRequest(parseInt(btn.dataset.requestId, 10));
+        });
+      });
+
+      containerIncoming.querySelectorAll('.btn-friend-reject').forEach(btn => {
+        btn.addEventListener('click', () => {
+          rejectFriendRequest(parseInt(btn.dataset.requestId, 10));
+        });
+      });
     }
   }
 
@@ -619,16 +685,21 @@ function renderFriendsView() {
       `;
     } else {
       containerOutgoing.innerHTML = data.outgoing_requests.map(r => {
-        const rname = r.recipient_name || r.recipient_email.split('@')[0];
+        const rawName = r.recipient_name || (r.recipient_email ? r.recipient_email.split('@')[0] : 'Destinataire');
+        const rname = escapeHtml(rawName);
+        const initial = escapeHtml(rawName[0] ? rawName[0].toUpperCase() : '?');
+        const remail = escapeHtml(r.recipient_email || '');
+        const reqId = parseInt(r.request_id, 10) || 0;
+
         return `
-          <div class="bg-[#0B0B1A] border border-[#25254A] rounded-2xl p-4 flex items-center justify-between space-x-3">
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-2xl p-4 flex items-center justify-between space-x-3">
             <div class="flex items-center space-x-3 min-w-0">
               <div class="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 flex items-center justify-center font-bold text-xs shrink-0">
-                ${rname[0].toUpperCase()}
+                ${initial}
               </div>
               <div class="min-w-0">
                 <div class="font-bold text-white text-xs truncate">${rname}</div>
-                <div class="text-[11px] text-slate-400 truncate">${r.recipient_email}</div>
+                <div class="text-[11px] text-slate-400 truncate">${remail}</div>
                 <div class="text-[10px] text-amber-400/90 font-medium flex items-center space-x-1">
                   <i data-lucide="clock" class="w-3 h-3"></i>
                   <span>Invitation en attente</span>
@@ -638,8 +709,9 @@ function renderFriendsView() {
 
             <button 
               type="button" 
-              onclick="revokeOrDeleteFriend(${r.request_id}, 'Voulez-vous annuler cette invitation ?')" 
-              class="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] font-semibold flex items-center space-x-1 transition-colors shrink-0"
+              data-action="cancel-outgoing"
+              data-request-id="${reqId}"
+              class="btn-friend-cancel-outgoing px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] font-semibold flex items-center space-x-1 transition-colors shrink-0"
               title="Annuler l'invitation"
             >
               <i data-lucide="trash-2" class="w-3 h-3"></i>
@@ -648,6 +720,12 @@ function renderFriendsView() {
           </div>
         `;
       }).join('');
+
+      containerOutgoing.querySelectorAll('.btn-friend-cancel-outgoing').forEach(btn => {
+        btn.addEventListener('click', () => {
+          revokeOrDeleteFriend(parseInt(btn.dataset.requestId, 10), "Voulez-vous annuler cette invitation ?");
+        });
+      });
     }
   }
 
