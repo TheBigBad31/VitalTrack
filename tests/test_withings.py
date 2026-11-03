@@ -185,7 +185,7 @@ def test_withings_live_sync_incremental_cursor_and_idempotence():
         "status": 0,
         "body": {
             "updatetime": 1735695000,
-            "more": 1735695000,
+            "more": 0,  # Pas de pagination pour ce test
             "measuregrps": [
                 {
                     "date": 1735689600,  # 2025-01-01
@@ -241,7 +241,7 @@ def test_withings_live_sync_incremental_cursor_and_idempotence():
         assert results[0].weight_kg == 81.2
         assert results[1].date == date(2025, 1, 2)
         assert results[1].weight_kg == 80.9
-        # Curseur lastupdate mis à jour
+        # Curseur lastupdate mis à jour avec updatetime
         assert connector.config["lastupdate"] == 1735695000
 
 

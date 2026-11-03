@@ -11,6 +11,7 @@ Gère :
 """
 
 import math
+import httpx
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,60 @@ class OuraRingConnector(BaseHealthConnector):
         """Vérifie si le Personal Access Token Oura est fourni."""
         pat = self.config.get("personal_access_token")
         return bool(pat)
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Retourne les headers d'authentification pour les appels API."""
+        pat = self.config.get("personal_access_token")
+        return {"Authorization": f"Bearer {pat}"}
+
+    def _fetch_paginated(
+        self,
+        endpoint: str,
+        start_date: date,
+        end_date: date,
+        client: Optional[httpx.Client] = None
+    ) -> List[Dict[str, Any]]:
+        """Récupère toutes les pages d'un endpoint Oura avec pagination next_token."""
+        all_data = []
+        next_token = None
+        
+        while True:
+            params = {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            }
+            if next_token:
+                params["next_token"] = next_token
+
+            url = f"{self.BASE_URL}/{endpoint}"
+            
+            def do_request(c: httpx.Client) -> Dict[str, Any]:
+                resp = c.get(url, headers=self._get_headers(), params=params, timeout=15.0)
+                if resp.status_code == 429:
+                    # Rate limit - respecter Retry-After
+                    retry_after = float(resp.headers.get("Retry-After", 1.0))
+                    import time
+                    time.sleep(min(retry_after, 5.0))
+                    return do_request(c)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Oura API error {resp.status_code}: {resp.text}")
+                return resp.json()
+
+            if client:
+                data = do_request(client)
+            else:
+                with httpx.Client() as c:
+                    data = do_request(c)
+
+            # Oura v2 renvoie les données dans "data" et le next_token au niveau racine
+            items = data.get("data", [])
+            all_data.extend(items)
+            
+            next_token = data.get("next_token")
+            if not next_token:
+                break
+
+        return all_data
 
     def parse_oura_daily_data(
         self,
@@ -78,13 +133,13 @@ class OuraRingConnector(BaseHealthConnector):
             source="oura"
         )
 
-    def sync_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
-        """Récupère les activités ou génère la simulation réaliste Oura."""
+    def sync_activities(self, start_date: date, end_date: date, client: Optional[httpx.Client] = None) -> List[ActivityEntry]:
+        """Récupère les activités avec pagination Oura v2 (next_token)."""
         if not self.is_configured:
             self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
-        # En production : appels GET /daily_activity, /daily_readiness, /daily_sleep
+        # En production : appels GET /daily_activity, /daily_readiness, /daily_sleep avec pagination
         if "mock_payloads" in self.config:
             activities_raw = self.config["mock_payloads"].get("activity", [])
             readiness_map = {r.get("day"): r for r in self.config["mock_payloads"].get("readiness", [])}
@@ -99,7 +154,31 @@ class OuraRingConnector(BaseHealthConnector):
                     sleep=sleep_map.get(d)
                 ))
             return results
-        return []
+
+        # Appels API réels avec pagination
+        try:
+            activities_raw = self._fetch_paginated("daily_activity", start_date, end_date, client=client)
+            readiness_raw = self._fetch_paginated("daily_readiness", start_date, end_date, client=client)
+            sleep_raw = self._fetch_paginated("daily_sleep", start_date, end_date, client=client)
+        except Exception as e:
+            # En cas d'erreur API, logger et retourner liste vide
+            import logging
+            logger = logging.getLogger("vitaltrack.oura")
+            logger.error(f"[Oura] Erreur sync_activities: {e}")
+            return []
+
+        readiness_map = {r.get("day"): r for r in readiness_raw}
+        sleep_map = {s.get("day"): s for s in sleep_raw}
+
+        results = []
+        for act in activities_raw:
+            d = act.get("day")
+            results.append(self.parse_oura_daily_data(
+                activity=act,
+                readiness=readiness_map.get(d),
+                sleep=sleep_map.get(d)
+            ))
+        return results
 
     def _generate_simulated_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Simulation réaliste de données Oura Ring (HRV, sommeil, pas)."""

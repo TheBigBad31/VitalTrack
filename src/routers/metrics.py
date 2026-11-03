@@ -68,28 +68,59 @@ def get_biometrics_metrics(
     activities_list = db.get_activities(limit=days, user_id=user_id, exclude_simulation=not is_demo)
 
     # Convertir en DailyBiometrics pour le moteur mathématique
+    # Agréger daily_metrics par jour (max/somme) au lieu d'émettre une ligne par (date, source)
     bio_history = []
     # Map date -> weight
     weights_by_date = {w.date.isoformat(): w.weight_kg for w in weights_list}
     # Map date -> activity
     acts_by_date = {a.date.isoformat(): a for a in activities_list}
 
+    # Agréger daily_metrics par date
+    metrics_by_date: Dict[str, List] = {}
     for m in daily_metrics_list:
         d_str = m.date.isoformat()
+        if d_str not in metrics_by_date:
+            metrics_by_date[d_str] = []
+        metrics_by_date[d_str].append(m)
+
+    for d_str, metrics in metrics_by_date.items():
         w_val = weights_by_date.get(d_str)
         act_val = acts_by_date.get(d_str)
-        act_load = m.active_calories_kcal or (act_val.active_calories_kcal if act_val else None)
+        
+        # Agréger: max pour HRV/RHR/SpO2/Temp/Sleep, somme pour steps/calories
+        max_hrv = max((m.hrv_rmssd_ms for m in metrics if m.hrv_rmssd_ms is not None), default=None)
+        max_rhr = max((m.resting_hr_bpm for m in metrics if m.resting_hr_bpm is not None), default=None)
+        max_spo2 = max((m.spo2_pct for m in metrics if m.spo2_pct is not None), default=None)
+        max_temp = max((m.skin_temperature_c for m in metrics if m.skin_temperature_c is not None), default=None)
+        max_sleep = max((m.sleep_score for m in metrics if m.sleep_score is not None), default=None)
+        max_recovery = max((m.recovery_score for m in metrics if m.recovery_score is not None), default=None)
+        
+        sum_steps = sum(m.steps for m in metrics)
+        sum_active_cal = sum(m.active_calories_kcal for m in metrics)
+        sum_total_cal = sum(m.total_calories_kcal for m in metrics)
+        
+        # Fallback sur activities si daily_metrics vide pour ces champs
+        act_load = sum_active_cal or (act_val.active_calories_kcal if act_val else None)
+        if max_rhr is None and act_val and act_val.resting_hr_bpm:
+            max_rhr = act_val.resting_hr_bpm
+        if max_sleep is None and act_val and act_val.sleep_score:
+            max_sleep = act_val.sleep_score
+        if max_hrv is None and act_val and act_val.hrv_ms:
+            max_hrv = act_val.hrv_ms
 
         bio_history.append(DailyBiometrics(
-            date=m.date,
-            hrv_rmssd_ms=m.hrv_rmssd_ms or (act_val.hrv_ms if act_val else None),
-            resting_hr_bpm=float(m.resting_hr_bpm) if m.resting_hr_bpm is not None else (float(act_val.resting_hr_bpm) if act_val and act_val.resting_hr_bpm else None),
-            sleep_score=float(m.sleep_score) if m.sleep_score is not None else (float(act_val.sleep_score) if act_val and act_val.sleep_score else None),
-            spo2_pct=m.spo2_pct,
-            skin_temp_deviation_c=m.skin_temperature_c,
+            date=date.fromisoformat(d_str),
+            hrv_rmssd_ms=max_hrv,
+            resting_hr_bpm=float(max_rhr) if max_rhr is not None else None,
+            sleep_score=float(max_sleep) if max_sleep is not None else None,
+            spo2_pct=max_spo2,
+            skin_temp_deviation_c=max_temp,
             weight_kg=w_val,
             activity_load=act_load
         ))
+    
+    # Trier par date
+    bio_history.sort(key=lambda b: b.date)
 
     analytics_svc = BiometricsAnalyticsService(target_sleep_hours=float(profile.get("target_sleep_hours", 8.0) or 8.0))
 
@@ -220,19 +251,16 @@ def get_biometrics_metrics(
             }
         }
 
-    # Série temporelle Trends (RHR & HRV)
+    # Série temporelle Trends (RHR & HRV) - utiliser les données agrégées
     trends = []
-    for m in daily_metrics_list:
-        d_iso = m.date.isoformat()
-        act = acts_by_date.get(d_iso)
-        rhr = m.resting_hr_bpm if m.resting_hr_bpm is not None else (act.resting_hr_bpm if act else None)
-        hrv = m.hrv_rmssd_ms if m.hrv_rmssd_ms is not None else (act.hrv_ms if act else None)
+    for bio in bio_history:
+        d_iso = bio.date.isoformat()
         trends.append({
             "date": d_iso,
-            "resting_hr_bpm": rhr,
-            "hrv_rmssd_ms": hrv,
-            "sleep_score": m.sleep_score or (act.sleep_score if act else None),
-            "recovery_score": m.recovery_score
+            "resting_hr_bpm": bio.resting_hr_bpm,
+            "hrv_rmssd_ms": bio.hrv_rmssd_ms,
+            "sleep_score": bio.sleep_score,
+            "recovery_score": next((m.recovery_score for m in daily_metrics_list if m.date.isoformat() == d_iso and m.recovery_score is not None), None)
         })
 
     # Intraday FC 24h
@@ -277,10 +305,12 @@ def get_biometrics_metrics(
         d_val = today_dt - timedelta(days=day_idx)
         d_str = d_val.isoformat()
         act = acts_by_date.get(d_str)
-        m_item = next((m for m in daily_metrics_list if m.date.isoformat() == d_str), None)
+        # Utiliser les métriques agrégées (somme des steps sur toutes les sources)
+        metrics_today = metrics_by_date.get(d_str, [])
+        sum_steps = sum(m.steps for m in metrics_today)
         has_workout = any(w.start_time.startswith(d_str) for w in workouts_list)
 
-        steps = (act.steps if act else (m_item.steps if m_item else 0)) or 0
+        steps = sum_steps or (act.steps if act else 0)
         intensity = 0
         if steps >= 10000 or has_workout:
             intensity = 3  # Haut
@@ -303,10 +333,13 @@ def get_biometrics_metrics(
 
     today_str = today_dt.isoformat()
     today_act = acts_by_date.get(today_str)
-    today_metric = next((m for m in daily_metrics_list if m.date.isoformat() == today_str), None)
+    # Utiliser les métriques agrégées pour aujourd'hui
+    today_metrics = metrics_by_date.get(today_str, [])
+    today_sum_steps = sum(m.steps for m in today_metrics)
+    today_sum_active_cal = sum(m.active_calories_kcal for m in today_metrics)
 
-    current_steps = (today_act.steps if today_act else (today_metric.steps if today_metric else 0)) or 0
-    current_active_cals = (today_act.active_calories_kcal if today_act else (today_metric.active_calories_kcal if today_metric else 0.0)) or 0.0
+    current_steps = today_sum_steps or (today_act.steps if today_act else 0)
+    current_active_cals = today_sum_active_cal or (today_act.active_calories_kcal if today_act else 0.0)
     current_sleep_h = (latest_sleep.duration_minutes / 60.0) if latest_sleep else 0.0
     current_rec_score = recovery_data["score"] if recovery_data else None
 

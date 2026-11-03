@@ -455,12 +455,29 @@ class WithingsScaleConnector(BaseHealthConnector):
     # Parsing Withings Measure Groups
     # -------------------------------------------------------------------------
 
-    def parse_withings_measure_group(self, grp: Dict[str, Any]) -> Optional[WeightEntry]:
-        """Parse un groupe de mesures Withings `measuregrp` vers un `WeightEntry` standardisé."""
+    def parse_withings_measure_group(self, grp: Dict[str, Any], user_timezone: Optional[str] = None) -> Optional[WeightEntry]:
+        """Parse un groupe de mesures Withings `measuregrp` vers un `WeightEntry` standardisé.
+        
+        Args:
+            grp: Groupe de mesures Withings
+            user_timezone: Fuseau horaire IANA de l'utilisateur (ex: "Europe/Paris"). 
+                          Si None, utilise UTC pour compatibilité.
+        """
         epoch = grp.get("date", 0)
         if not epoch:
             return None
-        measure_date = datetime.fromtimestamp(epoch, tz=timezone.utc).date()
+        
+        # Résoudre la date dans le fuseau horaire de l'utilisateur
+        if user_timezone:
+            try:
+                import zoneinfo
+                tz = zoneinfo.ZoneInfo(user_timezone)
+                measure_date = datetime.fromtimestamp(epoch, tz=tz).date()
+            except Exception:
+                # Fallback UTC si fuseau invalide
+                measure_date = datetime.fromtimestamp(epoch, tz=timezone.utc).date()
+        else:
+            measure_date = datetime.fromtimestamp(epoch, tz=timezone.utc).date()
 
         measures = grp.get("measures", [])
         weight = 0.0
@@ -557,7 +574,7 @@ class WithingsScaleConnector(BaseHealthConnector):
         last_sync_timestamp: Optional[int] = None,
         client: Optional[httpx.Client] = None
     ) -> List[WeightEntry]:
-        """Interroge l'API Withings getmeas avec support incrémental lastupdate et reprise sur erreur."""
+        """Interroge l'API Withings getmeas avec support incrémental lastupdate, pagination et reprise sur erreur."""
         # 1. Vérification mock_payload injecté pour tests hors ligne
         if "mock_payload" in self.config:
             return self._process_api_response_body(self.config["mock_payload"].get("body", {}))
@@ -581,45 +598,76 @@ class WithingsScaleConnector(BaseHealthConnector):
         else:
             cursor_update = self.config.get("lastupdate")
 
-        params: Dict[str, Any] = {
-            "action": "getmeas",
-            "category": self.CATEGORY_REAL_MEASURES,
-        }
+        all_measuregrps = []
+        current_lastupdate = cursor_update
 
-        if cursor_update:
-            params["lastupdate"] = int(cursor_update)
-        else:
-            params["startdate"] = start_epoch
-            params["enddate"] = end_epoch
+        # 4. Boucle de pagination Withings: tant que more=1, on continue avec le dernier updatetime
+        while True:
+            params: Dict[str, Any] = {
+                "action": "getmeas",
+                "category": self.CATEGORY_REAL_MEASURES,
+            }
 
-        headers = {
-            "Authorization": f"Bearer {access_token}"
-        }
+            if current_lastupdate:
+                params["lastupdate"] = int(current_lastupdate)
+            else:
+                params["startdate"] = start_epoch
+                params["enddate"] = end_epoch
 
-        # 4. Exécution avec gestion des erreurs réseau, rate limit (429 / 2555) et timeouts
-        body = self._execute_api_call_with_retry(
-            method="POST",
-            url=self.MEASURE_URL,
-            headers=headers,
-            data=params,
-            client=client
-        )
+            headers = {
+                "Authorization": f"Bearer {access_token}"
+            }
 
-        return self._process_api_response_body(body)
+            # 5. Exécution avec gestion des erreurs réseau, rate limit (429 / 2555) et timeouts
+            body = self._execute_api_call_with_retry(
+                method="POST",
+                url=self.MEASURE_URL,
+                headers=headers,
+                data=params,
+                client=client
+            )
+
+            measuregrps = body.get("measuregrps", [])
+            all_measuregrps.extend(measuregrps)
+
+            # Pagination: Withings renvoie "more" = timestamp du dernier groupe si plus de résultats
+            # et "updatetime" = timestamp de mise à jour du serveur
+            more = body.get("more")
+            updatetime = body.get("updatetime")
+
+            if more and int(more) > 0:
+                # Il y a plus de résultats, utiliser updatetime comme curseur pour la page suivante
+                current_lastupdate = int(updatetime) if updatetime else int(more)
+                continue
+            else:
+                # Plus de résultats, mettre à jour le curseur final
+                if updatetime:
+                    self.config["lastupdate"] = int(updatetime)
+                    if self.db:
+                        try:
+                            self.persist_credentials_to_db()
+                        except Exception:
+                            pass
+                break
+
+        # Traiter tous les groupes récupérés
+        return self._process_api_response_body({"measuregrps": all_measuregrps})
 
     def _process_api_response_body(self, body: Dict[str, Any]) -> List[WeightEntry]:
-        """Extrait et trie les mesures depuis le corps de réponse Withings."""
+        """Extrait et trie les mesures depuis le corps de réponse Withings.
+        
+        Le curseur lastupdate est maintenant géré dans _fetch_live_measures avec pagination.
+        """
         measuregrps = body.get("measuregrps", [])
-        new_lastupdate = body.get("more", 0) or body.get("updatetime")
 
-        # Mise à jour du curseur lastupdate
-        if new_lastupdate:
-            self.config["lastupdate"] = int(new_lastupdate)
-            if self.db:
-                try:
-                    self.persist_credentials_to_db()
-                except Exception:
-                    pass
+        # Récupérer le fuseau horaire de l'utilisateur depuis la base de données
+        user_timezone = None
+        if self.db and self.user_id:
+            try:
+                profile = self.db.get_user_profile(user_id=self.user_id)
+                user_timezone = profile.get("timezone")
+            except Exception:
+                pass
 
         # Parsing et dédoublonnage idempotent par date (dernière pesée du jour conservée)
         weights_by_date: Dict[date, WeightEntry] = {}
@@ -629,7 +677,7 @@ class WithingsScaleConnector(BaseHealthConnector):
             cat = grp.get("category", self.CATEGORY_REAL_MEASURES)
             if cat != self.CATEGORY_REAL_MEASURES:
                 continue
-            entry = self.parse_withings_measure_group(grp)
+            entry = self.parse_withings_measure_group(grp, user_timezone=user_timezone)
             if entry:
                 weights_by_date[entry.date] = entry
 
