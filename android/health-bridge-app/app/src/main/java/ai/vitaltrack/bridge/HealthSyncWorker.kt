@@ -285,6 +285,110 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible d'agréger les calories actives depuis Health Connect", e)
             }
 
+            // 4b. Calories totales brûlées (TotalCaloriesBurnedRecord) - Agrégation Health Connect du jour
+            try {
+                val totalCalAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(TotalCaloriesBurnedRecord.ENERGY_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                val totalCalEnergy = totalCalAgg[TotalCaloriesBurnedRecord.ENERGY_TOTAL]
+                if (totalCalEnergy != null) {
+                    payload.put("total_calories_kcal", totalCalEnergy.inKilocalories)
+                    payload.put("total_burned_kcal", totalCalEnergy.inKilocalories)
+                } else {
+                    val totalCalResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = TotalCaloriesBurnedRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackTotalCal = 0.0
+                    for (rec in totalCalResp.records) {
+                        fallbackTotalCal += rec.energy.inKilocalories
+                    }
+                    if (fallbackTotalCal > 0) {
+                        payload.put("total_calories_kcal", fallbackTotalCal)
+                        payload.put("total_burned_kcal", fallbackTotalCal)
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Impossible d'agréger les calories totales brûlées depuis Health Connect", e)
+            }
+
+            // 4c. Distance journalière (DistanceRecord) - Agrégation Health Connect du jour
+            try {
+                val distAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                val totalDist = distAgg[DistanceRecord.DISTANCE_TOTAL]
+                if (totalDist != null) {
+                    payload.put("distance_meters", totalDist.inMeters)
+                } else {
+                    val distResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = DistanceRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackDist = 0.0
+                    for (rec in distResp.records) {
+                        fallbackDist += rec.distance.inMeters
+                    }
+                    if (fallbackDist > 0) {
+                        payload.put("distance_meters", fallbackDist)
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Impossible d'agréger la distance journalière depuis Health Connect", e)
+            }
+
+            // 4d. Hydratation journalière & logs (HydrationRecord)
+            try {
+                val hydAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(HydrationRecord.VOLUME_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                val totalHyd = hydAgg[HydrationRecord.VOLUME_TOTAL]
+                var totalHydMl = totalHyd?.inMilliliters ?: 0.0
+
+                val hydResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = HydrationRecord::class,
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                if (totalHydMl <= 0.0 && hydResp.records.isNotEmpty()) {
+                    for (rec in hydResp.records) {
+                        totalHydMl += rec.volume.inMilliliters
+                    }
+                }
+                if (totalHydMl > 0.0) {
+                    payload.put("hydration_ml", totalHydMl)
+                }
+
+                if (hydResp.records.isNotEmpty()) {
+                    val hydLogs = JSONArray()
+                    for (rec in hydResp.records) {
+                        val hObj = JSONObject()
+                        hObj.put("id", rec.metadata.id)
+                        hObj.put("external_id", rec.metadata.id)
+                        hObj.put("timestamp", rec.startTime.toString())
+                        hObj.put("volume_ml", rec.volume.inMilliliters)
+                        hydLogs.put(hObj)
+                    }
+                    payload.put("hydration_logs", hydLogs)
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Impossible de lire l'hydratation depuis Health Connect", e)
+            }
+
             // 5. Poids & Composition corporelle (Withings / Health Connect)
             try {
                 val weightResp = healthConnectClient.readRecords(
@@ -412,6 +516,92 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire la SpO2 depuis Health Connect", e)
             }
 
+            // Température cutanée (SkinTemperatureRecord)
+            try {
+                val skinTempResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = SkinTemperatureRecord::class,
+                        timeRangeFilter = timeRange
+                    )
+                )
+                skinTempResp.records.lastOrNull()?.let { lastSkinTemp ->
+                    val baseline = lastSkinTemp.baseline
+                    if (baseline != null) {
+                        val lastDelta = lastSkinTemp.deltas.lastOrNull()
+                        val tempC = if (lastDelta != null) {
+                            baseline.inCelsius + lastDelta.delta.inCelsius
+                        } else {
+                            baseline.inCelsius
+                        }
+                        payload.put("skin_temperature_c", tempC)
+                        payload.put("skin_temperature_measured_at", lastSkinTemp.startTime.toEpochMilli())
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Impossible de lire la température cutanée depuis Health Connect", e)
+            }
+
+            // Fréquence respiratoire nocturne / repos (RespiratoryRateRecord)
+            try {
+                val respRateResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = RespiratoryRateRecord::class,
+                        timeRangeFilter = timeRange
+                    )
+                )
+                respRateResp.records.lastOrNull()?.let { lastResp ->
+                    payload.put("respiratory_rate_rpm", lastResp.rate)
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "Fréquence respiratoire non disponible ou non autorisée", e)
+            }
+
+            // Métabolisme de base (BasalMetabolicRateRecord)
+            try {
+                val bmrAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(BasalMetabolicRateRecord.BASAL_CALORIES_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                bmrAgg[BasalMetabolicRateRecord.BASAL_CALORIES_TOTAL]?.inKilocalories?.let { bmrKcal ->
+                    payload.put("bmr_kcal", bmrKcal)
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "BMR non disponible ou non autorisé", e)
+            }
+
+            // Glycémie capillaire / capteur CGM (BloodGlucoseRecord)
+            try {
+                val bgResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = BloodGlucoseRecord::class,
+                        timeRangeFilter = timeRange
+                    )
+                )
+                bgResp.records.lastOrNull()?.let { lastBg ->
+                    payload.put("blood_glucose_mg_dl", lastBg.level.inMilligramsPerDeciliter)
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "Glycémie non disponible ou non autorisée", e)
+            }
+
+            // Pression artérielle (BloodPressureRecord)
+            try {
+                val bpResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = BloodPressureRecord::class,
+                        timeRangeFilter = timeRange
+                    )
+                )
+                bpResp.records.lastOrNull()?.let { lastBp ->
+                    payload.put("blood_pressure_systolic_mmhg", lastBp.systolic.inMillimetersOfMercury)
+                    payload.put("blood_pressure_diastolic_mmhg", lastBp.diastolic.inMillimetersOfMercury)
+                }
+            } catch (e: Throwable) {
+                Log.d(TAG, "Tension artérielle non disponible ou non autorisée", e)
+            }
+
             // 7. Séances d'entraînement (ExerciseSessionRecord / Workouts) avec calories et distance associées
             try {
                 val exerciseResp = healthConnectClient.readRecords(
@@ -492,12 +682,20 @@ class HealthSyncWorker(
             var metricsCount = 0
             if (payload.has("steps") && payload.getLong("steps") > 0) metricsCount++
             if (payload.has("active_calories_kcal")) metricsCount++
+            if (payload.has("total_calories_kcal")) metricsCount++
+            if (payload.has("distance_meters")) metricsCount++
+            if (payload.has("hydration_ml")) metricsCount++
+            if (payload.has("skin_temperature_c")) metricsCount++
             if (payload.has("weight_kg")) metricsCount++
             if (payload.has("body_fat_pct")) metricsCount++
             if (payload.has("muscle_mass_kg")) metricsCount++
             if (payload.has("hrv_ms")) metricsCount++
             if (payload.has("resting_hr_bpm")) metricsCount++
             if (payload.has("spo2_pct")) metricsCount++
+            if (payload.has("respiratory_rate_rpm")) metricsCount++
+            if (payload.has("bmr_kcal")) metricsCount++
+            if (payload.has("blood_glucose_mg_dl")) metricsCount++
+            if (payload.has("blood_pressure_systolic_mmhg")) metricsCount++
             if (payload.has("sleep_sessions")) metricsCount += payload.getJSONArray("sleep_sessions").length()
             if (payload.has("workouts")) metricsCount += payload.getJSONArray("workouts").length()
             if (payload.has("intraday_samples")) metricsCount += payload.getJSONArray("intraday_samples").length()
@@ -558,7 +756,6 @@ class HealthSyncWorker(
                 val offlineFile = File(applicationContext.filesDir, "pending_sync_queue.json")
                 offlineFile.writeText(JSONObject().put("source", "health_connect").put("error", e.message).toString())
             } catch (_: Exception) {}
-            val prefs = applicationContext.getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
             prefs.edit()
                 .putString("last_sync_attempt", Instant.now().toString())
                 .putString("last_sync_error", e.message?.take(100) ?: "Exception réseau/locale")

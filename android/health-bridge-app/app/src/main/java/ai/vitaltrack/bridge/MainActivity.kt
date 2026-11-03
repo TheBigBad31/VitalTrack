@@ -47,9 +47,11 @@ class MainActivity : AppCompatActivity() {
         HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
         HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+        HealthPermission.getReadPermission(SkinTemperatureRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class),
         HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+        HealthPermission.getReadPermission(HydrationRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(WeightRecord::class),
         HealthPermission.getReadPermission(BodyFatRecord::class),
@@ -59,7 +61,9 @@ class MainActivity : AppCompatActivity() {
 
     private val stepPermissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class)
+        HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
+        HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class)
     )
     private val hrPermissions = setOf(
         HealthPermission.getReadPermission(HeartRateRecord::class),
@@ -76,6 +80,12 @@ class MainActivity : AppCompatActivity() {
         HealthPermission.getReadPermission(LeanBodyMassRecord::class),
         HealthPermission.getReadPermission(BoneMassRecord::class)
     )
+    private val hydrationPermissions = setOf(
+        HealthPermission.getReadPermission(HydrationRecord::class)
+    )
+    private val skinTempPermissions = setOf(
+        HealthPermission.getReadPermission(SkinTemperatureRecord::class)
+    )
 
     // UI state views
     private lateinit var statusBadgeDot: View
@@ -87,6 +97,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chipHr: TextView
     private lateinit var chipSleep: TextView
     private lateinit var chipWeight: TextView
+    private lateinit var chipHydration: TextView
+    private lateinit var chipSkinTemp: TextView
 
     private lateinit var tokenInput: EditText
     private lateinit var togglePasswordBtn: ImageView
@@ -497,6 +509,25 @@ class MainActivity : AppCompatActivity() {
         chipsRow2.addView(chipWeight)
         permsInner.addView(chipsRow2)
 
+        val chipsRow3 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+        }
+
+        chipHydration = createStatusChip("Hydratation", false)
+        (chipHydration.layoutParams as LinearLayout.LayoutParams).weight = 1f
+        (chipHydration.layoutParams as LinearLayout.LayoutParams).rightMargin = dp(6)
+        chipsRow3.addView(chipHydration)
+
+        chipSkinTemp = createStatusChip("Température cutanée", false)
+        (chipSkinTemp.layoutParams as LinearLayout.LayoutParams).weight = 1f
+        (chipSkinTemp.layoutParams as LinearLayout.LayoutParams).leftMargin = dp(6)
+        chipsRow3.addView(chipSkinTemp)
+        permsInner.addView(chipsRow3)
+
         permsCard.addView(permsInner)
         container.addView(permsCard)
 
@@ -806,11 +837,15 @@ class MainActivity : AppCompatActivity() {
         val hasHr = hrPermissions.any { grantedSet.contains(it) }
         val hasSleep = sleepPermissions.any { grantedSet.contains(it) }
         val hasWeight = weightPermissions.any { grantedSet.contains(it) }
+        val hasHydration = hydrationPermissions.any { grantedSet.contains(it) }
+        val hasSkinTemp = skinTempPermissions.any { grantedSet.contains(it) }
 
         updateChip(chipSteps, "Pas & Calories", hasSteps)
         updateChip(chipHr, "Rythme / SpO2 / HRV", hasHr)
         updateChip(chipSleep, "Sommeil", hasSleep)
         updateChip(chipWeight, "Poids & Masse", hasWeight)
+        updateChip(chipHydration, "Hydratation", hasHydration)
+        updateChip(chipSkinTemp, "Température cutanée", hasSkinTemp)
     }
 
     private fun updateChip(chip: TextView, label: String, granted: Boolean) {

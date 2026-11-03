@@ -1,7 +1,7 @@
 {
   "macro_name": "VitalTrack - Passerelle Health Connect Xiaomi",
   "description": "Profil MacroDroid gratuit pour exporter Health Connect (RingConn, Xiaomi, Withings) vers VitalTrack Webhook",
-  "version": 1,
+  "version": 2,
   "triggers": [
     {
       "type": "regular_interval",
@@ -15,7 +15,7 @@
     {
       "type": "http_request",
       "method": "POST",
-      "url": "https://vitaltrack.vercel.app/api/webhook/health",
+      "url": "https://vital-track-one.vercel.app/api/webhooks/health-connect",
       "headers": {
         "Content-Type": "application/json",
         "X-Webhook-Token": "[lv=vitaltrack_token]"
@@ -24,7 +24,13 @@
       "body_content": {
         "source": "health_connect",
         "date": "{year}-{month_digit_2}-{day_digit_2}",
+        "weight_kg": "{health_weight}",
         "steps": "{system_steps}",
+        "active_calories_kcal": "{health_active_calories}",
+        "total_calories_kcal": "{health_total_calories}",
+        "distance_meters": "{health_distance}",
+        "hydration_ml": "{health_hydration}",
+        "skin_temperature_c": "{health_skin_temperature}",
         "resting_hr_bpm": "{health_resting_hr}",
         "hrv_ms": "{health_hrv}",
         "sleep_score": "{health_sleep_score}"

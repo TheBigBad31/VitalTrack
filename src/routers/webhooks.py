@@ -134,7 +134,37 @@ def validate_physiological_ranges(item: Dict[str, Any]) -> None:
             except (ValueError, TypeError):
                 raise HTTPException(status_code=422, detail=f"Format invalide pour la SpO2: {item[spo2_key]}")
 
-    # 5. Validation récursive sur sous-éléments (workouts, intraday_samples, weights)
+    # 5. Validation Température cutanée
+    for temp_key in ("skin_temperature_c", "skin_temperature"):
+        if temp_key in item and item[temp_key] is not None:
+            try:
+                temp_val = float(item[temp_key])
+                if temp_val < 25.0 or temp_val > 45.0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique invalide pour la température ({temp_val} °C). Doit être compris entre 25 et 45 °C."
+                    )
+            except HTTPException:
+                raise
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Format invalide pour la température: {item[temp_key]}")
+
+    # 6. Validation Hydratation
+    for hyd_key in ("hydration_ml", "volume_ml"):
+        if hyd_key in item and item[hyd_key] is not None:
+            try:
+                hyd_val = float(item[hyd_key])
+                if hyd_val < 0.0 or hyd_val > 20_000.0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique invalide pour l'hydratation ({hyd_val} ml). Doit être compris entre 0 et 20 000 ml."
+                    )
+            except HTTPException:
+                raise
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Format invalide pour l'hydratation: {item[hyd_key]}")
+
+    # 7. Validation récursive sur sous-éléments (workouts, intraday_samples, weights)
     weights = item.get("weights")
     if isinstance(weights, list):
         for w in weights:
@@ -272,7 +302,8 @@ def process_single_item(
     # 4. Métriques quotidiennes enrichies (HRV, SpO2, Température, FC repos, Sommeil)
     has_daily_metric = any(k in item for k in [
         "resting_hr_bpm", "resting_heart_rate", "hrv_rmssd_ms", "hrv_sdnn_ms", "hrv_ms", "hrv",
-        "spo2_pct", "spo2", "skin_temperature_c", "skin_temperature", "sleep_score", "recovery_score"
+        "spo2_pct", "spo2", "skin_temperature_c", "skin_temperature", "sleep_score", "recovery_score",
+        "total_calories_kcal", "total_burned_kcal", "total_calories"
     ])
     if has_daily_metric and can_ingest_biometrics:
         raw_d = item.get("date")
@@ -283,7 +314,7 @@ def process_single_item(
             source=source_name,
             steps=int(item.get("steps", (act_entry.steps if act_entry else 0))),
             active_calories_kcal=float(item.get("active_calories_kcal", item.get("active_calories", (act_entry.active_calories_kcal if act_entry else 0.0)))),
-            total_calories_kcal=float(item.get("total_burned_kcal", item.get("total_calories", (act_entry.total_burned_kcal if act_entry else 0.0)))),
+            total_calories_kcal=float(item.get("total_calories_kcal", item.get("total_burned_kcal", item.get("total_calories", (act_entry.total_burned_kcal if act_entry else 0.0))))),
             resting_hr_bpm=int(item["resting_hr_bpm"]) if item.get("resting_hr_bpm") is not None else (
                 int(item["resting_heart_rate"]) if item.get("resting_heart_rate") is not None else (
                     int(item["resting_hr"]) if item.get("resting_hr") is not None else (
@@ -401,8 +432,28 @@ def process_single_item(
         if samples_list:
             saved_intraday_count = db_inst.insert_intraday_samples(samples_list, user_id=resolved_user_id)
 
-    # 8. Hydratation (hydration_logs)
-    if "hydration_ml" in item or "volume_ml" in item:
+    # 8. Hydratation (hydration_logs & hydration_ml)
+    if "hydration_logs" in item and isinstance(item["hydration_logs"], list) and can_ingest_biometrics:
+        for h_log in item["hydration_logs"]:
+            if isinstance(h_log, dict):
+                vol = float(h_log.get("volume_ml", h_log.get("hydration_ml", 0.0)))
+                if vol > 0:
+                    raw_d = h_log.get("date") or item.get("date")
+                    target_d = date.fromisoformat(str(raw_d)[:10]) if raw_d else date.today()
+                    h_ext = h_log.get("external_id") or h_log.get("id") or ext_id
+                    h_entry = HydrationLogEntry(
+                        user_id=resolved_user_id,
+                        date=target_d,
+                        timestamp=h_log.get("timestamp", item.get("timestamp", datetime.now(timezone.utc).isoformat())),
+                        volume_ml=vol,
+                        source=h_log.get("source", source_name),
+                        external_id=str(h_ext) if h_ext else None
+                    )
+                    saved_h = db_inst.insert_hydration_log(h_entry, user_id=resolved_user_id).model_dump()
+                    if not saved_hydration:
+                        saved_hydration = saved_h
+
+    if ("hydration_ml" in item or "volume_ml" in item) and not saved_hydration:
         if can_ingest_biometrics:
             vol = float(item.get("hydration_ml", item.get("volume_ml", 0.0)))
             if vol > 0:
@@ -455,7 +506,10 @@ def process_single_item(
             "sleep_session": saved_sleep_session,
             "workouts": saved_workouts,
             "intraday_samples_count": saved_intraday_count,
-            "hydration": saved_hydration
+            "hydration": saved_hydration,
+            "distance_meters": float(item["distance_meters"]) if item.get("distance_meters") is not None else (
+                float(item["daily_distance_meters"]) if item.get("daily_distance_meters") is not None else None
+            )
         }
     }
 

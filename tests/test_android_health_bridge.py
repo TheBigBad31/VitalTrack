@@ -254,6 +254,10 @@ def test_health_bridge_full_extended_payload_ingestion(client):
         "is_catchup": True,
         "steps": 8500,
         "active_calories_kcal": 350.0,
+        "total_calories_kcal": 2150.0,
+        "distance_meters": 6500.0,
+        "hydration_ml": 1250.0,
+        "skin_temperature_c": 36.4,
         "weight_kg": 77.2,
         "weight_external_id": "hc_weight_uuid_101",
         "body_fat_pct": 17.8,
@@ -331,6 +335,10 @@ def test_health_bridge_full_extended_payload_ingestion(client):
     assert ing["daily_metric"]["spo2_pct"] == 99.0
     assert ing["daily_metric"]["steps"] == 8500
     assert ing["daily_metric"]["active_calories_kcal"] == 350.0
+    assert ing["daily_metric"]["total_calories_kcal"] == 2150.0
+    assert ing["daily_metric"]["skin_temperature_c"] == 36.4
+    assert ing["hydration"]["volume_ml"] == 1250.0
+    assert ing["distance_meters"] == 6500.0
 
     # 3. Sommeil et phases
     assert ing["sleep_session"]["duration_minutes"] == 450
@@ -440,3 +448,114 @@ def test_android_bridge_photo_meal_estimation_and_journal_save(client):
 
 
 
+
+
+def test_android_manifest_and_ui_permissions_exact_sync():
+    """Verifie la stricte parite 1:1 entre les permissions declarees dans le Manifest et UI MainActivity."""
+    import re
+    import xml.etree.ElementTree as ET
+
+    manifest_path = "android/health-bridge-app/app/src/main/AndroidManifest.xml"
+    main_act_path = "android/health-bridge-app/app/src/main/java/ai/vitaltrack/bridge/MainActivity.kt"
+
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    manifest_health_perms = set()
+    for elem in root.findall("uses-permission"):
+        p_name = elem.attrib.get("{http://schemas.android.com/apk/res/android}name", "")
+        if "permission.health." in p_name:
+            manifest_health_perms.add(p_name.split(".")[-1])
+
+    with open(main_act_path, "r", encoding="utf-8") as f:
+        act_content = f.read()
+
+    # Extraire les types d?clar?s dans `private val permissions = setOf(...)`
+    match = re.search(r"private val permissions = setOf\((.*?)\n    \)", act_content, re.DOTALL)
+    assert match is not None, "setOf permissions introuvable dans MainActivity.kt"
+    ui_records = re.findall(r"getReadPermission\(([A-Za-z]+Record)::class\)", match.group(1))
+
+    # Dictionnaire de correspondance Record -> Nom de permission Health Connect
+    record_to_perm = {
+        "StepsRecord": "READ_STEPS",
+        "ActiveCaloriesBurnedRecord": "READ_ACTIVE_CALORIES_BURNED",
+        "HeartRateRecord": "READ_HEART_RATE",
+        "HeartRateVariabilityRmssdRecord": "READ_HEART_RATE_VARIABILITY",
+        "RestingHeartRateRecord": "READ_RESTING_HEART_RATE",
+        "OxygenSaturationRecord": "READ_OXYGEN_SATURATION",
+        "SkinTemperatureRecord": "READ_SKIN_TEMPERATURE",
+        "ExerciseSessionRecord": "READ_EXERCISE",
+        "DistanceRecord": "READ_DISTANCE",
+        "TotalCaloriesBurnedRecord": "READ_TOTAL_CALORIES_BURNED",
+        "HydrationRecord": "READ_HYDRATION",
+        "SleepSessionRecord": "READ_SLEEP",
+        "WeightRecord": "READ_WEIGHT",
+        "BodyFatRecord": "READ_BODY_FAT",
+        "LeanBodyMassRecord": "READ_LEAN_BODY_MASS",
+        "BoneMassRecord": "READ_BONE_MASS",
+    }
+
+    ui_perms = {record_to_perm[rec] for rec in ui_records}
+    assert manifest_health_perms == ui_perms, f"Divergence Manifest vs UI: {manifest_health_perms.symmetric_difference(ui_perms)}"
+    assert "READ_HYDRATION" in ui_perms
+    assert "READ_SKIN_TEMPERATURE" in ui_perms
+    assert len(ui_perms) == 16
+
+
+def test_macrodroid_profile_contract():
+    """Verifie la configuration du profil MacroDroid (URL officielle + presence du poids)."""
+    import json
+
+    with open("android/macrodroid_health_connect_profile.json", "r", encoding="utf-8") as f:
+        profile = json.load(f)
+
+    action = profile["actions"][0]
+    assert action["url"].startswith("https://vital-track-one.vercel.app/"), f"URL erron?e: {action['url']}"
+    body = action["body_content"]
+    assert "weight_kg" in body, "Le champ weight_kg doit ?tre pr?sent dans le body MacroDroid"
+    assert "hydration_ml" in body
+    assert "skin_temperature_c" in body
+    assert "total_calories_kcal" in body
+    assert "distance_meters" in body
+
+
+def test_hydration_logs_and_physiological_validation(client):
+    """Verifie l ingestion d une liste de hydration_logs et la validation des bornes de temperature / hydratation."""
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Validation Test Bridge"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    # 1. Ingestion valide avec liste de hydration_logs
+    payload = {
+        "source": "health_connect",
+        "date": "2026-10-27",
+        "skin_temperature_c": 36.6,
+        "hydration_logs": [
+            {
+                "id": "h_log_1",
+                "volume_ml": 300.0,
+                "timestamp": "2026-10-27T08:00:00Z"
+            },
+            {
+                "id": "h_log_2",
+                "volume_ml": 500.0,
+                "timestamp": "2026-10-27T12:30:00Z"
+            }
+        ]
+    }
+    resp = client.post("/api/webhook/health", json=payload, headers={"X-Webhook-Token": token})
+    assert resp.status_code == 200
+    data = resp.json()["results"]
+    assert data["daily_metric"]["skin_temperature_c"] == 36.6
+    assert data["hydration"]["volume_ml"] == 300.0
+
+    # 2. Temp?rature cutan?e hors borne (ex: 55?C) -> 422
+    invalid_temp = {"skin_temperature_c": 55.0}
+    bad_resp = client.post("/api/webhook/health", json=invalid_temp, headers={"X-Webhook-Token": token})
+    assert bad_resp.status_code == 422
+    assert "temp" in bad_resp.json()["detail"].lower()
+
+    # 3. Hydratation hors borne (ex: 50 000 ml) -> 422
+    invalid_hyd = {"hydration_ml": 50000.0}
+    bad_resp2 = client.post("/api/webhook/health", json=invalid_hyd, headers={"X-Webhook-Token": token})
+    assert bad_resp2.status_code == 422
+    assert "hydratation" in bad_resp2.json()["detail"].lower()

@@ -7,4 +7,7 @@ data/vitaltrack.db
 data/*.db
 /tmp/vitaltrack.db
 node_modules/
+.gradle/
+**/build/
+*.apk
 
