@@ -17,6 +17,7 @@ class WeightEntry(BaseModel):
     weight_kg: float = Field(..., description="Poids en kilogrammes")
     body_fat_pct: Optional[float] = Field(None, description="Masse grasse en pourcentage")
     muscle_mass_kg: Optional[float] = Field(None, description="Masse musculaire en kg")
+    bone_mass_kg: Optional[float] = Field(None, description="Masse osseuse en kg")
     water_pct: Optional[float] = Field(None, description="Masse hydrique en pourcentage")
     bmi: Optional[float] = Field(None, description="Indice de Masse Corporelle (IMC)")
     trend_7d_kg: Optional[float] = Field(None, description="Tendance lissǸe sur 7 jours")
