@@ -17,7 +17,7 @@ import hmac
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from src.connectors.webhook import MobileHealthWebhookConnector
@@ -26,6 +26,7 @@ from src.models import (
     ActivityEntry, DailyMetricsEntry, HydrationLogEntry, IntradaySampleEntry,
     SleepSessionEntry, SleepStageEntry, WeightEntry, WorkoutEntry
 )
+from src.rate_limit import limiter, get_webhook_rate_limit, get_remote_address
 
 router = APIRouter(tags=["Webhooks"])
 
@@ -40,16 +41,15 @@ def get_db() -> Database:
 
 
 def extract_auth_token(
-    payload: Any,
-    token: Optional[str] = None,
     x_webhook_token: Optional[str] = None,
     authorization: Optional[str] = None
 ) -> Optional[str]:
-    """Extrait le jeton d'authentification selon l'ordre de priorité strict :
+    """Extrait le jeton d'authentification selon l'ordre strict :
     1. Header 'X-Webhook-Token'
     2. Header 'Authorization' (Bearer ou token direct)
-    3. Query parameter '?token=...'
-    4. Payload JSON champ 'token', 'webhook_token' ou 'api_key'
+
+    Sécurité P0 (BALI-182) : Les query parameters (?token=...) et tokens dans le body JSON
+    sont formellement interdits pour prévenir les fuites de logs URL et l'injection non contrôlée.
     """
     if x_webhook_token and str(x_webhook_token).strip():
         return str(x_webhook_token).strip()
@@ -60,34 +60,115 @@ def extract_auth_token(
             return auth_str[7:].strip()
         return auth_str
 
-    if token and str(token).strip():
-        return str(token).strip()
-
-    if isinstance(payload, dict):
-        for candidate_key in ("token", "webhook_token", "api_key"):
-            cand = payload.get(candidate_key)
-            if cand and str(cand).strip():
-                return str(cand).strip()
-
     return None
+
+
+def validate_physiological_ranges(item: Dict[str, Any]) -> None:
+    """Valide les bornes physiologiques strictes sur un enregistrement de santé (BALI-182).
+    
+    Bornes appliquées :
+    - Poids : 20.0 à 300.0 kg
+    - Fréquence cardiaque (FC) : 30 à 220 bpm (repos, avg, max)
+    - Pas : 0 à 100 000 pas / jour
+    - SpO2 : 50.0 à 100.0 %
+    
+    Lève HTTPException(422) en cas de valeur absurde ou dangereuse.
+    """
+    # 1. Validation Poids
+    for w_key in ("weight_kg", "weight"):
+        if w_key in item and item[w_key] is not None:
+            try:
+                w_val = float(item[w_key])
+                if w_val < 20.0 or w_val > 300.0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique invalide pour le poids ({w_val} kg). Doit être compris entre 20 et 300 kg."
+                    )
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Format invalide pour le poids: {item[w_key]}")
+
+    # 2. Validation Fréquence Cardiaque
+    for hr_key in ("resting_hr_bpm", "resting_heart_rate", "resting_hr", "avg_hr_bpm", "max_hr_bpm", "heart_rate"):
+        if hr_key in item and item[hr_key] is not None:
+            try:
+                hr_val = float(item[hr_key])
+                if hr_val < 30.0 or hr_val > 220.0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique invalide pour la fréquence cardiaque ({hr_val} bpm). Doit être compris entre 30 et 220 bpm."
+                    )
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Format invalide pour la fréquence cardiaque: {item[hr_key]}")
+
+    # 3. Validation Pas
+    if "steps" in item and item["steps"] is not None:
+        try:
+            steps_val = int(item["steps"])
+            if steps_val < 0 or steps_val > 100_000:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Valeur physiologique invalide pour les pas ({steps_val}). Doit être compris entre 0 et 100 000 pas/jour."
+                )
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail=f"Format invalide pour les pas: {item['steps']}")
+
+    # 4. Validation SpO2
+    for spo2_key in ("spo2_pct", "spo2"):
+        if spo2_key in item and item[spo2_key] is not None:
+            try:
+                spo2_val = float(item[spo2_key])
+                if spo2_val < 50.0 or spo2_val > 100.0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique invalide pour la SpO2 ({spo2_val} %). Doit être compris entre 50 et 100 %."
+                    )
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Format invalide pour la SpO2: {item[spo2_key]}")
+
+    # 5. Validation récursive sur sous-éléments (workouts, intraday_samples)
+    workouts = item.get("workouts") or (item.get("workout") and [item.get("workout")])
+    if isinstance(workouts, list):
+        for w in workouts:
+            if isinstance(w, dict):
+                validate_physiological_ranges(w)
+
+    intraday = item.get("intraday_samples") or item.get("samples")
+    if isinstance(intraday, list):
+        for s in intraday:
+            if isinstance(s, dict) and s.get("metric_type") in ("hr", "heart_rate"):
+                v = s.get("value")
+                if v is not None and (float(v) < 30.0 or float(v) > 220.0):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique intraday FC invalide ({v} bpm). Doit être compris entre 30 et 220 bpm."
+                    )
+            elif isinstance(s, dict) and s.get("metric_type") in ("spo2",):
+                v = s.get("value")
+                if v is not None and (float(v) < 50.0 or float(v) > 100.0):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Valeur physiologique intraday SpO2 invalide ({v} %). Doit être compris entre 50 et 100 %."
+                    )
 
 
 def resolve_webhook_user_and_device(
     auth_token: str,
-    payload: Any,
     database: Optional[Database] = None
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
     """Résout l'utilisateur et le terminal associé à un token webhook.
     
-    Vérifie en premier lieu le token d'appareil individuel (user_devices chiffré au repos),
-    puis utilise le fallback fail-closed WEBHOOK_SECRET si configuré.
+    Sécurité P0 (BALI-182) :
+    1. Résolution stricte par token device dans user_devices (api_key_hash indexé SHA-256).
+    2. Si le token correspond au secret global d'administration WEBHOOK_SECRET :
+       Attribution exclusive au compte système principal (user_id=1).
+       Aucun payload user_id arbitraire n'est accepté (élimination définitive de l'IDOR cross-user).
     """
     db_inst = database or get_db()
     user_match = db_inst.find_user_by_device_token(auth_token)
     if user_match:
         return int(user_match["user_id"]), user_match.get("device")
 
-    # Fallback de validation via WEBHOOK_SECRET global si configuré
+    # Fallback d'administration via WEBHOOK_SECRET global si configuré
     is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
     global_secret = os.getenv("WEBHOOK_SECRET")
 
@@ -99,11 +180,8 @@ def resolve_webhook_user_and_device(
             )
     else:
         if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
-            target_user_id = payload.get("user_id") if isinstance(payload, dict) else None
-            if target_user_id:
-                user_obj = db_inst.get_user_by_id(int(target_user_id))
-                if user_obj:
-                    return int(target_user_id), None
+            # Sécurité P0 : L'IDOR est neutralisé. Le webhook secret système n'accepte
+            # jamais de user_id arbitraire non authentifié dans le payload JSON.
             default_user = db_inst.get_user_by_id(1)
             if default_user:
                 return 1, None
@@ -366,18 +444,19 @@ def process_single_item(
 @router.get("/api/webhook/health")
 @router.get("/api/webhook/health/")
 def ingest_health_webhook(
+    request: Request,
     payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Body(None),
-    token: Optional[str] = Query(None),
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
     authorization: Optional[str] = Header(None)
 ):
-    """Point d'entrée universel et sécurisé pour les webhooks mobiles ou passerelles (Health Connect, RingConn, Xiaomi).
+    """Point d'entrée universel et durci pour les webhooks mobiles ou passerelles (Health Connect, RingConn, Xiaomi).
     
-    Prend en charge :
-    - Éléments individuels ou lots incrémentaux JSON (batch)
-    - Authentification stricte par token d'appareil individuel (X-Webhook-Token, Authorization, query param, ou body)
-    - Idempotence garantie et conformité RGPD
-    - GET de diagnostic ou ping de connectivité
+    Sécurité P0 (BALI-182) :
+    - Authentification stricte via header 'X-Webhook-Token' ou 'Authorization' uniquement.
+    - Rate limiting appliqué par device (ou par IP distante).
+    - Validation des plages physiologiques strictes (HTTP 422 si anomalie).
+    - Idempotence garantie via raw_ingest(idempotency_key) UNIQUE et déduplication des métriques.
+    - Élimination de l'IDOR cross-user via lookup indexé api_key_hash.
     """
     if payload is None:
         # Requête GET ou ping sans body
@@ -386,9 +465,9 @@ def ingest_health_webhook(
             "endpoint": "/api/webhooks/health-connect",
             "message": "Passerelle Webhook VitalTrack opérationnelle. Envoyez les métriques via POST en JSON avec X-Webhook-Token."
         }
+
+    # 1. Extraction et validation stricte du token d'authentification (Headers uniquement)
     auth_token = extract_auth_token(
-        payload=payload,
-        token=token,
         x_webhook_token=x_webhook_token,
         authorization=authorization
     )
@@ -396,18 +475,26 @@ def ingest_health_webhook(
     if not auth_token:
         raise HTTPException(
             status_code=401,
-            detail="Jeton d'authentification manquant. Fournissez un token via header 'X-Webhook-Token', 'Authorization' ou query param 'token'."
+            detail="Jeton d'authentification manquant ou non autorisé. Fournissez un token via header 'X-Webhook-Token' ou 'Authorization'."
         )
 
+    # 2. Résolution du compte utilisateur et de l'appareil (sans IDOR)
     resolved_user_id, matched_device = resolve_webhook_user_and_device(
         auth_token=auth_token,
-        payload=payload,
         database=get_db()
     )
 
-    user_consents = get_db().get_user_consents(user_id=resolved_user_id)
+    # 3. Rate limiting par device ou IP (429 si dépassé)
+    rate_limit_rate = get_webhook_rate_limit()
+    device_key = f"device:{matched_device['id']}" if matched_device and matched_device.get("id") else f"user:{resolved_user_id}"
+    client_ip = get_remote_address(request)
+    limiter.check_request(
+        request=request,
+        bucket=f"webhook_{device_key}_{client_ip}",
+        rate_str=rate_limit_rate
+    )
 
-    # Détection si payload est un lot (liste directe ou dict avec 'items'/'batch'/'records')
+    # 4. Détection et extraction des éléments du payload
     items_to_process = []
     if isinstance(payload, list):
         items_to_process = payload
@@ -420,6 +507,13 @@ def ingest_health_webhook(
             items_to_process = payload["records"]
         else:
             items_to_process = [payload]
+
+    # 5. Validation préalable des bornes physiologiques strictes sur tous les items (422)
+    for single_item in items_to_process:
+        if isinstance(single_item, dict):
+            validate_physiological_ranges(single_item)
+
+    user_consents = get_db().get_user_consents(user_id=resolved_user_id)
 
     results = []
     for single_item in items_to_process:

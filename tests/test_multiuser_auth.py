@@ -201,7 +201,7 @@ def test_webhook_multiuser_device_token_isolation(isolated_app):
     assert unknown_req.status_code == 401
 
     # 3. Envoi d'une pesée (71.2 kg) et activité (9500 pas) via le token de User 1
-    resp1 = client.post("/api/webhook/health?token=secret_token_user_1", json={
+    resp1 = client.post("/api/webhook/health", headers={"X-Webhook-Token": "secret_token_user_1"}, json={
         "date": "2026-10-22",
         "source": "health_connect",
         "weight_kg": 71.2,
@@ -212,7 +212,7 @@ def test_webhook_multiuser_device_token_isolation(isolated_app):
     assert resp1.json()["user_id"] == u1_id
 
     # 4. Envoi d'une pesée (84.6 kg) et activité (12500 pas) via le token de User 2
-    resp2 = client.post("/api/webhooks/ringconn?token=secret_token_user_2", json={
+    resp2 = client.post("/api/webhooks/ringconn", headers={"X-Webhook-Token": "secret_token_user_2"}, json={
         "date": "2026-10-22",
         "source": "ringconn",
         "weight_kg": 84.6,
@@ -369,7 +369,8 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
     assert res_unknown_token.status_code == 401
     assert "aucun compte utilisateur ou appareil associé" in res_unknown_token.json()["detail"]
 
-    # 3. Avec WEBHOOK_SECRET configuré et user_id explicite dans le payload
+    # 3. Avec WEBHOOK_SECRET configuré : l'attribution est strictement restreinte à l'admin (user_id=1)
+    # et n'accepte plus d'IDOR arbitraire via le payload (durcissement BALI-182)
     monkeypatch.setenv("WEBHOOK_SECRET", "super_secret_webhook_admin")
     res_with_global_secret = client.post(
         "/api/webhook/health",
@@ -377,9 +378,6 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
         headers={"X-Webhook-Token": "super_secret_webhook_admin"}
     )
     assert res_with_global_secret.status_code == 200
-    assert res_with_global_secret.json()["user_id"] == user_id
-
-    # Vérifier que les poids ont bien été ingérés pour cet utilisateur
-    weights = client.get("/api/weights", headers={"Authorization": f"Bearer {token_auth}"}).json()
-    assert any(w["weight_kg"] == 76.5 for w in weights)
+    # Sécurité P0 : l'ingestion via WEBHOOK_SECRET est attachée au compte système principal (1), pas au payload arbitraire
+    assert res_with_global_secret.json()["user_id"] == 1
 
