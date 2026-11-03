@@ -77,6 +77,8 @@ class WithingsScaleConnector(BaseHealthConnector):
 
     def _check_configuration(self) -> bool:
         """Vérifie si les identifiants OAuth Withings sont configurés."""
+        if "mock_payload" in self.config or "mock_payloads" in self.config:
+            return True
         client_id = self.config.get("client_id")
         access_token = self.config.get("access_token")
         # Est configuré si au minimum access_token ou refresh_token + client_id

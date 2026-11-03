@@ -81,6 +81,7 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_mo
         notes=entry_in.notes,
     )
     saved = db.insert_weight(entry, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
 
@@ -110,6 +111,7 @@ def update_weight(
     updated = db.update_weight(weight_id, entry, user_id=current_user.id)
     if not updated:
         raise HTTPException(status_code=404, detail="Pesée introuvable")
+    app_module.invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
 
@@ -120,4 +122,5 @@ def delete_weight(weight_id: int, current_user: AuthUser = Depends(app_module.ge
     deleted = db.delete_weight(weight_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Pesée introuvable")
+    app_module.invalidate_dashboard_cache(current_user.id)
     return {"status": "success", "message": f"Pesée #{weight_id} supprimée avec succès"}

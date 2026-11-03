@@ -410,6 +410,7 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
             photo_data_url=req.photo_data_url,
             user_id=current_user.id
         )
+    app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
 
@@ -460,6 +461,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
     updated = db.update_meal(meal_id, entry, user_id=current_user.id)
     if not updated:
         raise HTTPException(status_code=404, detail="Repas introuvable")
+    app_module.invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
 
@@ -470,6 +472,7 @@ def delete_meal(meal_id: int, current_user: AuthUser = Depends(app_module.get_cu
     deleted = db.delete_meal(meal_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Repas introuvable")
+    app_module.invalidate_dashboard_cache(current_user.id)
     return {"status": "success", "message": f"Repas #{meal_id} supprimé avec succès"}
 
 
@@ -622,6 +625,7 @@ def log_saved_meal_to_journal(
     )
 
     logged = db.insert_meal(entry, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": f"Plat '{saved.name}' ajouté au journal ({meal_type}) avec portion x{factor}",
@@ -908,7 +912,7 @@ def add_item_to_meal_journal(
         items_to_add = [payload]
         target_date = payload.date or dt_module.date.today()
 
-    last_log = None
+    resolved_items_by_date: Dict[dt_module.date, List[Dict[str, Any]]] = {}
     for it in items_to_add:
         item_target_date = it.date or target_date
         # Résolution par food_item_id si fourni
@@ -936,23 +940,47 @@ def add_item_to_meal_journal(
             fat = it.fat_g if it.fat_g is not None else 0.0
             fiber = it.fiber_g if it.fiber_g is not None else 0.0
 
-        last_log = db.add_item_to_meal_log(
-            date_val=item_target_date,
-            meal_type=meal_type,
-            name=name,
-            quantity=qty,
-            unit=unit,
-            calories=cal,
-            protein_g=prot,
-            carbs_g=carbs,
-            fat_g=fat,
-            fiber_g=fiber,
-            food_item_id=it.food_item_id,
-            user_id=current_user.id
-        )
+        resolved_items_by_date.setdefault(item_target_date, []).append({
+            "name": name,
+            "quantity": qty,
+            "unit": unit,
+            "calories": cal,
+            "protein_g": prot,
+            "carbs_g": carbs,
+            "fat_g": fat,
+            "fiber_g": fiber,
+            "food_item_id": it.food_item_id
+        })
+
+    last_log = None
+    for d_val, items_list in resolved_items_by_date.items():
+        if len(items_list) == 1:
+            it_data = items_list[0]
+            last_log = db.add_item_to_meal_log(
+                date_val=d_val,
+                meal_type=meal_type,
+                name=it_data["name"],
+                quantity=it_data["quantity"],
+                unit=it_data["unit"],
+                calories=it_data["calories"],
+                protein_g=it_data["protein_g"],
+                carbs_g=it_data["carbs_g"],
+                fat_g=it_data["fat_g"],
+                fiber_g=it_data["fiber_g"],
+                food_item_id=it_data["food_item_id"],
+                user_id=current_user.id
+            )
+        else:
+            last_log = db.batch_add_items_to_meal_log(
+                date_val=d_val,
+                meal_type=meal_type,
+                items=items_list,
+                user_id=current_user.id
+            )
 
     action_date = last_log.date if last_log else target_date
     _, day_summary = calculate_day_summary(action_date, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
 
     return {
         "status": "success",
@@ -974,6 +1002,7 @@ def delete_meal_journal_item(
         raise HTTPException(status_code=404, detail="Ligne d'aliment introuvable dans le journal")
 
     _, day_summary = calculate_day_summary(updated_log.date, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
 
     return {
         "status": "success",

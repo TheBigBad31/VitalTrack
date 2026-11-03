@@ -473,6 +473,18 @@ def health_check():
 # Endpoints Dashboard & Données Agrégées (BALI-106 : parallélisé via asyncio.gather)
 # =====================================================================
 
+DASHBOARD_CACHE: Dict[Tuple[int, bool], Tuple[float, Any]] = {}
+DASHBOARD_CACHE_TTL_SECONDS = 45.0
+
+def invalidate_dashboard_cache(user_id: Optional[int] = None):
+    """Invalide le cache en mémoire du dashboard (global ou par utilisateur)."""
+    if user_id is None:
+        DASHBOARD_CACHE.clear()
+    else:
+        for k in list(DASHBOARD_CACHE.keys()):
+            if k[0] == user_id:
+                DASHBOARD_CACHE.pop(k, None)
+
 @app.get("/api/dashboard")
 async def get_dashboard_data(
     include_simulation: bool = Query(False, description="Inclure ou exclure les données de simulation"),
@@ -483,6 +495,13 @@ async def get_dashboard_data(
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     user_id = target_uid
+
+    cache_key = (user_id, include_simulation)
+    now_ts = time.time()
+    if cache_key in DASHBOARD_CACHE:
+        cached_ts, cached_data = DASHBOARD_CACHE[cache_key]
+        if now_ts - cached_ts < DASHBOARD_CACHE_TTL_SECONDS:
+            return cached_data
 
     # Vague 1 : appels DB indépendants (profil, repas, métriques quotidiennes, appareils)
     profile, meals, daily_metrics_rows, saved_devices_raw = await asyncio.gather(
@@ -569,7 +588,7 @@ async def get_dashboard_data(
             "api_key_masked": saved_d.get("api_key_masked"),
         })
 
-    return {
+    dashboard_res = {
         "profile": profile,
         "current_user": current_user.model_dump(),
         "summary": {
@@ -602,6 +621,8 @@ async def get_dashboard_data(
         "devices": device_statuses,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    DASHBOARD_CACHE[cache_key] = (now_ts, dashboard_res)
+    return dashboard_res
 
 
 # =====================================================================
@@ -645,6 +666,7 @@ def get_user_profile(
 def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(get_current_user)):
     """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
     updated = db.update_user_profile(profile_in.model_dump(), user_id=current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Profil mis à jour avec succès",
@@ -803,6 +825,7 @@ def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: Au
 def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(get_current_user)):
     """Restaure ou synchronise les données depuis un export JSON ou le localStorage/IndexedDB."""
     result = db.import_full_backup(payload.data, overwrite=payload.overwrite, user_id=current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return result
 
 
@@ -811,6 +834,7 @@ def reset_demo(current_user: AuthUser = Depends(get_current_user)):
     """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
     db.update_user_profile({"is_demo_profile": 1}, user_id=current_user.id)
     db.reset_demo_data(user_id=current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Données de démonstration 30 jours réinitialisées avec succès",
@@ -822,6 +846,7 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
     """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
     db.clear_all_history(keep_profile=True, user_id=current_user.id)
     db.update_user_profile({"is_demo_profile": 0}, user_id=current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Historique effacé. Vous pouvez démarrer votre suivi réel !",

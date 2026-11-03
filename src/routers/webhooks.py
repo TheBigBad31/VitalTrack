@@ -410,6 +410,12 @@ def process_single_item(
             user_id=resolved_user_id
         )
 
+    try:
+        from src.app import invalidate_dashboard_cache
+        invalidate_dashboard_cache(resolved_user_id)
+    except Exception:
+        pass
+
     return {
         "device_id": dev_id,
         "source": source_name,

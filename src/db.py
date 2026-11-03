@@ -153,6 +153,13 @@ class DatabaseCursorWrapper:
         # Sur Postgres, lastrowid n'est pas standardisé de la même manière, géré par RETURNING
         return getattr(self.cursor, "lastrowid", None)
 
+    def executemany(self, sql: str, params_list: List[tuple]):
+        if self.is_postgres:
+            pg_sql = sql.replace("?", "%s")
+            return self.cursor.executemany(pg_sql, params_list)
+        else:
+            return self.cursor.executemany(sql, params_list)
+
 
 class DatabaseConnectionWrapper:
     """Wrapper unifié pour connexions SQLite et PostgreSQL."""
@@ -1668,6 +1675,47 @@ class Database:
             ))
         return results
 
+    def batch_insert_weights(self, entries: List[WeightEntry], user_id: int = 1) -> int:
+        """Insère plusieurs pesées en une seule transaction (batch)."""
+        if not entries:
+            return 0
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            params_list = []
+            for entry in entries:
+                date_str = entry.date.isoformat()
+                trend = entry.trend_7d_kg or 0.0
+                idemp_key = entry.idempotency_key or (f"{entry.source}:{entry.external_id}" if entry.external_id else None)
+                measured_at_str = entry.measured_at or now_str
+                params_list.append((
+                    user_id, date_str, entry.weight_kg, entry.body_fat_pct or 0.0,
+                    entry.muscle_mass_kg or 0.0, entry.water_pct or 0.0,
+                    entry.bmi or 0.0, trend, entry.source, entry.notes,
+                    entry.external_id, measured_at_str, idemp_key, now_str
+                ))
+            sql = """
+                INSERT INTO weights (
+                    user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct,
+                    bmi, trend_7d_kg, source, notes, external_id, measured_at, idempotency_key, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date, source) DO UPDATE SET
+                    weight_kg = excluded.weight_kg,
+                    body_fat_pct = excluded.body_fat_pct,
+                    muscle_mass_kg = excluded.muscle_mass_kg,
+                    water_pct = excluded.water_pct,
+                    bmi = excluded.bmi,
+                    trend_7d_kg = excluded.trend_7d_kg,
+                    notes = excluded.notes,
+                    external_id = COALESCE(excluded.external_id, weights.external_id),
+                    measured_at = COALESCE(excluded.measured_at, weights.measured_at),
+                    idempotency_key = COALESCE(excluded.idempotency_key, weights.idempotency_key)
+            """
+            cursor.executemany(sql, params_list)
+            conn.commit()
+            return len(params_list)
+
     # ---------------------------------------------------------
     
     def get_weight_by_id(self, weight_id: int, user_id: int = 1) -> Optional[WeightEntry]:
@@ -1886,6 +1934,48 @@ class Database:
                 created_at=datetime.fromisoformat(r["created_at"]) if r["created_at"] else None
             ))
         return results
+
+    def batch_insert_activities(self, entries: List[ActivityEntry], user_id: int = 1) -> int:
+        """Insère plusieurs activités en une seule transaction (batch)."""
+        if not entries:
+            return 0
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            params_list = []
+            for entry in entries:
+                date_str = entry.date.isoformat()
+                total_burned = entry.total_burned_kcal if entry.total_burned_kcal > 0 else (round(entry.bmr_kcal + entry.active_calories_kcal, 1) if (entry.bmr_kcal > 0 or entry.active_calories_kcal > 0) else 0.0)
+                idemp_key = entry.idempotency_key or (f"{entry.source}:{entry.external_id}" if entry.external_id else None)
+                params_list.append((
+                    user_id, date_str, entry.steps, entry.active_calories_kcal,
+                    entry.bmr_kcal, total_burned, entry.workout_minutes,
+                    entry.workout_type, entry.resting_hr_bpm, entry.hrv_ms,
+                    entry.sleep_score, entry.source, entry.external_id, idemp_key, now_str
+                ))
+            sql = """
+                INSERT INTO activities (
+                    user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal,
+                    workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score,
+                    source, external_id, idempotency_key, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, date, source) DO UPDATE SET
+                    steps = excluded.steps,
+                    active_calories_kcal = excluded.active_calories_kcal,
+                    bmr_kcal = excluded.bmr_kcal,
+                    total_burned_kcal = excluded.total_burned_kcal,
+                    workout_minutes = excluded.workout_minutes,
+                    workout_type = excluded.workout_type,
+                    resting_hr_bpm = excluded.resting_hr_bpm,
+                    hrv_ms = excluded.hrv_ms,
+                    sleep_score = excluded.sleep_score,
+                    external_id = COALESCE(excluded.external_id, activities.external_id),
+                    idempotency_key = COALESCE(excluded.idempotency_key, activities.idempotency_key)
+            """
+            cursor.executemany(sql, params_list)
+            conn.commit()
+            return len(params_list)
 
     # ---------------------------------------------------------
     # Repas Multi-Utilisateurs
@@ -2308,9 +2398,11 @@ class Database:
         query: Optional[str] = None,
         user_id: int = 1,
         source: str = "mine",
-        friend_id: Optional[int] = None
+        friend_id: Optional[int] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
     ) -> List[CatalogItem]:
-        """Récupère les éléments du catalogue selon la source demandée ('mine', 'public', 'friends', 'all', ou friend_id)."""
+        """Récupère les éléments du catalogue selon la source demandée ('mine', 'public', 'friends', 'all', ou friend_id), avec support optionnel de pagination (limit, offset)."""
         params: List[Any] = []
         where_clauses: List[str] = []
 
@@ -2344,6 +2436,8 @@ class Database:
             params.append(f"%{query.strip().lower()}%")
 
         sql = f"SELECT * FROM food_items WHERE {' AND '.join(where_clauses)} ORDER BY is_public DESC, name ASC"
+        if limit is not None:
+            sql += f" LIMIT {int(limit)} OFFSET {int(offset)}"
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -3225,6 +3319,84 @@ class Database:
 
         return result_log
 
+    def batch_add_items_to_meal_log(
+        self,
+        date_val: date,
+        meal_type: str,
+        items: List[Dict[str, Any]],
+        user_id: int = 1
+    ) -> MealLog:
+        """Ajoute une liste d'aliments/plats à un repas dans une seule transaction atomique et avec un seul recalcul."""
+        if not items:
+            return self.get_meal_log(date_val, meal_type, user_id=user_id)
+        date_str = date_val.isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id FROM meal_logs
+                WHERE user_id = ? AND date = ? AND meal_type = ?
+            """, (user_id, date_str, meal_type))
+            row = cursor.fetchone()
+
+            if not row:
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                        ON CONFLICT (user_id, date, meal_type) DO NOTHING
+                        RETURNING id;
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+                    row = cursor.fetchone()
+                else:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+
+                if not row:
+                    cursor.execute("""
+                        SELECT id FROM meal_logs
+                        WHERE user_id = ? AND date = ? AND meal_type = ?
+                    """, (user_id, date_str, meal_type))
+                    row = cursor.fetchone()
+
+            meal_log_id = row["id"]
+
+            params_list = []
+            for it in items:
+                params_list.append((
+                    meal_log_id,
+                    it.get("food_item_id"),
+                    it.get("name", "Aliment"),
+                    float(it.get("quantity", 100.0)),
+                    it.get("unit", "g"),
+                    float(it.get("calories", 0.0)),
+                    float(it.get("protein_g", 0.0)),
+                    float(it.get("carbs_g", 0.0)),
+                    float(it.get("fat_g", 0.0)),
+                    float(it.get("fiber_g", 0.0)),
+                    now_str
+                ))
+
+            sql = """
+                INSERT INTO meal_log_items (
+                    meal_log_id, food_item_id, name, quantity, unit,
+                    calories, protein_g, carbs_g, fat_g, fiber_g, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            cursor.executemany(sql, params_list)
+
+            # Un seul recalcul et synchronisation
+            self._atomic_recalculate_and_sync(cursor, meal_log_id, user_id=user_id)
+            conn.commit()
+
+            result_log = self._fetch_meal_log_with_cursor(cursor, meal_log_id, user_id=user_id)
+
+        return result_log
+
     def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
         """Supprime une ligne d'aliment consommée et recalcule le repas parent dans une seule transaction atomique."""
         with self.get_connection() as conn:
@@ -3507,6 +3679,11 @@ class Database:
                 raw_k = str(creds["api_key"])
                 d["api_key_masked"] = f"{raw_k[:4]}...{raw_k[-4:]}" if len(raw_k) > 8 else "***"
         return d
+
+    @staticmethod
+    def decrypt_device_credentials(encrypted_str: Optional[str]) -> Dict[str, Any]:
+        """Déchiffre les identifiants d'appareil (wrapper vers src.crypto)."""
+        return decrypt_credentials(encrypted_str)
 
     def get_user_devices(self, user_id: int = 1, reveal_secrets: bool = False) -> List[Dict[str, Any]]:
         """Récupère les objets connectés associés à user_id."""

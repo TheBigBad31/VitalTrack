@@ -80,4 +80,5 @@ def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(app_
         source=act_in.source
     )
     saved = db.insert_activity(entry, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
