@@ -21,9 +21,23 @@
     const dirtyTabs = new Set();
     const TAB_VIEW_IDS = ['summary', 'weight', 'nutrition', 'activity', 'goals', 'devices'];
 
-    let currentEstimatedMeal = null;
-    let currentUploadedPhotoUrl = null;
-
+    let currentEstimatedMeal = null;
+    let currentUploadedPhotoUrl = null;
+
+    // Constantes de configuration servees par le backend (/api-config).
+    // Aucune valeur magique en dur cote client : remplie au chargement.
+    let CONFIG = {};
+
+    // Charge les constantes de configuration depuis le backend (source de verite).
+    async function loadConfig() {
+      try {
+        const res = await apiFetch('/api/config');
+        if (res.ok) CONFIG = await res.json();
+      } catch (err) {
+        console.warn('[config] Impossible de charger /api/config, valeurs par defat neutres.', err);
+      }
+    }
+
     // Profils métaboliques 1-clic
     let activeGoalProfileId = "weight_loss";
     const GOAL_PROFILES = {
@@ -193,10 +207,13 @@
     // switchTab est délégué à static/modules/lazy.js (Architecture 6 onglets & lazy loading)
 
     // Chargement des données depuis FastAPI avec fallback
-    async function loadDashboardData() {
-      const refreshIcon = document.getElementById('refresh-icon');
-      if (refreshIcon) refreshIcon.classList.add('animate-spin');
-
+    async function loadDashboardData() {
+      const refreshIcon = document.getElementById('refresh-icon');
+      if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
+      // Charger les constantes de configuration (source de verite backend) avant tout rendu.
+      await loadConfig();
+
       try {
         const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `?user_id=${window.currentReadOnlyFriend.friend_id}` : '';
         const res = await apiFetch(`/api/dashboard${readOnlyParam}`);
@@ -318,9 +335,10 @@
       const elCalsIn = document.getElementById('val-cals-in');
       if (elCalsIn) elCalsIn.innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
       const barCalsIn = document.getElementById('bar-cals-in');
-      if (barCalsIn) {
-        const inPct = Math.min(100, Math.round(((s.calories_intake_kcal || 0) / (s.target_calories_intake || 2000)) * 100));
-        barCalsIn.style.width = `${inPct}%`;
+      if (barCalsIn) {
+        const targetCals = s.target_calories_intake || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
+        const inPct = targetCals > 0 ? Math.min(100, Math.round(((s.calories_intake_kcal || 0) / targetCals) * 100)) : 0;
+        barCalsIn.style.width = `${inPct}%`;
       }
 
       const elCalsOut = document.getElementById('val-cals-out');
@@ -328,8 +346,8 @@
 
       // Mise à jour des Anneaux d'objectifs (Palier 3)
       renderSummaryRings();
-      const elBmr = document.getElementById('val-bmr');
-      if (elBmr) elBmr.innerText = `${Math.round(s.bmr_kcal || 1780)} kcal`;
+      const elBmr = document.getElementById('val-bmr');
+      if (elBmr) elBmr.innerText = `${Math.round(s.bmr_kcal || (CONFIG.defaults && CONFIG.defaults.bmr_kcal) || 0)} kcal`;
 
       const net = Math.round(s.net_energy_balance_kcal || 0);
       const netEl = document.getElementById('val-net-balance');
@@ -344,9 +362,10 @@
         stEl.className = `text-[11px] font-medium ${net <= -250 ? 'text-emerald-400' : (net >= 250 ? 'text-amber-400' : 'text-blue-400')}`;
       }
 
-      const projChange = s.weekly_projected_weight_change_kg || ((net * 7) / 7700).toFixed(2);
-      const elProj = document.getElementById('val-projected-loss');
-      if (elProj) elProj.innerText = `Impact 7j: ~${projChange} kg`;
+      const kcalPerKg = CONFIG.kcal_per_kg || 0;
+      const projChange = s.weekly_projected_weight_change_kg !== undefined ? s.weekly_projected_weight_change_kg : (kcalPerKg > 0 ? ((net * 7) / kcalPerKg).toFixed(2) : null);
+      const elProj = document.getElementById('val-projected-loss');
+      if (elProj) elProj.innerText = projChange !== null && projChange !== undefined ? `Impact 7j: ~${projChange} kg` : 'Impact 7j: -- kg';
 
       // Donut Macros
       const m = s.macros || {};
@@ -398,7 +417,8 @@
       const net = Math.round((intake - burned) * 10) / 10;
       s.net_energy_balance_kcal = net;
       s.energy_status = net <= -250 ? 'deficit' : (net >= 250 ? 'surplus' : 'maintenance');
-      s.weekly_projected_weight_change_kg = Math.round(((net * 7.0) / 7700.0) * 1000) / 1000;
+      const kcalPerKg = CONFIG.kcal_per_kg || 0;
+      s.weekly_projected_weight_change_kg = kcalPerKg > 0 ? Math.round(((net * 7.0) / kcalPerKg) * 1000) / 1000 : null;
 
       // Rafraîchissement ciblé : compteurs si la Synthèse est visible, sinon
       // la vue sera rendue (dirty) à sa prochaine ouverture.
@@ -668,8 +688,8 @@
               { label: 'Collation', data: snack, backgroundColor: '#C026D3' },
               {
                 type: 'line',
-                label: 'Cible (2000 kcal)',
-                data: days.map(() => 2000),
+                label: `Cible (${(currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0} kcal)`,
+                data: days.map(() => (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0),
                 borderColor: '#ef4444',
                 borderDash: [4, 4],
                 pointRadius: 0,
@@ -713,8 +733,8 @@
           const isToday = day === todayStr;
           if (isToday) todayTotal = total;
 
-          const target = 2000;
-          const pct = Math.min(Math.round((total / target) * 100), 100);
+          const target = (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
+          const pct = target > 0 ? Math.min(Math.round((total / target) * 100), 100) : 0;
           const diff = total - target;
 
           let statusBadge = '';
@@ -754,9 +774,11 @@
           `;
         }).join('');
 
+        const todayTarget = (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
+
         if (todayBadge) {
-          todayBadge.textContent = `Aujourd'hui : ${todayTotal} kcal / 2 000 kcal`;
-          if (todayTotal > 2000) {
+          todayBadge.textContent = `Aujourd'hui : ${todayTotal} kcal / ${todayTarget} kcal`;
+          if (todayTotal > todayTarget) {
             todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 self-start sm:self-auto";
           } else {
             todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto";
@@ -867,7 +889,7 @@
         stepsCur = s.steps || 0;
         stepsTgt = s.steps_target || 10000;
         stepsPct = Math.min(100, Math.round((stepsCur / stepsTgt) * 100));
-        calsCur = Math.max(0, (s.calories_burned_kcal || 1780) - (s.bmr_kcal || 1780));
+        calsCur = Math.max(0, (s.calories_burned_kcal || 0) - (s.bmr_kcal || 0));
         calsPct = Math.min(100, Math.round((calsCur / 500) * 100));
       }
 
@@ -2463,7 +2485,7 @@
         height_cm: parseFloat(document.getElementById('prof-height') && document.getElementById('prof-height').value) || 178.0,
         target_weight_kg: parseFloat(document.getElementById('prof-target-weight') && document.getElementById('prof-target-weight').value) || 77.0,
         target_steps: parseInt(document.getElementById('prof-target-steps') && document.getElementById('prof-target-steps').value) || 10000,
-        target_calories_intake: parseFloat(document.getElementById('prof-target-cals') && document.getElementById('prof-target-cals').value) || 2000.0,
+        target_calories_intake: parseFloat(document.getElementById('prof-target-cals') && document.getElementById('prof-target-cals').value) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0,
         protein_target_per_kg: parseFloat(document.getElementById('prof-target-prot') && document.getElementById('prof-target-prot').value) || 1.8
       };
 

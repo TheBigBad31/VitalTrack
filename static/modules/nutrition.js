@@ -1650,12 +1650,7 @@ function recalculateJournalTotals(journal) {
     total_protein_g: roundJournalValue(dayProt),
     total_carbs_g: roundJournalValue(dayCarbs),
     total_fat_g: roundJournalValue(dayFat),
-    total_fiber_g: roundJournalValue(dayFiber),
-    macros_pct: {
-      protein_pct: macroCal > 0 ? roundJournalValue((pCal / macroCal) * 100.0) : 0,
-      carbs_pct: macroCal > 0 ? roundJournalValue((cCal / macroCal) * 100.0) : 0,
-      fat_pct: macroCal > 0 ? roundJournalValue((fCal / macroCal) * 100.0) : 0
-    }
+    total_fiber_g: roundJournalValue(dayFiber)
   };
   return journal;
 }

@@ -945,7 +945,7 @@
                 <th class="py-2.5 px-3">🍎 Goûter</th>
                 <th class="py-2.5 px-3">🍲 Dîner</th>
                 <th class="py-2.5 px-3 font-bold text-white">Total Calories</th>
-                <th class="py-2.5 px-3">Cible (2000 kcal)</th>
+                <th class="py-2.5 px-3">Cible (kcal)</th>
                 <th class="py-2.5 px-3">Statut</th>
               </tr>
             </thead>
@@ -2330,7 +2330,7 @@
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Cible Calories (kcal/j)</label>
-            <input type="number" id="prof-target-cals" value="2000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="prof-target-cals" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Protéines (g / kg)</label>
@@ -2825,10 +2825,10 @@
         steps: 0,
         steps_target: 10000,
         calories_intake_kcal: 0.0,
-        calories_burned_kcal: 1780.0,
-        bmr_kcal: 1780.0,
+        calories_burned_kcal: 0.0,
+        bmr_kcal: 0.0,
         net_energy_balance_kcal: 0.0,
-        target_calories_intake: 2000.0,
+        target_calories_intake: 0.0,
         energy_status: "maintenance",
         recommendation: "Aucune donnée enregistrée aujourd'hui. Ajoutez votre première pesée, un repas ou synchronisez vos appareils connectés.",
         macros: {

@@ -848,6 +848,10 @@ app.include_router(friends_router)
 
 GOALS_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "..", "config", "goals_presets.yaml")
 
+# Constante de conversion poids <-> energie (source de verite backend).
+# 1 kg de masse grasse correspond approximativement a 7700 kcal.
+KCAL_PER_KG = 7700.0
+
 DEFAULT_GOALS_PRESETS = {
     "default_profile": "weight_loss",
     "profiles": {
@@ -912,6 +916,24 @@ def get_goals_presets():
         except (OSError, yaml.YAMLError):
             logger.exception("Erreur lors du chargement de la configuration des profils d'objectifs (%s)", GOALS_CONFIG_FILE)
     return DEFAULT_GOALS_PRESETS
+
+
+@app.get("/api/config")
+def get_config():
+    """Expose les constantes de configuration (source de verite backend) pour le client.
+
+    Le client ne doit plus contenir de nombres magiques en dur (7700 kcal/kg,
+    cibles par defaut, etc.) : il les recupere ici et les affiche tels quels.
+    """
+    return {
+        "kcal_per_kg": KCAL_PER_KG,
+        "goal_profiles": get_goals_presets(),
+        "defaults": {
+            "target_calories_intake": 2000.0,
+            "bmr_kcal": 1780.0,
+            "steps_target": 10000,
+        },
+    }
 
 
 # =====================================================================
