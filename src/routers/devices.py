@@ -87,6 +87,23 @@ def list_devices(current_user: AuthUser = Depends(app_module.get_current_user)):
     return statuses
 
 
+@router.get("/api/devices/data-map")
+def get_devices_data_map(current_user: AuthUser = Depends(app_module.get_current_user)):
+    """Matrice complète des flux et de la cartographie des données connectées (Data Map).
+    
+    Retourne pour chaque source et métrique de santé :
+    - La lecture par le connecteur
+    - Le stockage en base de données
+    - La restitution dans l'interface utilisateur
+    - La valeur et la date du dernier point reçu
+    - Le volume collecté sur les 7 derniers jours
+    - Le traçage unifié de la provenance des pesées récentes (Withings vs Santé Connect)
+    """
+    db = get_db()
+    user_id = current_user.id if current_user else 1
+    return db.get_devices_data_map(user_id=user_id)
+
+
 @router.get("/api/devices/comparison")
 def get_devices_comparison():
     """Guide comparatif technique pour le choix de la balance connectée et l'interconnexion bague."""

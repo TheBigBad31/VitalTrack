@@ -1679,6 +1679,8 @@
           </div>
         `;
         if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+        loadDataMapView();
+
         return;
       }
 
@@ -1798,7 +1800,9 @@
         </div>
       `;
 
-      grid.innerHTML = cardsHtml + addCardHtml;
+      grid.innerHTML = cardsHtml + addCardHtml;
+
+      loadDataMapView();
       if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
     }
 
@@ -1848,7 +1852,116 @@
     // =====================================================================
     // LOGIQUE MODAL PHOTO REPAS & CURSEUR
     // =====================================================================
-    function openMealModal(mealType) {
+
+    // =====================================================================
+    // PANNEAU DONNÉES CONNECTÉES & CARTOGRAPHIE DES FLUX (BALI-197)
+    // =====================================================================
+    async function loadDataMapView() {
+      const weightsTbody = document.getElementById('data-map-weights-tbody');
+      const metricsTbody = document.getElementById('data-map-metrics-tbody');
+      if (!metricsTbody && !weightsTbody) return;
+
+      try {
+        const res = await apiFetch('/api/devices/data-map');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // 1. Mettre à jour les badges résumés
+        const sumTotal = document.getElementById('dm-summary-total');
+        const sumDisp = document.getElementById('dm-summary-displayed');
+        const sumHid = document.getElementById('dm-summary-hidden');
+        const sumNotRead = document.getElementById('dm-summary-notread');
+        if (sumTotal && data.summary) sumTotal.textContent = data.summary.total_metrics || 17;
+        if (sumDisp && data.summary) sumDisp.textContent = data.summary.ingested_and_displayed || 0;
+        if (sumHid && data.summary) sumHid.textContent = data.summary.ingested_not_displayed || 0;
+        if (sumNotRead && data.summary) sumNotRead.textContent = data.summary.not_read || 0;
+
+        // 2. Rendu des pesées récentes (diagnostic de Sébastien : Withings vs Santé Connect)
+        if (weightsTbody) {
+          const weights = data.recent_weights || [];
+          if (weights.length === 0) {
+            weightsTbody.innerHTML = `<tr><td colspan="5" class="py-3 px-3 text-slate-500 text-center">Aucune pesée enregistrée pour le moment.</td></tr>`;
+          } else {
+            weightsTbody.innerHTML = weights.map(w => {
+              const srcLower = (w.source || '').toLowerCase();
+              const isWithings = srcLower.includes('withing');
+              const isHealthConnect = srcLower.includes('connect') || srcLower.includes('android');
+              const badgeClass = isWithings 
+                ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                : (isHealthConnect 
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                  : 'bg-slate-800 text-slate-300 border border-slate-700');
+              const badgeIcon = isWithings ? 'cloud' : (isHealthConnect ? 'smartphone' : 'edit-3');
+              const measTime = w.measured_at ? escapeHtml(String(w.measured_at)) : 'Date seule (00:00)';
+              return `
+                <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
+                  <td class="py-2.5 px-3 font-medium text-white">${escapeHtml(w.date || '-')}</td>
+                  <td class="py-2.5 px-3 font-bold text-brand-300">${w.weight_kg ? w.weight_kg + ' kg' : '-'}</td>
+                  <td class="py-2.5 px-3 text-slate-300">${w.body_fat_pct ? w.body_fat_pct + ' %' : '-'}</td>
+                  <td class="py-2.5 px-3">
+                    <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${badgeClass}">
+                      <i data-lucide="${badgeIcon}" class="w-3 h-3"></i>
+                      <span>${escapeHtml(w.source_label || w.source || 'Manuel')}</span>
+                    </span>
+                  </td>
+                  <td class="py-2.5 px-3 text-slate-400 text-[11px] font-mono">${measTime}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+
+        // 3. Rendu de la matrice exhaustive des flux
+        if (metricsTbody) {
+          const metrics = data.metrics || [];
+          metricsTbody.innerHTML = metrics.map(m => {
+            let statusBadge = '';
+            let rowBorderClass = '';
+
+            if (m.status === 'ingested_not_displayed') {
+              statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">● Stocké non affiché</span>`;
+              rowBorderClass = 'bg-rose-950/10';
+            } else if (m.status === 'not_read') {
+              statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">● Non lu</span>`;
+            } else {
+              statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">● Ingéré & Affiché</span>`;
+            }
+
+            const lastPt = m.last_point 
+              ? `<div class="font-medium text-white">${escapeHtml(m.last_point.value)}</div><div class="text-[10px] text-slate-400">${escapeHtml(m.last_point.date || '')} (${escapeHtml(m.last_point.source || '')})</div>`
+              : `<span class="text-slate-500 text-[11px] italic">Aucune donnée</span>`;
+
+            const sourcesBadges = (m.supported_sources || []).map(s => {
+              const sName = s === 'health_connect' ? 'Santé Connect' : (s === 'withings' ? 'Withings' : (s === 'ringconn' ? 'RingConn' : (s === 'oura' ? 'Oura' : (s === 'strava' ? 'Strava' : 'Manuel'))));
+              return `<span class="inline-block px-1.5 py-0.2 rounded bg-[#0B0F17] border border-[#1F2A3C] text-[10px] text-slate-300 mr-1">${sName}</span>`;
+            }).join('');
+
+            return `
+              <tr class="hover:bg-[#1F2A3C]/40 transition-colors ${rowBorderClass}">
+                <td class="py-2.5 px-3">
+                  <div class="font-bold text-white">${escapeHtml(m.label || m.key)}</div>
+                  <div class="text-[10px] text-slate-400">${escapeHtml(m.category || '')} · unité: ${escapeHtml(m.unit || '-')}</div>
+                </td>
+                <td class="py-2.5 px-3">${sourcesBadges}</td>
+                <td class="py-2.5 px-3 font-mono text-[11px] text-slate-400">${escapeHtml(m.table || '-')}</td>
+                <td class="py-2.5 px-3">${lastPt}</td>
+                <td class="py-2.5 px-3 text-center font-bold ${m.points_7d_count > 0 ? 'text-cyan-400' : 'text-slate-500'}">${m.points_7d_count || 0}</td>
+                <td class="py-2.5 px-3 text-[11px] ${m.rendered_in_ui ? 'text-slate-300' : 'text-rose-400 font-medium'}">${escapeHtml(m.ui_location || '-')}</td>
+                <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+      } catch (err) {
+        console.error("Erreur chargement data-map:", err);
+      }
+    }
+    window.loadDataMapView = loadDataMapView;
+
+
+        function openMealModal(mealType) {
       if (mealType) {
         const sel = document.getElementById('meal-type-select');
         if (sel) sel.value = mealType;
