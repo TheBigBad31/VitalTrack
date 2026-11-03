@@ -33,31 +33,16 @@ def _is_production() -> bool:
     return env_name.lower() in ("production", "prod", "staging")
 
 
-def _jwt_secret_hash() -> str:
-    """Dérivation déterministe de JWT_SECRET à partir du hash SHA-256 du source auth.py.
-    
-    Utilisé comme fallback sécurisé en production lorsque JWT_SECRET n'est pas configuré
-    via variables d'environnement. La même source de code produit toujours la même clé,
-    sans jamais hardcode de secret en clair.
-    """
-    source_path = os.path.join(os.path.dirname(__file__), "auth.py")
-    try:
-        with open(source_path, "rb") as f:
-            code_hash = hashlib.sha256(f.read()).hexdigest()
-    except Exception:
-        code_hash = "fallback_missing"
-    # 32 octets = 256 bits, suffisamment aléatoire pour un usage cryptographique
-    return code_hash[:32]
-
-
 def _resolve_jwt_secret() -> str:
-    """Résout JWT_SECRET depuis l'environnement, avec fallback déterministe en production."""
+    """Résout JWT_SECRET depuis l'environnement, échoue en production ou génère une clé aléatoire en dev."""
     secret = os.getenv("JWT_SECRET", "").strip()
     if secret:
         return secret
     if _is_production():
-        # Fallback déterministe sécurisé : dérivé du hash du source code
-        return _jwt_secret_hash()
+        raise MissingJWTSecretError(
+            "[VitalTrack Security Error] JWT_SECRET doit obligatoirement être configurée en production (VERCEL/ENV=production). "
+            "Aucune clé par défaut n'est autorisée."
+        )
     return secrets.token_urlsafe(32)
 
 

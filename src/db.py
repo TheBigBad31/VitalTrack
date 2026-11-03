@@ -21,6 +21,7 @@ Modélisation multi-utilisateurs :
 """
 
 import hashlib
+import hmac
 import json
 import math
 import os
@@ -3481,7 +3482,8 @@ class Database:
         if enc_cred:
             creds = decrypt_credentials(enc_cred)
         elif d.get("api_key"):
-            creds = {"api_key": d["api_key"]}
+            raw_k = decrypt_data(d["api_key"])
+            creds = {"api_key": raw_k} if raw_k else {}
         else:
             creds = {}
 
@@ -3525,16 +3527,16 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # 1. Vérification indexée par api_key_hash ou api_key en clair
+            # 1. Vérification indexée par api_key_hash
             if device_id:
                 cursor.execute(
-                    "SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND (api_key_hash = ? OR api_key = ?) LIMIT 1",
-                    (device_id, token_hash, token_clean)
+                    "SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND api_key_hash = ? LIMIT 1",
+                    (device_id, token_hash)
                 )
             else:
                 cursor.execute(
-                    "SELECT * FROM user_devices WHERE is_active = 1 AND (api_key_hash = ? OR api_key = ?) LIMIT 1",
-                    (token_hash, token_clean)
+                    "SELECT * FROM user_devices WHERE is_active = 1 AND api_key_hash = ? LIMIT 1",
+                    (token_hash,)
                 )
             row = cursor.fetchone()
             if row:
@@ -3559,11 +3561,11 @@ class Database:
             if not formatted:
                 continue
             creds = formatted.get("credentials") or {}
-            # Vérifier api_key, webhook_secret, token, bearer_token ou webhook_token
+            # Vérifier api_key, webhook_secret, token, bearer_token ou webhook_token en temps constant
             matched = False
             for key in ["api_key", "webhook_secret", "token", "bearer_token", "webhook_token"]:
                 val = creds.get(key)
-                if val and str(val).strip() == token_clean:
+                if val and hmac.compare_digest(str(val).strip(), token_clean):
                     matched = True
                     break
 
@@ -3683,6 +3685,8 @@ class Database:
             creds_to_encrypt["api_key"] = api_key
 
         encrypted_credentials = encrypt_credentials(creds_to_encrypt) if creds_to_encrypt else None
+        # Ne jamais persister l'api_key en clair dans la colonne api_key : stocker la version chiffrée enc::
+        enc_api_key = encrypt_data(api_key) if api_key else None
         
         # Calcul du hash SHA-256 pour indexation rapide sans déchiffrement
         api_key_hash = None
@@ -3717,7 +3721,7 @@ class Database:
                     RETURNING *;
                 """, (
                     user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
+                    enc_api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
                     now_str, now_str, sync_status, now_str
                 ))
                 row = cursor.fetchone()
@@ -3745,7 +3749,7 @@ class Database:
                         updated_at = excluded.updated_at
                 """, (
                     user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
+                    enc_api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
                     now_str, now_str, sync_status, now_str
                 ))
                 conn.commit()

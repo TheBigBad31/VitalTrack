@@ -76,42 +76,46 @@ def test_crypto_encryption_and_decryption():
     dec_creds = decrypt_credentials(enc_creds)
     assert dec_creds == creds
 
-    # Rétrocompatibilité : chaînes déjà en clair
+    # Rétrocompatibilité : chaînes déjà en clair (acceptées hors production)
     assert decrypt_data("plain_key_123") == "plain_key_123"
     assert decrypt_credentials("plain_key_123") == {"api_key": "plain_key_123"}
 
 
 def test_data_encryption_key_required_in_production_and_random_in_dev(monkeypatch):
-    """Vérifie que DATA_ENCRYPTION_KEY génère une clé aléatoire en dev et une dérivation déterministe en production."""
+    """Vérifie que DATA_ENCRYPTION_KEY lève RuntimeError en production si absente et génère une clé aléatoire en dev."""
     monkeypatch.delenv("DATA_ENCRYPTION_KEY", raising=False)
     monkeypatch.delenv("SECRET_KEY", raising=False)
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("ENVIRONMENT", raising=False)
 
-    # 1. En dev : génère une clé aléatoire à chaque appel
+    # 1. En dev : génère une clé aléatoire
     seed1 = _resolve_key_seed()
     seed2 = _resolve_key_seed()
     assert len(seed1) >= 32
     assert seed1 != seed2
 
-    # 2. En production (VERCEL=1) sans DATA_ENCRYPTION_KEY : dérivation déterministe sécurisée
+    # 2. En production (VERCEL=1) sans DATA_ENCRYPTION_KEY : lève RuntimeError (MissingEncryptionKeyError)
     monkeypatch.setenv("VERCEL", "1")
-    prod_fallback_seed = _resolve_key_seed()
-    assert len(prod_fallback_seed) >= 32
-    # La dérivation est déterministe : relancer doit donner la même clé
-    assert prod_fallback_seed == _resolve_key_seed()
+    with pytest.raises(RuntimeError, match="DATA_ENCRYPTION_KEY"):
+        _resolve_key_seed()
 
-    # 3. En production (ENV=production) sans DATA_ENCRYPTION_KEY : même dérivation déterministe
+    # 3. En production (ENV=production) sans DATA_ENCRYPTION_KEY : lève RuntimeError
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.setenv("ENV", "production")
-    prod_fallback_seed2 = _resolve_key_seed()
-    assert len(prod_fallback_seed2) >= 32
-    assert prod_fallback_seed2 == _resolve_key_seed()
+    with pytest.raises(MissingEncryptionKeyError):
+        _resolve_key_seed()
 
     # 4. En production avec DATA_ENCRYPTION_KEY configurée : retourne la clé configurée
     monkeypatch.setenv("DATA_ENCRYPTION_KEY", "prod-encryption-key-strong-2026")
     assert _resolve_key_seed() == "prod-encryption-key-strong-2026"
+
+
+def test_decrypt_data_rejects_unencrypted_in_production(monkeypatch):
+    """Vérifie qu'en production, decrypt_data refuse et lève une exception sur les credentials non préfixés 'enc::'."""
+    monkeypatch.setenv("VERCEL", "1")
+    with pytest.raises(ValueError, match="préfixe 'enc::' manquant"):
+        decrypt_data("plain_unencrypted_token_123")
 
 
 def test_devices_endpoints_lifecycle(isolated_client):

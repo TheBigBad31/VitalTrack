@@ -34,31 +34,16 @@ def _is_production() -> bool:
     return env_name.lower() in ("production", "prod", "staging")
 
 
-def _key_seed_hash() -> str:
-    """Dérivation déterministe de clé de chiffrement à partir du hash SHA-256 du source crypto.py.
-    
-    Utilisé comme fallback sécurisé en production lorsque DATA_ENCRYPTION_KEY n'est pas configuré
-    via variables d'environnement. La même source de code produit toujours la même clé,
-    sans jamais hardcode de secret en clair.
-    """
-    source_path = os.path.join(os.path.dirname(__file__), "crypto.py")
-    try:
-        with open(source_path, "rb") as f:
-            code_hash = hashlib.sha256(f.read()).hexdigest()
-    except Exception:
-        code_hash = "fallback_missing"
-    # 32 octets = 256 bits, suffisamment aléatoire pour un usage cryptographique
-    return code_hash[:32]
-
-
 def _resolve_key_seed() -> str:
-    """Résout la clé de chiffrement depuis DATA_ENCRYPTION_KEY (ou SECRET_KEY), avec fallback déterministe en production."""
+    """Résout la clé de chiffrement depuis DATA_ENCRYPTION_KEY (ou SECRET_KEY), échoue en production ou génère une clé aléatoire en dev."""
     key_seed = (os.getenv("DATA_ENCRYPTION_KEY") or os.getenv("SECRET_KEY") or "").strip()
     if key_seed:
         return key_seed
     if _is_production():
-        # Fallback déterministe sécurisé : dérivé du hash du source code
-        return _key_seed_hash()
+        raise MissingEncryptionKeyError(
+            "[VitalTrack Security Error] DATA_ENCRYPTION_KEY doit obligatoirement être configurée en production (VERCEL/ENV=production). "
+            "Aucune clé par défaut n'est autorisée."
+        )
     return secrets.token_urlsafe(32)
 
 
@@ -94,14 +79,18 @@ def encrypt_data(data: Union[str, Dict[str, Any], None]) -> Optional[str]:
 def decrypt_data(encrypted_str: Optional[str]) -> Optional[str]:
     """Déchiffre une chaîne préalablement chiffrée.
     
-    Si la chaîne n'est pas chiffrée (sans préfixe 'enc::'), la retourne telle quelle
-    pour assurer une rétrocompatibilité parfaite.
+    Si la chaîne n'est pas chiffrée (sans préfixe 'enc::'), refuse en production (lève ValueError)
+    ou la retourne telle quelle en développement pour rétrocompatibilité.
     """
     if not encrypted_str:
         return None
     
     if not encrypted_str.startswith("enc::"):
-        # Valeur en clair préexistante
+        if _is_production():
+            raise ValueError(
+                "[VitalTrack Security Error] Credentials non chiffrés refusés en production (préfixe 'enc::' manquant)."
+            )
+        # Valeur en clair préexistante (tolérée uniquement hors production)
         return encrypted_str
     
     token = encrypted_str[len("enc::"):]
