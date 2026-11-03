@@ -558,18 +558,18 @@ def test_health_webhook_endpoints(client):
     )
     assert res_auth.status_code == 200
 
-    # 6. Succès également via query param token
+    # 6. Rejet 401 si token envoyé via query parameter (durcissement BALI-182)
     res_query = client.post(
         "/api/webhooks/ringconn?token=secret_ring_token_456",
         json=webhook_payload
     )
-    assert res_query.status_code == 200
+    assert res_query.status_code == 401
 
-    # 7. Succès via payload token
+    # 7. Rejet 401 si token envoyé dans le body JSON (durcissement BALI-182)
     payload_with_token = dict(webhook_payload)
     payload_with_token["token"] = "secret_ring_token_456"
     res_payload = client.post("/api/webhooks/ringconn", json=payload_with_token)
-    assert res_payload.status_code == 200
+    assert res_payload.status_code == 401
 
 
 def test_daily_sync_execution():

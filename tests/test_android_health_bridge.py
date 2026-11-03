@@ -227,14 +227,14 @@ def test_auth_token_via_query_and_payload(client):
         f"/api/webhook/health?token={token}",
         json={"source": "ringconn", "date": "2026-10-25", "steps": 7000}
     )
-    assert resp_query.status_code == 200
+    assert resp_query.status_code == 401
 
     # 2. Via Payload JSON { "token": "..." }
     resp_body = client.post(
         "/api/webhook/health",
         json={"source": "ringconn", "token": token, "date": "2026-10-25", "steps": 7500}
     )
-    assert resp_body.status_code == 200
+    assert resp_body.status_code == 401
 
 
 def test_health_bridge_full_extended_payload_ingestion(client):

@@ -20,6 +20,7 @@ Modélisation multi-utilisateurs :
 - Table google_auth_config & google_sessions
 """
 
+import hashlib
 import json
 import math
 import os
@@ -578,6 +579,7 @@ class Database:
                         connected INTEGER NOT NULL DEFAULT 0,
                         auth_type TEXT NOT NULL DEFAULT 'demo',
                         api_key TEXT,
+                        api_key_hash TEXT,
                         encrypted_credentials TEXT,
                         account_email TEXT,
                         last_sync TEXT,
@@ -742,7 +744,7 @@ class Database:
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         source TEXT NOT NULL,
                         endpoint TEXT,
-                        idempotency_key TEXT,
+                        idempotency_key TEXT UNIQUE,
                         payload_json TEXT NOT NULL,
                         status TEXT NOT NULL DEFAULT 'received',
                         received_at TEXT NOT NULL
@@ -821,6 +823,7 @@ class Database:
                 # Migrations douces colonnes user_devices pour PostgreSQL
                 for col, def_val in [
                     ("is_active", "INTEGER NOT NULL DEFAULT 1"),
+                    ("api_key_hash", "TEXT"),
                     ("encrypted_credentials", "TEXT"),
                     ("last_sync_at", "TEXT"),
                     ("sync_status", "TEXT DEFAULT 'disconnected'")
@@ -854,6 +857,8 @@ class Database:
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
+                self._safe_execute(cursor, "CREATE UNIQUE INDEX IF NOT EXISTS uq_raw_ingest_idempotency_key ON raw_ingest(idempotency_key);")
+                self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_user_devices_api_key_hash ON user_devices(api_key_hash);")
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);")
                 self._safe_execute(cursor, "CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_user_id);")
@@ -1062,6 +1067,7 @@ class Database:
                         connected INTEGER NOT NULL DEFAULT 0,
                         auth_type TEXT NOT NULL DEFAULT 'demo',
                         api_key TEXT,
+                        api_key_hash TEXT,
                         encrypted_credentials TEXT,
                         account_email TEXT,
                         last_sync TEXT,
@@ -1226,7 +1232,7 @@ class Database:
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         source TEXT NOT NULL,
                         endpoint TEXT,
-                        idempotency_key TEXT,
+                        idempotency_key TEXT UNIQUE,
                         payload_json TEXT NOT NULL,
                         status TEXT NOT NULL DEFAULT 'received',
                         received_at TEXT NOT NULL
@@ -1289,6 +1295,7 @@ class Database:
                 # Migrations douces colonnes user_devices
                 for col, def_val in [
                     ("is_active", "INTEGER DEFAULT 1"),
+                    ("api_key_hash", "TEXT"),
                     ("encrypted_credentials", "TEXT"),
                     ("last_sync_at", "TEXT"),
                     ("sync_status", "TEXT DEFAULT 'disconnected'")
@@ -1340,6 +1347,8 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_hydration_logs_user_date ON hydration_logs(user_id, date DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_user_time ON raw_ingest(user_id, received_at DESC);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_ingest_idempotency ON raw_ingest(source, idempotency_key);")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_raw_ingest_idempotency_key ON raw_ingest(idempotency_key);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_devices_api_key_hash ON user_devices(api_key_hash);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_user_id);")
@@ -3505,18 +3514,28 @@ class Database:
         return self._format_device_row(row, reveal_secrets=reveal_secrets)
 
     def find_user_by_device_token(self, token: str, device_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Identifie l'utilisateur et l'appareil associés à un token ou webhook secret dans user_devices."""
+        """Identifie l'utilisateur et l'appareil associés à un token ou webhook secret dans user_devices.
+        
+        Effectue une recherche prioritaire indexée par api_key_hash (SHA-256), puis fallback direct / credentials.
+        """
         if not token or not str(token).strip():
             return None
         token_clean = str(token).strip()
+        token_hash = hashlib.sha256(token_clean.encode("utf-8")).hexdigest()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # 1. Vérification directe sur api_key en clair (si renseignée)
+            # 1. Vérification indexée par api_key_hash ou api_key en clair
             if device_id:
-                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND api_key = ? LIMIT 1", (device_id, token_clean))
+                cursor.execute(
+                    "SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND (api_key_hash = ? OR api_key = ?) LIMIT 1",
+                    (device_id, token_hash, token_clean)
+                )
             else:
-                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND api_key = ? LIMIT 1", (token_clean,))
+                cursor.execute(
+                    "SELECT * FROM user_devices WHERE is_active = 1 AND (api_key_hash = ? OR api_key = ?) LIMIT 1",
+                    (token_hash, token_clean)
+                )
             row = cursor.fetchone()
             if row:
                 formatted = self._format_device_row(row, reveal_secrets=True)
@@ -3528,7 +3547,7 @@ class Database:
                     "device": formatted
                 }
 
-            # 2. Vérification dans les credentials chiffrés de chaque device
+            # 2. Vérification dans les credentials chiffrés de chaque device (fallback avec backfill du hash)
             if device_id:
                 cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND encrypted_credentials IS NOT NULL", (device_id,))
             else:
@@ -3550,6 +3569,19 @@ class Database:
 
             if matched:
                 user_id = r["user_id"] if isinstance(r, dict) else r[1]
+                # Backfill de api_key_hash pour accélérer les requêtes suivantes
+                try:
+                    dev_id = r["device_id"] if isinstance(r, dict) else r[2]
+                    with self.get_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "UPDATE user_devices SET api_key_hash = ? WHERE user_id = ? AND device_id = ?",
+                            (token_hash, user_id, dev_id)
+                        )
+                        conn.commit()
+                except Exception:
+                    pass
+
                 user = self.get_user_by_id(int(user_id))
                 return {
                     "user_id": int(user_id),
@@ -3651,6 +3683,12 @@ class Database:
             creds_to_encrypt["api_key"] = api_key
 
         encrypted_credentials = encrypt_credentials(creds_to_encrypt) if creds_to_encrypt else None
+        
+        # Calcul du hash SHA-256 pour indexation rapide sans déchiffrement
+        api_key_hash = None
+        key_to_hash = api_key or creds_to_encrypt.get("api_key") or creds_to_encrypt.get("webhook_token") or creds_to_encrypt.get("token")
+        if key_to_hash and str(key_to_hash).strip():
+            api_key_hash = hashlib.sha256(str(key_to_hash).strip().encode("utf-8")).hexdigest()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -3658,16 +3696,17 @@ class Database:
                 cursor.execute("""
                     INSERT INTO user_devices (
                         user_id, device_id, name, device_type, connected, auth_type,
-                        api_key, encrypted_credentials, account_email, is_active,
+                        api_key, api_key_hash, encrypted_credentials, account_email, is_active,
                         last_sync, last_sync_at, sync_status, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, device_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         device_type = EXCLUDED.device_type,
                         connected = EXCLUDED.connected,
                         auth_type = EXCLUDED.auth_type,
                         api_key = COALESCE(EXCLUDED.api_key, user_devices.api_key),
+                        api_key_hash = COALESCE(EXCLUDED.api_key_hash, user_devices.api_key_hash),
                         encrypted_credentials = COALESCE(EXCLUDED.encrypted_credentials, user_devices.encrypted_credentials),
                         account_email = COALESCE(EXCLUDED.account_email, user_devices.account_email),
                         is_active = EXCLUDED.is_active,
@@ -3678,7 +3717,7 @@ class Database:
                     RETURNING *;
                 """, (
                     user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
+                    api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
                     now_str, now_str, sync_status, now_str
                 ))
                 row = cursor.fetchone()
@@ -3686,16 +3725,17 @@ class Database:
                 cursor.execute("""
                     INSERT INTO user_devices (
                         user_id, device_id, name, device_type, connected, auth_type,
-                        api_key, encrypted_credentials, account_email, is_active,
+                        api_key, api_key_hash, encrypted_credentials, account_email, is_active,
                         last_sync, last_sync_at, sync_status, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, device_id) DO UPDATE SET
                         name = excluded.name,
                         device_type = excluded.device_type,
                         connected = excluded.connected,
                         auth_type = excluded.auth_type,
                         api_key = COALESCE(excluded.api_key, user_devices.api_key),
+                        api_key_hash = COALESCE(excluded.api_key_hash, user_devices.api_key_hash),
                         encrypted_credentials = COALESCE(excluded.encrypted_credentials, user_devices.encrypted_credentials),
                         account_email = COALESCE(excluded.account_email, user_devices.account_email),
                         is_active = excluded.is_active,
@@ -3705,7 +3745,7 @@ class Database:
                         updated_at = excluded.updated_at
                 """, (
                     user_id, device_id, name, device_type, 1 if connected else 0, auth_type,
-                    api_key, encrypted_credentials, account_email, 1 if is_active else 0,
+                    api_key, api_key_hash, encrypted_credentials, account_email, 1 if is_active else 0,
                     now_str, now_str, sync_status, now_str
                 ))
                 conn.commit()
@@ -4737,26 +4777,61 @@ class Database:
         endpoint: Optional[str] = None,
         idempotency_key: Optional[str] = None
     ) -> RawIngestEntry:
-        """Stocke le payload JSON brut horodaté pour audit et rejeu."""
+        """Stocke le payload JSON brut horodaté pour audit et rejeu de façon strictement idempotente."""
         payload_str = json.dumps(payload) if isinstance(payload, (dict, list)) else str(payload)
         now_str = datetime.now(timezone.utc).isoformat()
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
             if self.is_postgres:
-                cursor.execute("""
-                    INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
-                    VALUES (?, ?, ?, ?, ?, 'received', ?)
-                    RETURNING id;
-                """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
-                res = cursor.fetchone()
-                r_id = res["id"] if res else None
+                if idempotency_key:
+                    cursor.execute("""
+                        INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                        VALUES (?, ?, ?, ?, ?, 'received', ?)
+                        ON CONFLICT (idempotency_key) DO NOTHING
+                        RETURNING id, user_id, source, endpoint, idempotency_key, payload_json, status, received_at;
+                    """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                    res = cursor.fetchone()
+                    if res:
+                        conn.commit()
+                        return RawIngestEntry(**res)
+                    # En cas de conflit (doublon), récupérer l'enregistrement existant
+                    cursor.execute("SELECT * FROM raw_ingest WHERE idempotency_key = ? LIMIT 1", (idempotency_key,))
+                    existing = cursor.fetchone()
+                    return RawIngestEntry(**existing) if existing else RawIngestEntry(
+                        id=None, user_id=user_id, source=source, endpoint=endpoint,
+                        idempotency_key=idempotency_key, payload_json=payload_str,
+                        status="received", received_at=now_str
+                    )
+                else:
+                    cursor.execute("""
+                        INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                        VALUES (?, ?, ?, ?, ?, 'received', ?)
+                        RETURNING id;
+                    """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                    res = cursor.fetchone()
+                    r_id = res["id"] if res else None
             else:
-                cursor.execute("""
-                    INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
-                    VALUES (?, ?, ?, ?, ?, 'received', ?)
-                """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
-                r_id = cursor.lastrowid
+                if idempotency_key:
+                    cursor.execute("""
+                        INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                        VALUES (?, ?, ?, ?, ?, 'received', ?)
+                        ON CONFLICT (idempotency_key) DO NOTHING;
+                    """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                    conn.commit()
+                    if cursor.rowcount == 0:
+                        # Déjà présent, récupérer la ligne existante
+                        cursor.execute("SELECT * FROM raw_ingest WHERE idempotency_key = ? LIMIT 1", (idempotency_key,))
+                        existing = cursor.fetchone()
+                        if existing:
+                            return RawIngestEntry(**existing)
+                    r_id = cursor.lastrowid
+                else:
+                    cursor.execute("""
+                        INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                        VALUES (?, ?, ?, ?, ?, 'received', ?)
+                    """, (user_id, source, endpoint, idempotency_key, payload_str, now_str))
+                    r_id = cursor.lastrowid
             conn.commit()
 
         return RawIngestEntry(
