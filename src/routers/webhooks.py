@@ -125,7 +125,13 @@ def validate_physiological_ranges(item: Dict[str, Any]) -> None:
             except (ValueError, TypeError):
                 raise HTTPException(status_code=422, detail=f"Format invalide pour la SpO2: {item[spo2_key]}")
 
-    # 5. Validation récursive sur sous-éléments (workouts, intraday_samples)
+    # 5. Validation récursive sur sous-éléments (weights, workouts, intraday_samples)
+    weights = item.get("weights")
+    if isinstance(weights, list):
+        for w in weights:
+            if isinstance(w, dict):
+                validate_physiological_ranges(w)
+
     workouts = item.get("workouts") or (item.get("workout") and [item.get("workout")])
     if isinstance(workouts, list):
         for w in workouts:
@@ -233,6 +239,52 @@ def process_single_item(
         if ext_id and not weight_entry.external_id:
             weight_entry.external_id = str(ext_id)
         saved_weight = db_inst.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
+
+    # Ingestion multi-pesées de la fenêtre si tableau weights[] présent (BALI-193)
+    if "weights" in item and isinstance(item["weights"], list) and can_ingest_biometrics:
+        for w_dict in item["weights"]:
+            if isinstance(w_dict, dict) and ("weight_kg" in w_dict or "weight" in w_dict):
+                w_val = float(w_dict.get("weight_kg", w_dict.get("weight", 0.0)))
+                if w_val > 0:
+                    w_raw_d = w_dict.get("weight_date") or w_dict.get("date")
+                    w_m = w_dict.get("measured_at") or w_dict.get("weight_measured_at")
+                    if w_raw_d:
+                        try:
+                            w_target = date.fromisoformat(str(w_raw_d)[:10])
+                        except Exception:
+                            w_target = date.today()
+                    elif w_m:
+                        try:
+                            if isinstance(w_m, (int, float)):
+                                ms = w_m if w_m > 1e11 else w_m * 1000
+                                w_target = datetime.fromtimestamp(ms / 1000.0, timezone.utc).date()
+                            else:
+                                w_target = date.fromisoformat(str(w_m)[:10])
+                        except Exception:
+                            w_target = date.today()
+                    else:
+                        w_target = date.today()
+
+                    w_m_iso = None
+                    if w_m:
+                        if isinstance(w_m, (int, float)):
+                            ms = w_m if w_m > 1e11 else w_m * 1000
+                            w_m_iso = datetime.fromtimestamp(ms / 1000.0, timezone.utc).isoformat()
+                        else:
+                            w_m_iso = str(w_m)
+
+                    w_ext = w_dict.get("external_id") or w_dict.get("weight_external_id")
+                    w_obj = WeightEntry(
+                        date=w_target,
+                        weight_kg=round(w_val, 2),
+                        source="health_connect",
+                        external_id=str(w_ext) if w_ext else None,
+                        measured_at=w_m_iso,
+                        notes=w_dict.get("notes", f"Ingéré via Health Connect ({source_name})")
+                    )
+                    sw = db_inst.insert_weight(w_obj, user_id=resolved_user_id)
+                    if not saved_weight:
+                        saved_weight = sw.model_dump()
 
     # 3. Activité quotidienne standard
     if act_entry and can_ingest_biometrics:

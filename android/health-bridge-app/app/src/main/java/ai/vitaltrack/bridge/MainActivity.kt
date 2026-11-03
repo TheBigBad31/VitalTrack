@@ -127,6 +127,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(buildModernUi())
         checkCurrentPermissions()
         refreshSyncHistory()
+
+        val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("auto_sync_enabled", true) &&
+            !prefs.getString("device_token", null).isNullOrBlank() &&
+            !prefs.getString("webhook_url", null).isNullOrBlank()) {
+            scheduleSyncWorker()
+        }
     }
 
     override fun onResume() {

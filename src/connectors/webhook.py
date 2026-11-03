@@ -9,7 +9,7 @@ Valide et convertit le payload JSON universel vers WeightEntry et ActivityEntry.
 """
 
 import hmac
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.connectors.base import BaseHealthConnector
@@ -75,15 +75,35 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
                     )
                 )
 
+                w_date_raw = payload.get("weight_date") or payload.get("date")
+                if w_date_raw:
+                    try:
+                        w_target_date = date.fromisoformat(str(w_date_raw)[:10])
+                    except Exception:
+                        w_target_date = target_date
+                else:
+                    w_target_date = target_date
+
+                w_ext_id = payload.get("weight_external_id") or payload.get("external_id")
+                w_measured_at = payload.get("weight_measured_at") or payload.get("measured_at")
+                w_measured_str = None
+                if isinstance(w_measured_at, (int, float)):
+                    ms = w_measured_at if w_measured_at > 1e11 else w_measured_at * 1000
+                    w_measured_str = datetime.fromtimestamp(ms / 1000.0, timezone.utc).isoformat()
+                elif w_measured_at:
+                    w_measured_str = str(w_measured_at)
+
                 weight_entry = WeightEntry(
-                    date=target_date,
+                    date=w_target_date,
                     weight_kg=round(w_kg, 2),
                     body_fat_pct=float(fat_pct) if fat_pct is not None else None,
                     muscle_mass_kg=float(muscle_kg) if muscle_kg is not None else None,
                     water_pct=float(water_pct) if water_pct is not None else None,
                     bmi=float(bmi) if bmi is not None else None,
                     source=weight_source,
-                    notes=payload.get("notes", f"Ingéré via Mobile Webhook ({source_name})")
+                    notes=payload.get("notes", f"Ingéré via Mobile Webhook ({source_name})"),
+                    external_id=str(w_ext_id) if w_ext_id else None,
+                    measured_at=w_measured_str
                 )
 
         # Extraction Activité

@@ -1,4 +1,4 @@
-﻿"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
+"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
 
 import os
 import pytest
@@ -440,3 +440,89 @@ def test_android_bridge_photo_meal_estimation_and_journal_save(client):
 
 
 
+
+
+def test_android_bridge_multi_weight_array_and_cursor_sync(client):
+    """Vérifie l'ingestion de toutes les pesées d'une fenêtre de rattrapage (tableau weights[])
+    avec conservation des dates réelles, external_id et timestamps measured_at (BALI-193)."""
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Multi Weight Test"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    payload = {
+        "source": "health_connect",
+        "synced_at": "2026-11-03T18:00:00Z",
+        "date": "2026-11-03",
+        "is_catchup": True,
+        "weights": [
+            {
+                "weight_kg": 76.8,
+                "external_id": "hc_weight_01",
+                "weight_date": "2026-11-01",
+                "measured_at": 1793520000000
+            },
+            {
+                "weight_kg": 76.5,
+                "external_id": "hc_weight_02",
+                "weight_date": "2026-11-02",
+                "measured_at": 1793606400000
+            },
+            {
+                "weight_kg": 76.2,
+                "external_id": "hc_weight_03",
+                "weight_date": "2026-11-03",
+                "measured_at": 1793692800000
+            }
+        ],
+        "weight_kg": 76.2,
+        "weight_external_id": "hc_weight_03",
+        "weight_date": "2026-11-03",
+        "weight_measured_at": 1793692800000,
+        "hrv_ms": 65.0,
+        "hrv_measured_at": 1793692800000,
+        "resting_hr_bpm": 55,
+        "resting_hr_measured_at": 1793692800000,
+        "spo2_pct": 98.5,
+        "spo2_measured_at": 1793692800000
+    }
+
+    resp = client.post("/api/webhooks/health-connect", json=payload, headers={"X-Webhook-Token": token})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+
+    # Vérification en base de données : les 3 pesées de la fenêtre ont été enregistrées
+    from src.app import app
+    db = app.state.db_instance
+    weights_db = db.get_weights(limit=10)
+    assert len(weights_db) >= 3
+
+    dates_in_db = {str(w.date) for w in weights_db}
+    assert "2026-11-01" in dates_in_db
+    assert "2026-11-02" in dates_in_db
+    assert "2026-11-03" in dates_in_db
+
+    ext_ids_in_db = {w.external_id for w in weights_db}
+    assert "hc_weight_01" in ext_ids_in_db
+    assert "hc_weight_02" in ext_ids_in_db
+    assert "hc_weight_03" in ext_ids_in_db
+
+
+def test_android_bridge_physiological_validation_weights_array(client):
+    """Vérifie le rejet HTTP 422 si l'une des pesées du tableau weights[] est hors des bornes 20-300kg."""
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Physio Check"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    invalid_payload = {
+        "source": "health_connect",
+        "date": "2026-11-03",
+        "weights": [
+            {"weight_kg": 75.0, "external_id": "hc_valid_w1"},
+            {"weight_kg": 15.0, "external_id": "hc_invalid_w2"}
+        ]
+    }
+
+    resp = client.post("/api/webhooks/health-connect", json=invalid_payload, headers={"X-Webhook-Token": token})
+    assert resp.status_code == 422
+    assert "Valeur physiologique invalide pour le poids" in resp.json()["detail"]
