@@ -193,15 +193,14 @@ def test_parse_google_identity_with_and_without_credential():
     assert identity_direct["email"] == "sebastienlamoliate@gmail.com"
     assert identity_direct["google_sub"] == "google_sub_987654321"
 
-    # 2. Token simulé sans crash
-    payload_mock = GoogleAuthPayload(
+    # 2. Token avec signature invalide -> Rejet strict par exception ValueError
+    payload_invalid = GoogleAuthPayload(
         credential="fake.header.sig",
         email="mock@vitaltrack.io",
         name="Mock User"
     )
-    # Ne doit pas lever d'exception grâce au fallback robuste
-    identity_mock = parse_google_identity(payload_mock)
-    assert identity_mock["is_authenticated"] is True
+    with pytest.raises(ValueError, match="Validation cryptographique Google échouée"):
+        parse_google_identity(payload_invalid, verify_signature=True)
 
 
 # =====================================================================
@@ -223,7 +222,7 @@ def test_api_register_and_login_flow(auth_client):
     assert reg_body["status"] == "success"
     assert "access_token" in reg_body
     assert reg_body["user"]["email"] == "nouveau.stage9@vitaltrack.app"
-    assert reg_body["user"]["password_hash"].startswith(("$2b$", "$2a$"))
+    assert "password_hash" not in reg_body["user"]
 
     # 2. Rejet mot de passe trop court (< 8 car)
     short_res = auth_client.post("/api/auth/register", json={
@@ -249,6 +248,7 @@ def test_api_register_and_login_flow(auth_client):
     assert login_body["status"] == "success"
     assert "access_token" in login_body
     assert login_body["user"]["email"] == "nouveau.stage9@vitaltrack.app"
+    assert "password_hash" not in login_body["user"]
 
     # 5. Échec connexion mauvais mot de passe
     bad_login_res = auth_client.post("/api/auth/login", json={
@@ -314,3 +314,42 @@ def test_jwt_secret_required_in_production_and_random_in_dev(monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "prod-jwt-secret-strong-key-2026")
     assert _resolve_jwt_secret() == "prod-jwt-secret-strong-key-2026"
 
+def test_strict_auth_enforced_in_production_and_strict_mode(monkeypatch):
+    """Valide que sans token, 401 est retourne sur /api/dashboard, /api/devices/*/token, /api/meals en mode strict/prod."""
+    import src.app as app_module
+    from src.app import app
+
+    client = TestClient(app)
+
+    # 1. Tester sous REQUIRE_STRICT_AUTH=1
+    monkeypatch.setenv("REQUIRE_STRICT_AUTH", "1")
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+
+    res_dash = client.get("/api/dashboard")
+    assert res_dash.status_code == 401
+
+    res_meals = client.get("/api/meals")
+    assert res_meals.status_code == 401
+
+    res_dev = client.post("/api/devices/withings/token")
+    assert res_dev.status_code == 401
+
+    res_friends = client.get("/api/friends")
+    assert res_friends.status_code == 401
+
+    # 2. Tester sous VERCEL=1
+    monkeypatch.delenv("REQUIRE_STRICT_AUTH", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+
+    res_dash_prod = client.get("/api/dashboard")
+    assert res_dash_prod.status_code == 401
+
+    res_meals_prod = client.get("/api/meals")
+    assert res_meals_prod.status_code == 401
+
+    res_dev_prod = client.post("/api/devices/withings/token")
+    assert res_dev_prod.status_code == 401
+
+    res_friends_prod = client.get("/api/friends")
+    assert res_friends_prod.status_code == 401

@@ -307,7 +307,13 @@ def get_current_user(
                 google_sub=user_data.get("google_sub"),
             )
 
-    if os.getenv("REQUIRE_STRICT_AUTH") == "1":
+    # Exigence de strict auth : active par défaut en production (VERCEL=1 ou ENV=production),
+    # ou si REQUIRE_STRICT_AUTH=1 explicite.
+    # Le fallback invité / démo n'est autorisé qu'en environnement de développement local (lorsque REQUIRE_STRICT_AUTH != "1" et non-production).
+    is_prod_env = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production" or os.getenv("ENVIRONMENT") == "production"
+    require_strict = os.getenv("REQUIRE_STRICT_AUTH") == "1" or (is_prod_env and os.getenv("REQUIRE_STRICT_AUTH") != "0")
+
+    if require_strict:
         raise HTTPException(
             status_code=401,
             detail="Authentification requise : aucun jeton Bearer, token d'appareil ou session Google valide",

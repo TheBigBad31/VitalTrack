@@ -41,62 +41,9 @@ def get_current_user(
     authorization: Optional[str] = Header(None),
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token")
 ) -> AuthUser:
-    """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer ou compte par défaut."""
-    db_inst = get_db()
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ", 1)[1].strip()
-        payload = decode_access_token(token)
-        if payload and "user_id" in payload:
-            user_data = db_inst.get_user_by_id(int(payload["user_id"]))
-            if user_data:
-                return AuthUser(
-                    id=user_data["id"],
-                    uuid=user_data["uuid"],
-                    email=user_data["email"],
-                    name=user_data.get("name"),
-                    picture=user_data.get("picture"),
-                    auth_provider=user_data.get("auth_provider", "google"),
-                    google_sub=user_data.get("google_sub")
-                )
-
-    if x_webhook_token and str(x_webhook_token).strip():
-        user_match = db_inst.find_user_by_device_token(str(x_webhook_token).strip())
-        if user_match and user_match.get("user"):
-            u = user_match["user"]
-            return AuthUser(
-                id=u["id"],
-                uuid=u["uuid"],
-                email=u["email"],
-                name=u.get("name"),
-                picture=u.get("picture"),
-                auth_provider=u.get("auth_provider", "device_token"),
-                google_sub=u.get("google_sub")
-            )
-
-    sess = db_inst.get_google_session()
-    if sess.get("is_authenticated") and sess.get("user_id"):
-        user_data = db_inst.get_user_by_id(int(sess["user_id"]))
-        if user_data:
-            return AuthUser(
-                id=user_data["id"],
-                uuid=user_data["uuid"],
-                email=user_data["email"],
-                name=user_data.get("name"),
-                picture=user_data.get("picture"),
-                auth_provider=user_data.get("auth_provider", "google"),
-                google_sub=user_data.get("google_sub")
-            )
-
-    default_user = db_inst._ensure_default_user()
-    return AuthUser(
-        id=default_user["id"],
-        uuid=default_user["uuid"],
-        email=default_user["email"],
-        name=default_user.get("name"),
-        picture=default_user.get("picture"),
-        auth_provider=default_user.get("auth_provider", "google"),
-        google_sub=default_user.get("google_sub")
-    )
+    """Délègue à l'authentification centralisée de l'application (src.app.get_current_user)."""
+    import src.app as app_module
+    return app_module.get_current_user(authorization=authorization, x_webhook_token=x_webhook_token)
 
 
 class FriendRequestPayload(BaseModel):
