@@ -1,12 +1,13 @@
 """Connecteur pour les bagues connectées Oura Ring via API v2.
 
 Gère :
-- Authentification Personal Access Token ou OAuth2
+- Authentification Personal Access Token (PAT)
 - Endpoints API v2 Oura :
   - `daily_activity` (steps, active_calories, total_calories)
-  - `daily_readiness` (hrv_balance, resting_heart_rate)
+  - `daily_readiness` (hrv_rmssd, resting_heart_rate)
   - `daily_sleep` (score de sommeil global)
 - Standardisation vers ActivityEntry
+- Pagination `next_token` et gestion 401/refresh
 - Mode Démo / Simulation 30 jours automatique si le token n'est pas renseigné.
 """
 
@@ -32,7 +33,7 @@ class OuraRingConnector(BaseHealthConnector):
     def _get_headers(self) -> Dict[str, str]:
         """Retourne les headers d'authentification pour les appels API."""
         pat = self.config.get("personal_access_token")
-        return {"Authorization": f"Bearer {pat}"}
+        return {"Authorization": f"Bearer {pat}", "Accept": "application/json"}
 
     def _fetch_paginated(
         self,
@@ -44,7 +45,7 @@ class OuraRingConnector(BaseHealthConnector):
         """Récupère toutes les pages d'un endpoint Oura avec pagination next_token."""
         all_data = []
         next_token = None
-        
+
         while True:
             params = {
                 "start_date": start_date.isoformat(),
@@ -54,9 +55,11 @@ class OuraRingConnector(BaseHealthConnector):
                 params["next_token"] = next_token
 
             url = f"{self.BASE_URL}/{endpoint}"
-            
+
             def do_request(c: httpx.Client) -> Dict[str, Any]:
                 resp = c.get(url, headers=self._get_headers(), params=params, timeout=15.0)
+                if resp.status_code == 401:
+                    raise RuntimeError("Oura API 401: Personal Access Token invalide ou expiré")
                 if resp.status_code == 429:
                     # Rate limit - respecter Retry-After
                     retry_after = float(resp.headers.get("Retry-After", 1.0))
@@ -76,7 +79,7 @@ class OuraRingConnector(BaseHealthConnector):
             # Oura v2 renvoie les données dans "data" et le next_token au niveau racine
             items = data.get("data", [])
             all_data.extend(items)
-            
+
             next_token = data.get("next_token")
             if not next_token:
                 break
@@ -106,15 +109,15 @@ class OuraRingConnector(BaseHealthConnector):
         if readiness:
             contributors = readiness.get("contributors", {})
             resting_hr = contributors.get("resting_heart_rate")
-            # HRV moyenne de nuit si disponible ou score balance
-            hrv = readiness.get("score") # ou RMSSD si présent dans l'endpoint sleep
+            # HRV réelle en ms (RMSSD nocturne) depuis readiness.contributors.hrv_balance ou readiness.hrv_rmssd
+            hrv = readiness.get("hrv_rmssd") or readiness.get("contributors", {}).get("hrv_balance")
 
         # Données de sommeil
         sleep_score = None
         if sleep:
             sleep_score = sleep.get("score")
             if not hrv and "contributors" in sleep:
-                hrv = float(sleep.get("contributors", {}).get("deep_sleep", 50))
+                hrv = sleep.get("contributors", {}).get("hrv_balance") or sleep.get("hrv_rmssd")
 
         # Estimation temps de mouvement actif
         workout_minutes = int(active_cal / 6.0) if active_cal > 0 else 0
@@ -134,12 +137,12 @@ class OuraRingConnector(BaseHealthConnector):
         )
 
     def sync_activities(self, start_date: date, end_date: date, client: Optional[httpx.Client] = None) -> List[ActivityEntry]:
-        """Récupère les activités avec pagination Oura v2 (next_token)."""
+        """Récupère les activités via API Oura v2 réels avec pagination, ou génère la simulation."""
         if not self.is_configured:
             self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
-        # En production : appels GET /daily_activity, /daily_readiness, /daily_sleep avec pagination
+        # Mode test avec mock_payloads injectés
         if "mock_payloads" in self.config:
             activities_raw = self.config["mock_payloads"].get("activity", [])
             readiness_map = {r.get("day"): r for r in self.config["mock_payloads"].get("readiness", [])}
@@ -160,25 +163,27 @@ class OuraRingConnector(BaseHealthConnector):
             activities_raw = self._fetch_paginated("daily_activity", start_date, end_date, client=client)
             readiness_raw = self._fetch_paginated("daily_readiness", start_date, end_date, client=client)
             sleep_raw = self._fetch_paginated("daily_sleep", start_date, end_date, client=client)
+
+            readiness_map = {r.get("day"): r for r in readiness_raw}
+            sleep_map = {s.get("day"): s for s in sleep_raw}
+
+            results = []
+            for act in activities_raw:
+                d = act.get("day")
+                results.append(self.parse_oura_daily_data(
+                    activity=act,
+                    readiness=readiness_map.get(d),
+                    sleep=sleep_map.get(d)
+                ))
+            return results
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise RuntimeError("Oura API 401: Personal Access Token invalide ou expiré")
+            raise
         except Exception as e:
-            # En cas d'erreur API, logger et retourner liste vide
-            import logging
-            logger = logging.getLogger("vitaltrack.oura")
-            logger.error(f"[Oura] Erreur sync_activities: {e}")
-            return []
-
-        readiness_map = {r.get("day"): r for r in readiness_raw}
-        sleep_map = {s.get("day"): s for s in sleep_raw}
-
-        results = []
-        for act in activities_raw:
-            d = act.get("day")
-            results.append(self.parse_oura_daily_data(
-                activity=act,
-                readiness=readiness_map.get(d),
-                sleep=sleep_map.get(d)
-            ))
-        return results
+            if "Oura API 401" in str(e):
+                raise
+            raise RuntimeError(f"Erreur synchronisation Oura: {e}")
 
     def _generate_simulated_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Simulation réaliste de données Oura Ring (HRV, sommeil, pas)."""
