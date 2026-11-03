@@ -17,7 +17,7 @@ import hmac
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from src.connectors.webhook import MobileHealthWebhookConnector
@@ -449,3 +449,78 @@ def ingest_health_webhook(
         "ingested": single_ingested,
         "results": results if is_batch else single_ingested
     }
+
+
+@router.post("/api/webhooks/withings")
+@router.post("/api/webhooks/withings/")
+async def ingest_withings_webhook(
+    request: Request,
+    x_withings_signature: Optional[str] = Header(None, alias="X-Withings-Signature"),
+):
+    """Callback Withings pour notifications temps réel (notify/subscribe).
+    
+    Withings envoie une notification avec userid et type d'appli.
+    Le connecteur fait ensuite un catch-up sync pour récupérer les nouvelles mesures.
+    """
+    import hmac
+    import hashlib
+    import os
+    from src.connectors.withings import WithingsScaleConnector
+    from src.db import Database
+    from src.app import db as app_db
+    
+    # Récupérer le secret webhook Withings depuis la config ou env
+    webhook_secret = os.getenv("WITHINGS_WEBHOOK_SECRET")
+    if not webhook_secret:
+        # En dev, on peut autoriser sans signature si pas de secret configuré
+        if os.getenv("ENVIRONMENT") == "production" or os.getenv("VERCEL") == "1":
+            raise HTTPException(status_code=503, detail="Withings webhook non configuré (secret manquant)")
+    
+    body = await request.body()
+    
+    # Vérifier la signature HMAC si secret configuré
+    if webhook_secret and x_withings_signature:
+        # Withings envoie la signature en hex SHA256
+        computed = hmac.new(webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(computed, x_withings_signature):
+            raise HTTPException(status_code=401, detail="Signature Withings invalide")
+    elif webhook_secret and not x_withings_signature:
+        raise HTTPException(status_code=401, detail="Signature Withings manquante")
+    
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    
+    # Withings notify payload: {"userid": 12345, "appli": 1, "startdate": 1234567890, "enddate": 1234567890}
+    userid = payload.get("userid")
+    appli = payload.get("appli", 1)  # 1 = weight/scale
+    
+    if not userid:
+        return {"status": "ignored", "message": "Pas de userid dans le payload Withings"}
+    
+    # Trouver l'utilisateur VitalTrack associé à ce userid Withings
+    db_inst = app_db if app_db else Database()
+    # Note: en production, il faut mapper le userid Withings vers user_id VitalTrack
+    # Pour l'instant, on suppose user_id=1 ou on cherche dans user_devices
+    user_device = db_inst.get_user_device("withings", user_id=1, reveal_secrets=True)
+    if not user_device:
+        return {"status": "ignored", "message": "Aucun appareil Withings configuré pour cet utilisateur"}
+    
+    # Déclencher un catch-up sync (rattrapage) pour récupérer les nouvelles pesées
+    # En arrière-plan pour répondre rapidement à Withings
+    from datetime import date, timedelta
+    from src.connectors.withings import WithingsScaleConnector
+    
+    connector = WithingsScaleConnector(config=user_device.get("credentials", {}), db_instance=db_inst, user_id=1)
+    if connector.is_configured:
+        try:
+            # Sync sur 7 jours en mode catch-up
+            weights = connector.catchup_sync(days_back=7)
+            for w in weights:
+                db_inst.insert_weight(w, user_id=1)
+            return {"status": "success", "synced_weights": len(weights)}
+        except Exception as e:
+            return {"status": "error", "message": f"Erreur sync Withings: {e}"}
+    
+    return {"status": "ignored", "message": "Connecteur Withings non configuré"}

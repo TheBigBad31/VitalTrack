@@ -49,7 +49,7 @@ devices:
       client_secret: ""
       access_token: ""
       refresh_token: ""
-      webhook_secret: "vitaltrack_health_connect_secret"
+      webhook_secret: ""
       user_height_m: 1.78
 
   mobile_webhook:
@@ -67,7 +67,7 @@ devices:
       - "Garmin Connect (via Health sync)"
       - "Strava"
     config:
-      webhook_secret: "vitaltrack_secure_webhook_key_sample"
+      webhook_secret: ""
       user_height_m: 1.78
 
   garmin_template:
