@@ -74,6 +74,42 @@ window.JWT_STORAGE_KEY = JWT_STORAGE_KEY;
 window.GOOGLE_SESSION_KEY = GOOGLE_SESSION_KEY;
 
 /**
+ * Nettoyage et échappement sécurisé des chaînes pour injection HTML/attributs (Anti-XSS).
+ * @param {*} str - Valeur à échapper
+ * @returns {string} - Chaîne échappée sans caractères HTML dangereux
+ */
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Validation et assainissement d'URL pour attributs src / href (Anti-javascript:).
+ * Autorise http, https, data:image/, blob: et chemins relatifs /.
+ * @param {string} url - URL candidate
+ * @returns {string} - URL safe ou chaîne vide si suspecte
+ */
+function sanitizeUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (/^(?:https?:\/\/|\/|blob:|data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,)/i.test(trimmed)) {
+    return escapeHtml(trimmed);
+  }
+  return '';
+}
+
+window.escapeHtml = escapeHtml;
+window.sanitizeUrl = sanitizeUrl;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { apiFetch, API, refreshIcons, escapeHtml, sanitizeUrl };
+}
+
+/**
  * Rendu des icônes Lucide limité à un conteneur (Lot 2 - BALI-90).
  * lucide.createIcons() parcourt tout le document et reconstruit chaque <svg> :
  * on neutralise temporairement les icônes situées hors du conteneur pour ne
