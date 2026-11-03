@@ -1366,6 +1366,106 @@
         </div>
       </div>
 
+      <!-- Panneau Données Connectées & Cartographie des Flux (BALI-197) -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#1F2A3C] pb-4">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">Hub Données Connectées</span>
+              <span class="text-xs text-slate-400">Cartographie & Provenance</span>
+            </div>
+            <h3 class="font-bold text-white text-base mt-1">Données Connectées : Statut des Flux & Diagnostic des Sources</h3>
+            <p class="text-xs text-slate-300">Inventaire exhaustif des métriques collectées, persistance en base et restitution visuelle dans VitalTrack.</p>
+          </div>
+          <button type="button" onclick="loadDataMapView()" class="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400"></i>
+            <span>Actualiser la cartographie</span>
+          </button>
+        </div>
+
+        <!-- Badges Récapitulatifs -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="data-map-summary-badges">
+          <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-3 text-center">
+            <div class="text-[10px] text-slate-400 uppercase font-bold">Total Types</div>
+            <div class="text-lg font-extrabold text-white mt-0.5" id="dm-summary-total">17</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-emerald-500/20 rounded-xl p-3 text-center">
+            <div class="text-[10px] text-emerald-400 uppercase font-bold">Ingérés & Affichés</div>
+            <div class="text-lg font-extrabold text-emerald-400 mt-0.5" id="dm-summary-displayed">-</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-rose-500/20 rounded-xl p-3 text-center">
+            <div class="text-[10px] text-rose-400 uppercase font-bold">Stockés Non Restitués</div>
+            <div class="text-lg font-extrabold text-rose-400 mt-0.5" id="dm-summary-hidden">-</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-slate-700 rounded-xl p-3 text-center">
+            <div class="text-[10px] text-slate-400 uppercase font-bold">Non Lus</div>
+            <div class="text-lg font-extrabold text-slate-400 mt-0.5" id="dm-summary-notread">-</div>
+          </div>
+        </div>
+
+        <!-- Diagnostic de Sébastien : Provenance des Pesées (Withings vs Santé Connect) -->
+        <div class="bg-[#0B0F17] border border-indigo-500/30 rounded-xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="scale" class="w-4 h-4 text-indigo-400"></i>
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Provenance des Dernières Pesées (Withings vs Santé Connect)</h4>
+            </div>
+            <span class="text-[11px] text-slate-400">Traçage de la source de mesure</span>
+          </div>
+          <p class="text-xs text-slate-400">Visualisez en temps réel l'origine de chaque pesée (pull serveur OAuth Withings vs push Santé Connect Android) pour identifier tout écrasement ou double enregistrement.</p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left" id="table-data-map-weights">
+              <thead class="text-slate-400 border-b border-[#1F2A3C] bg-[#151D2A]/60">
+                <tr>
+                  <th class="py-2 px-3">Date</th>
+                  <th class="py-2 px-3">Poids</th>
+                  <th class="py-2 px-3">Masse Grasse</th>
+                  <th class="py-2 px-3">Source de Mesure</th>
+                  <th class="py-2 px-3">Horodatage précis</th>
+                </tr>
+              </thead>
+              <tbody id="data-map-weights-tbody" class="divide-y divide-[#1F2A3C]">
+                <tr><td colspan="5" class="py-3 px-3 text-slate-500 text-center">Chargement des pesées...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Matrice Exhaustive des Métriques de Santé -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+              <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+              <span>Matrice Complète des Flux de Données</span>
+            </h4>
+            <div class="flex items-center space-x-2 text-[10px]">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">● Affiché dans l'UI</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold">● Stocké non affiché</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold">● Non lu</span>
+            </div>
+          </div>
+          <div class="overflow-x-auto border border-[#1F2A3C] rounded-xl">
+            <table class="w-full text-xs text-left" id="table-data-map-metrics">
+              <thead class="text-slate-400 border-b border-[#1F2A3C] bg-[#0B0F17]">
+                <tr>
+                  <th class="py-2.5 px-3">Métrique de Santé</th>
+                  <th class="py-2.5 px-3">Sources Compatibles</th>
+                  <th class="py-2.5 px-3">Table BDD</th>
+                  <th class="py-2.5 px-3">Dernier Point Reçu</th>
+                  <th class="py-2.5 px-3 text-center">7 Jours</th>
+                  <th class="py-2.5 px-3">Restitution UI</th>
+                  <th class="py-2.5 px-3 text-center">Statut du Flux</th>
+                </tr>
+              </thead>
+              <tbody id="data-map-metrics-tbody" class="divide-y divide-[#1F2A3C]">
+                <tr><td colspan="7" class="py-4 px-3 text-slate-500 text-center">Chargement de la cartographie...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
       </section>
 
   </main>

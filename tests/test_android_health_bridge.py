@@ -1,4 +1,4 @@
-﻿"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
+"""Tests complets pour l'ingestion Webhook enrichie et la passerelle Android Health Connect / RingConn Gen 3."""
 
 import os
 import pytest
@@ -440,3 +440,36 @@ def test_android_bridge_photo_meal_estimation_and_journal_save(client):
 
 
 
+
+
+def test_bali_196_health_connect_hydration_skin_temp_totals(client):
+    """Vérifie l'ingestion des nouvelles métriques Health Connect (BALI-196) :
+    hydratation (ml + logs), température cutanée, calories totales et distance."""
+    # Créer un jeton Health Connect
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Health Connect Xiaomi"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    payload = {
+        "source": "health_connect",
+        "date": "2026-11-03",
+        "steps": 8500,
+        "active_calories_kcal": 350.0,
+        "total_calories_kcal": 2150.0,
+        "distance_meters": 6250.0,
+        "skin_temperature_c": 36.4,
+        "hydration_ml": 1850.0,
+        "hydration_logs": [
+            {"external_id": "hyd_1", "volume_ml": 500.0, "start_time": "2026-11-03T08:00:00Z"},
+            {"external_id": "hyd_2", "volume_ml": 750.0, "start_time": "2026-11-03T12:30:00Z"},
+            {"external_id": "hyd_3", "volume_ml": 600.0, "start_time": "2026-11-03T16:00:00Z"}
+        ]
+    }
+
+    resp = client.post("/api/webhook/health", json=payload, headers={"X-Webhook-Token": token})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["results"]["daily_metric"]["skin_temperature_c"] == 36.4
+    assert data["results"]["daily_metric"]["total_calories_kcal"] == 2150.0
+    assert data["results"]["hydration"]["volume_ml"] == 1850.0

@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.crypto import decrypt_credentials, decrypt_data, encrypt_credentials, encrypt_data
@@ -298,3 +298,538 @@ class DevicesRepository(BaseRepository):
                 row = cursor.fetchone()
             conn.commit()
         return self._format_device_row(row, reveal_secrets=False)
+
+    def get_devices_data_map(self, user_id: int = 1) -> Dict[str, Any]:
+        """Génère la matrice complète des flux de données de santé (Data Map).
+        
+        Pour chaque métrique et source :
+        - Lu côté connecteur
+        - Stocké en BDD (table)
+        - Rendu dans l'UI (avec localisation)
+        - Dernier point reçu (date, valeur, source, horodatage)
+        - Nombre de points sur les 7 derniers jours
+        - Statut unifié (ingested_and_displayed, ingested_not_displayed, not_read)
+        - Traçage précis des pesées récentes avec badge de provenance (Withings vs Santé Connect)
+        """
+        now_dt = datetime.now(timezone.utc)
+        cutoff_7d = (now_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 1. Objets connectés de l'utilisateur
+            cursor.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY id ASC", (user_id,))
+            user_device_rows = cursor.fetchall()
+            connected_devices = {}
+            for r in user_device_rows:
+                dev = self._format_device_row(r, reveal_secrets=False)
+                if dev:
+                    connected_devices[dev["device_id"]] = dev
+
+            # 2. Derniers pushs reçus dans raw_ingest
+            raw_ingest_by_source = {}
+            try:
+                cursor.execute(
+                    "SELECT source, MAX(received_at) as last_received, COUNT(*) as cnt_7d FROM raw_ingest WHERE user_id = ? AND received_at >= ? GROUP BY source",
+                    (user_id, cutoff_7d)
+                )
+                for row in cursor.fetchall():
+                    s_name = row["source"] if isinstance(row, dict) else row[0]
+                    last_rec = row["last_received"] if isinstance(row, dict) else row[1]
+                    cnt = row["cnt_7d"] if isinstance(row, dict) else row[2]
+                    raw_ingest_by_source[s_name] = {"last_received": last_rec, "cnt_7d": cnt}
+            except Exception:
+                pass
+
+            # 3. Pesées récentes (10 dernières) pour le diagnostic de Sébastien
+            recent_weights = []
+            cursor.execute(
+                "SELECT id, date, weight_kg, body_fat_pct, muscle_mass_kg, source, measured_at, external_id FROM weights WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 10",
+                (user_id,)
+            )
+            for r in cursor.fetchall():
+                w_id = r["id"] if isinstance(r, dict) else r[0]
+                w_date = r["date"] if isinstance(r, dict) else r[1]
+                w_kg = r["weight_kg"] if isinstance(r, dict) else r[2]
+                w_fat = r["body_fat_pct"] if isinstance(r, dict) else r[3]
+                w_muscle = r["muscle_mass_kg"] if isinstance(r, dict) else r[4]
+                w_src = r["source"] if isinstance(r, dict) else r[5]
+                w_meas = r["measured_at"] if isinstance(r, dict) else r[6]
+                w_ext = r["external_id"] if isinstance(r, dict) else r[7]
+
+                src_label = "Santé Connect (Android)" if "connect" in str(w_src).lower() else (
+                    "Withings (Cloud)" if "withing" in str(w_src).lower() else (
+                        "Manuel" if "man" in str(w_src).lower() else str(w_src)
+                    )
+                )
+
+                recent_weights.append({
+                    "id": w_id,
+                    "date": w_date,
+                    "weight_kg": w_kg,
+                    "body_fat_pct": w_fat,
+                    "muscle_mass_kg": w_muscle,
+                    "source": w_src or "manual",
+                    "source_label": src_label,
+                    "measured_at": w_meas,
+                    "external_id": w_ext
+                })
+
+            # Stats sur les pesées
+            cursor.execute("SELECT COUNT(*) FROM weights WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+            row_cnt = cursor.fetchone()
+            weights_7d_count = row_cnt[0] if (row_cnt and not isinstance(row_cnt, dict)) else (row_cnt["COUNT(*)"] if isinstance(row_cnt, dict) else 0)
+
+            # 4. Derniers points des métriques dans daily_metrics
+            cursor.execute(
+                "SELECT * FROM daily_metrics WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 1",
+                (user_id,)
+            )
+            last_daily_metric = cursor.fetchone()
+            last_dm_dict = dict(last_daily_metric) if last_daily_metric else {}
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM daily_metrics WHERE user_id = ? AND date >= ?",
+                (user_id, cutoff_7d)
+            )
+            row_dm_cnt = cursor.fetchone()
+            dm_7d_cnt = row_dm_cnt[0] if (row_dm_cnt and not isinstance(row_dm_cnt, dict)) else (row_dm_cnt["COUNT(*)"] if isinstance(row_dm_cnt, dict) else 0)
+
+            # 5. Dernier Sommeil
+            last_sleep = None
+            sleep_7d_cnt = 0
+            try:
+                cursor.execute(
+                    "SELECT date, duration_minutes, source, sleep_score FROM sleep_sessions WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 1",
+                    (user_id,)
+                )
+                r_sl = cursor.fetchone()
+                if r_sl:
+                    last_sleep = {
+                        "date": r_sl["date"] if isinstance(r_sl, dict) else r_sl[0],
+                        "duration_minutes": r_sl["duration_minutes"] if isinstance(r_sl, dict) else r_sl[1],
+                        "source": r_sl["source"] if isinstance(r_sl, dict) else r_sl[2],
+                        "sleep_score": r_sl["sleep_score"] if isinstance(r_sl, dict) else r_sl[3]
+                    }
+                cursor.execute("SELECT COUNT(*) FROM sleep_sessions WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+                r_sl_cnt = cursor.fetchone()
+                sleep_7d_cnt = r_sl_cnt[0] if (r_sl_cnt and not isinstance(r_sl_cnt, dict)) else (r_sl_cnt["COUNT(*)"] if isinstance(r_sl_cnt, dict) else 0)
+            except Exception:
+                pass
+
+            # 6. Dernier Workout
+            last_workout = None
+            workout_7d_cnt = 0
+            try:
+                cursor.execute(
+                    "SELECT start_time, workout_type, calories_kcal, source FROM workouts WHERE user_id = ? ORDER BY start_time DESC, id DESC LIMIT 1",
+                    (user_id,)
+                )
+                r_wk = cursor.fetchone()
+                if r_wk:
+                    last_workout = {
+                        "start_time": r_wk["start_time"] if isinstance(r_wk, dict) else r_wk[0],
+                        "workout_type": r_wk["workout_type"] if isinstance(r_wk, dict) else r_wk[1],
+                        "calories_kcal": r_wk["calories_kcal"] if isinstance(r_wk, dict) else r_wk[2],
+                        "source": r_wk["source"] if isinstance(r_wk, dict) else r_wk[3]
+                    }
+                cursor.execute("SELECT COUNT(*) FROM workouts WHERE user_id = ? AND start_time >= ?", (user_id, cutoff_7d))
+                r_wk_cnt = cursor.fetchone()
+                workout_7d_cnt = r_wk_cnt[0] if (r_wk_cnt and not isinstance(r_wk_cnt, dict)) else (r_wk_cnt["COUNT(*)"] if isinstance(r_wk_cnt, dict) else 0)
+            except Exception:
+                pass
+
+            # 7. Dernière Hydratation
+            last_hydration = None
+            hydration_7d_cnt = 0
+            try:
+                cursor.execute(
+                    "SELECT date, volume_ml, source, timestamp FROM hydration_logs WHERE user_id = ? ORDER BY date DESC, id DESC LIMIT 1",
+                    (user_id,)
+                )
+                r_hy = cursor.fetchone()
+                if r_hy:
+                    last_hydration = {
+                        "date": r_hy["date"] if isinstance(r_hy, dict) else r_hy[0],
+                        "volume_ml": r_hy["volume_ml"] if isinstance(r_hy, dict) else r_hy[1],
+                        "source": r_hy["source"] if isinstance(r_hy, dict) else r_hy[2],
+                        "timestamp": r_hy["timestamp"] if isinstance(r_hy, dict) else r_hy[3]
+                    }
+                cursor.execute("SELECT COUNT(*) FROM hydration_logs WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+                r_hy_cnt = cursor.fetchone()
+                hydration_7d_cnt = r_hy_cnt[0] if (r_hy_cnt and not isinstance(r_hy_cnt, dict)) else (r_hy_cnt["COUNT(*)"] if isinstance(r_hy_cnt, dict) else 0)
+            except Exception:
+                pass
+
+            # 8. Fréquence cardiaque intraday
+            last_hr_intra = None
+            hr_intra_7d_cnt = 0
+            try:
+                cursor.execute(
+                    "SELECT timestamp, value, source FROM intraday_samples WHERE user_id = ? AND metric_type = 'hr' ORDER BY timestamp DESC, id DESC LIMIT 1",
+                    (user_id,)
+                )
+                r_intra = cursor.fetchone()
+                if r_intra:
+                    last_hr_intra = {
+                        "timestamp": r_intra["timestamp"] if isinstance(r_intra, dict) else r_intra[0],
+                        "value": r_intra["value"] if isinstance(r_intra, dict) else r_intra[1],
+                        "source": r_intra["source"] if isinstance(r_intra, dict) else r_intra[2]
+                    }
+                cursor.execute("SELECT COUNT(*) FROM intraday_samples WHERE user_id = ? AND metric_type = 'hr' AND timestamp >= ?", (user_id, cutoff_7d))
+                r_intra_cnt = cursor.fetchone()
+                hr_intra_7d_cnt = r_intra_cnt[0] if (r_intra_cnt and not isinstance(r_intra_cnt, dict)) else (r_intra_cnt["COUNT(*)"] if isinstance(r_intra_cnt, dict) else 0)
+            except Exception:
+                pass
+
+        latest_weight = recent_weights[0] if recent_weights else None
+
+        metrics_definitions = [
+            {
+                "key": "weight",
+                "label": "Poids Corporel",
+                "unit": "kg",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "health_connect", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Jauges Métaboliques, Tableau des pesées",
+                "last_point": {
+                    "date": latest_weight["date"],
+                    "value": f"{latest_weight['weight_kg']} kg",
+                    "source": latest_weight["source"],
+                    "measured_at": latest_weight["measured_at"]
+                } if latest_weight and latest_weight.get("weight_kg") else None,
+                "points_7d_count": weights_7d_count
+            },
+            {
+                "key": "body_fat",
+                "label": "Masse Grasse",
+                "unit": "%",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "health_connect", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Jauge Masse Grasse, Carte Impédancemétrie",
+                "last_point": {
+                    "date": latest_weight["date"],
+                    "value": f"{latest_weight['body_fat_pct']} %",
+                    "source": latest_weight["source"]
+                } if latest_weight and latest_weight.get("body_fat_pct") is not None else None,
+                "points_7d_count": weights_7d_count
+            },
+            {
+                "key": "muscle_mass",
+                "label": "Masse Musculaire",
+                "unit": "kg",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "health_connect", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Carte Impédancemétrie",
+                "last_point": {
+                    "date": latest_weight["date"],
+                    "value": f"{latest_weight['muscle_mass_kg']} kg",
+                    "source": latest_weight["source"]
+                } if latest_weight and latest_weight.get("muscle_mass_kg") is not None else None,
+                "points_7d_count": weights_7d_count
+            },
+            {
+                "key": "bone_mass",
+                "label": "Masse Osseuse",
+                "unit": "kg",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "health_connect"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Carte Impédancemétrie",
+                "last_point": None,
+                "points_7d_count": 0
+            },
+            {
+                "key": "water_pct",
+                "label": "Eau Corporelle",
+                "unit": "%",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Carte Impédancemétrie",
+                "last_point": None,
+                "points_7d_count": 0
+            },
+            {
+                "key": "bmi",
+                "label": "Indice de Masse Corporelle (IMC)",
+                "unit": "kg/m²",
+                "category": "body",
+                "table": "weights",
+                "supported_sources": ["withings", "health_connect", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Corps, Jauges Métaboliques",
+                "last_point": {
+                    "date": latest_weight["date"],
+                    "value": f"{round(float(latest_weight['weight_kg']) / ((1.78)**2), 1)} kg/m²",
+                    "source": latest_weight["source"]
+                } if latest_weight and latest_weight.get("weight_kg") else None,
+                "points_7d_count": weights_7d_count
+            },
+            {
+                "key": "steps",
+                "label": "Pas Quotidiens",
+                "unit": "pas",
+                "category": "activity",
+                "table": "daily_metrics, activities",
+                "supported_sources": ["health_connect", "ringconn", "oura", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Aujourd'hui, Tab Activité & Santé",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('steps')} pas",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("steps") else None,
+                "points_7d_count": dm_7d_cnt
+            },
+            {
+                "key": "active_calories",
+                "label": "Dépense Active",
+                "unit": "kcal",
+                "category": "activity",
+                "table": "daily_metrics, activities",
+                "supported_sources": ["health_connect", "ringconn", "oura", "manual"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Aujourd'hui, Anneau d'énergie, Tab Activité",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('active_calories_kcal')} kcal",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("active_calories_kcal") is not None else None,
+                "points_7d_count": dm_7d_cnt
+            },
+            {
+                "key": "resting_hr",
+                "label": "Fréquence Cardiaque Repos",
+                "unit": "bpm",
+                "category": "biometrics",
+                "table": "daily_metrics, activities",
+                "supported_sources": ["health_connect", "ringconn", "oura", "withings"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte Biométrie Cardiaque",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('resting_hr_bpm')} bpm",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("resting_hr_bpm") is not None else None,
+                "points_7d_count": dm_7d_cnt
+            },
+            {
+                "key": "hrv_rmssd",
+                "label": "Variabilité Cardiaque (HRV RMSSD)",
+                "unit": "ms",
+                "category": "biometrics",
+                "table": "daily_metrics, activities",
+                "supported_sources": ["health_connect", "ringconn", "oura"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte HRV Récupération",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('hrv_rmssd_ms')} ms",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("hrv_rmssd_ms") is not None else None,
+                "points_7d_count": dm_7d_cnt
+            },
+            {
+                "key": "hrv_sdnn",
+                "label": "Variabilité Cardiaque (HRV SDNN)",
+                "unit": "ms",
+                "category": "biometrics",
+                "table": "daily_metrics",
+                "supported_sources": ["health_connect", "ringconn"],
+                "rendered_in_ui": False,
+                "ui_location": "Non restitué dans l'UI",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('hrv_sdnn_ms')} ms",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("hrv_sdnn_ms") is not None else None,
+                "points_7d_count": dm_7d_cnt if last_dm_dict.get("hrv_sdnn_ms") is not None else 0
+            },
+            {
+                "key": "spo2",
+                "label": "Saturation Oxygène (SpO2)",
+                "unit": "%",
+                "category": "biometrics",
+                "table": "daily_metrics",
+                "supported_sources": ["health_connect", "ringconn", "oura"],
+                "rendered_in_ui": False,
+                "ui_location": "Non restitué dans l'UI",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('spo2_pct')} %",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("spo2_pct") is not None else None,
+                "points_7d_count": dm_7d_cnt if last_dm_dict.get("spo2_pct") is not None else 0
+            },
+            {
+                "key": "skin_temperature",
+                "label": "Température Cutanée",
+                "unit": "°C",
+                "category": "biometrics",
+                "table": "daily_metrics",
+                "supported_sources": ["health_connect", "ringconn", "oura"],
+                "rendered_in_ui": False,
+                "ui_location": "Non restitué dans l'UI",
+                "last_point": {
+                    "date": last_dm_dict.get("date"),
+                    "value": f"{last_dm_dict.get('skin_temperature_c')} °C",
+                    "source": last_dm_dict.get("source")
+                } if last_dm_dict.get("skin_temperature_c") is not None else None,
+                "points_7d_count": dm_7d_cnt if last_dm_dict.get("skin_temperature_c") is not None else 0
+            },
+            {
+                "key": "sleep_session",
+                "label": "Sommeil & Cycles",
+                "unit": "min",
+                "category": "sleep",
+                "table": "sleep_sessions, sleep_stages",
+                "supported_sources": ["health_connect", "ringconn", "oura", "withings"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte Sommeil & Architecture",
+                "last_point": {
+                    "date": last_sleep["date"],
+                    "value": f"{last_sleep['duration_minutes']} min",
+                    "source": last_sleep["source"]
+                } if last_sleep else None,
+                "points_7d_count": sleep_7d_cnt
+            },
+            {
+                "key": "workouts",
+                "label": "Séances d'Entraînement",
+                "unit": "séance",
+                "category": "activity",
+                "table": "workouts",
+                "supported_sources": ["health_connect", "ringconn", "oura", "strava"],
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Historique des Séances",
+                "last_point": {
+                    "date": str(last_workout["start_time"])[:10],
+                    "value": f"{last_workout['workout_type']} ({last_workout['calories_kcal']} kcal)",
+                    "source": last_workout["source"]
+                } if last_workout else None,
+                "points_7d_count": workout_7d_cnt
+            },
+            {
+                "key": "hydration",
+                "label": "Hydratation",
+                "unit": "ml",
+                "category": "nutrition",
+                "table": "hydration_logs",
+                "supported_sources": ["health_connect", "manual"],
+                "rendered_in_ui": False,
+                "ui_location": "Non restitué dans l'UI",
+                "last_point": {
+                    "date": last_hydration["date"],
+                    "value": f"{last_hydration['volume_ml']} ml",
+                    "source": last_hydration["source"]
+                } if last_hydration else None,
+                "points_7d_count": hydration_7d_cnt
+            },
+            {
+                "key": "hr_intraday",
+                "label": "FC Intraday (Échantillons)",
+                "unit": "bpm",
+                "category": "biometrics",
+                "table": "intraday_samples",
+                "supported_sources": ["health_connect", "ringconn"],
+                "rendered_in_ui": False,
+                "ui_location": "Non restitué dans l'UI",
+                "last_point": {
+                    "date": str(last_hr_intra["timestamp"])[:10],
+                    "value": f"{last_hr_intra['value']} bpm",
+                    "source": last_hr_intra["source"]
+                } if last_hr_intra else None,
+                "points_7d_count": hr_intra_7d_cnt
+            }
+        ]
+
+        metrics = []
+        ingested_and_displayed = 0
+        ingested_not_displayed = 0
+        not_read = 0
+
+        for m in metrics_definitions:
+            is_supported_by_user = any(
+                connected_devices.get(s, {}).get("connected") for s in m["supported_sources"]
+            ) or (m["last_point"] is not None)
+
+            m["read_by_connector"] = bool(is_supported_by_user)
+            m["stored_in_db"] = True
+
+            if not m["rendered_in_ui"]:
+                m["status"] = "ingested_not_displayed"
+                ingested_not_displayed += 1
+            elif not m["read_by_connector"] and m["last_point"] is None:
+                m["status"] = "not_read"
+                not_read += 1
+            else:
+                m["status"] = "ingested_and_displayed"
+                ingested_and_displayed += 1
+
+            metrics.append(m)
+
+        sources = [
+            {
+                "id": "health_connect",
+                "name": "Santé Connect (Android / Xiaomi)",
+                "device_type": "hub",
+                "connected": bool(connected_devices.get("health_connect", {}).get("connected")),
+                "last_sync_at": connected_devices.get("health_connect", {}).get("last_sync_at") or raw_ingest_by_source.get("health_connect", {}).get("last_received"),
+                "push_count_7d": raw_ingest_by_source.get("health_connect", {}).get("cnt_7d", 0)
+            },
+            {
+                "id": "withings",
+                "name": "Withings Body Scan & Scales",
+                "device_type": "scale",
+                "connected": bool(connected_devices.get("withings", {}).get("connected")),
+                "last_sync_at": connected_devices.get("withings", {}).get("last_sync_at") or raw_ingest_by_source.get("withings", {}).get("last_received"),
+                "push_count_7d": raw_ingest_by_source.get("withings", {}).get("cnt_7d", 0)
+            },
+            {
+                "id": "ringconn",
+                "name": "RingConn Gen 3 Smart Ring",
+                "device_type": "smart_ring",
+                "connected": bool(connected_devices.get("ringconn", {}).get("connected")),
+                "last_sync_at": connected_devices.get("ringconn", {}).get("last_sync_at") or raw_ingest_by_source.get("ringconn", {}).get("last_received"),
+                "push_count_7d": raw_ingest_by_source.get("ringconn", {}).get("cnt_7d", 0)
+            },
+            {
+                "id": "oura",
+                "name": "Oura Ring Gen 3 / Horizon",
+                "device_type": "smart_ring",
+                "connected": bool(connected_devices.get("oura", {}).get("connected")),
+                "last_sync_at": connected_devices.get("oura", {}).get("last_sync_at") or raw_ingest_by_source.get("oura", {}).get("last_received"),
+                "push_count_7d": raw_ingest_by_source.get("oura", {}).get("cnt_7d", 0)
+            },
+            {
+                "id": "manual",
+                "name": "Saisie Manuelle (Application)",
+                "device_type": "manual",
+                "connected": True,
+                "last_sync_at": latest_weight.get("date") if latest_weight else None,
+                "push_count_7d": weights_7d_count
+            }
+        ]
+
+        return {
+            "status": "success",
+            "sources": sources,
+            "metrics": metrics,
+            "recent_weights": recent_weights,
+            "summary": {
+                "total_metrics": len(metrics),
+                "ingested_and_displayed": ingested_and_displayed,
+                "ingested_not_displayed": ingested_not_displayed,
+                "not_read": not_read
+            }
+        }
+

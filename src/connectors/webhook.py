@@ -149,7 +149,7 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
             if "total_energy_kj" in payload:
                 total_cal = float(payload.get("total_energy_kj", 0.0)) / 4.184  # kJ → kcal
             else:
-                total_cal = float(payload.get("total_burned_kcal", payload.get("total_calories", bmr + active_cal)))
+                total_cal = float(payload.get("total_burned_kcal", payload.get("total_calories", payload.get("total_calories_kcal", bmr + active_cal))))
             
             workout_min = int(payload.get("workout_minutes", 0))
             workout_type = payload.get("workout_type")

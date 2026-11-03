@@ -285,6 +285,67 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible d'agréger les calories actives depuis Health Connect", e)
             }
 
+            // 4b. Totaux journaliers (Calories totales & Distance du jour)
+            try {
+                val totalCalAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(TotalCaloriesBurnedRecord.ENERGY_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                val totCal = totalCalAgg[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories
+                if (totCal != null && totCal > 0) {
+                    payload.put("total_calories_kcal", totCal)
+                    payload.put("total_burned_kcal", totCal)
+                } else {
+                    val totResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = TotalCaloriesBurnedRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackTot = 0.0
+                    for (rec in totResp.records) {
+                        fallbackTot += rec.energy.inKilocalories
+                    }
+                    if (fallbackTot > 0) {
+                        payload.put("total_calories_kcal", fallbackTot)
+                        payload.put("total_burned_kcal", fallbackTot)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Impossible de lire les calories totales journalières", e)
+            }
+
+            try {
+                val distAgg = healthConnectClient.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                val totDist = distAgg[DistanceRecord.DISTANCE_TOTAL]?.inMeters
+                if (totDist != null && totDist > 0) {
+                    payload.put("distance_meters", totDist)
+                } else {
+                    val distResp = healthConnectClient.readRecords(
+                        ReadRecordsRequest(
+                            recordType = DistanceRecord::class,
+                            timeRangeFilter = todayTimeRange
+                        )
+                    )
+                    var fallbackDist = 0.0
+                    for (rec in distResp.records) {
+                        fallbackDist += rec.distance.inMeters
+                    }
+                    if (fallbackDist > 0) {
+                        payload.put("distance_meters", fallbackDist)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Impossible de lire la distance journalière", e)
+            }
+
             // 5. Poids & Composition corporelle (Withings / Health Connect)
             try {
                 val weightResp = healthConnectClient.readRecords(
@@ -488,16 +549,71 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible de lire les séances de sport depuis Health Connect", e)
             }
 
+            // 8. Hydratation (HydrationRecord)
+            try {
+                val hydrationResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = HydrationRecord::class,
+                        timeRangeFilter = todayTimeRange
+                    )
+                )
+                var totalHydrationMl = 0.0
+                val hydrationLogs = JSONArray()
+                for (rec in hydrationResp.records) {
+                    val volMl = rec.volume.inMilliliters
+                    totalHydrationMl += volMl
+                    val hObj = JSONObject()
+                    hObj.put("external_id", rec.metadata.id)
+                    hObj.put("volume_ml", volMl)
+                    hObj.put("start_time", rec.startTime.toString())
+                    hObj.put("end_time", rec.endTime.toString())
+                    hydrationLogs.put(hObj)
+                }
+                if (hydrationResp.records.isNotEmpty() || totalHydrationMl > 0) {
+                    payload.put("hydration_ml", totalHydrationMl)
+                    payload.put("hydration_logs", hydrationLogs)
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Impossible de lire l'hydratation depuis Health Connect", e)
+            }
+
+            // 9. Température cutanée (SkinTemperatureRecord)
+            try {
+                val skinTempResp = healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = SkinTemperatureRecord::class,
+                        timeRangeFilter = timeRange
+                    )
+                )
+                skinTempResp.records.lastOrNull()?.let { lastTemp ->
+                    val tempC = lastTemp.baseline?.inCelsius ?: run {
+                        val firstDelta = lastTemp.deltas.lastOrNull()?.delta?.inCelsius
+                        if (firstDelta != null) 36.5 + firstDelta else null
+                    }
+                    if (tempC != null) {
+                        payload.put("skin_temperature_c", tempC)
+                        payload.put("skin_temperature", tempC)
+                        payload.put("skin_temperature_measured_at", lastTemp.startTime.toEpochMilli())
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Impossible de lire la température cutanée depuis Health Connect", e)
+            }
+
             // Calcul du nombre de métriques / types envoyés
             var metricsCount = 0
             if (payload.has("steps") && payload.getLong("steps") > 0) metricsCount++
             if (payload.has("active_calories_kcal")) metricsCount++
+            if (payload.has("total_calories_kcal")) metricsCount++
+            if (payload.has("distance_meters")) metricsCount++
             if (payload.has("weight_kg")) metricsCount++
             if (payload.has("body_fat_pct")) metricsCount++
             if (payload.has("muscle_mass_kg")) metricsCount++
             if (payload.has("hrv_ms")) metricsCount++
             if (payload.has("resting_hr_bpm")) metricsCount++
             if (payload.has("spo2_pct")) metricsCount++
+            if (payload.has("hydration_ml")) metricsCount++
+            if (payload.has("skin_temperature_c")) metricsCount++
             if (payload.has("sleep_sessions")) metricsCount += payload.getJSONArray("sleep_sessions").length()
             if (payload.has("workouts")) metricsCount += payload.getJSONArray("workouts").length()
             if (payload.has("intraday_samples")) metricsCount += payload.getJSONArray("intraday_samples").length()

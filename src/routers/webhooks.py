@@ -283,7 +283,7 @@ def process_single_item(
             source=source_name,
             steps=int(item.get("steps", (act_entry.steps if act_entry else 0))),
             active_calories_kcal=float(item.get("active_calories_kcal", item.get("active_calories", (act_entry.active_calories_kcal if act_entry else 0.0)))),
-            total_calories_kcal=float(item.get("total_burned_kcal", item.get("total_calories", (act_entry.total_burned_kcal if act_entry else 0.0)))),
+            total_calories_kcal=float(item.get("total_burned_kcal", item.get("total_calories_kcal", item.get("total_calories", (act_entry.total_burned_kcal if act_entry else 0.0))))),
             resting_hr_bpm=int(item["resting_hr_bpm"]) if item.get("resting_hr_bpm") is not None else (
                 int(item["resting_heart_rate"]) if item.get("resting_heart_rate") is not None else (
                     int(item["resting_hr"]) if item.get("resting_hr") is not None else (

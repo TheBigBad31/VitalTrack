@@ -54,7 +54,9 @@ class MainActivity : AppCompatActivity() {
         HealthPermission.getReadPermission(WeightRecord::class),
         HealthPermission.getReadPermission(BodyFatRecord::class),
         HealthPermission.getReadPermission(LeanBodyMassRecord::class),
-        HealthPermission.getReadPermission(BoneMassRecord::class)
+        HealthPermission.getReadPermission(BoneMassRecord::class),
+        HealthPermission.getReadPermission(HydrationRecord::class),
+        HealthPermission.getReadPermission(SkinTemperatureRecord::class)
     )
 
     private val stepPermissions = setOf(
