@@ -1,6 +1,7 @@
 """Repository pour la gestion des pesées et des activités physiques."""
 
 from datetime import date, datetime, timedelta, timezone
+import json
 from typing import List, Optional
 
 from src.models import ActivityEntry, WeightEntry
@@ -81,6 +82,31 @@ class WeightsRepository(BaseRepository):
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # Tracer l'écrasement dans raw_ingest si une pesée préalable existe pour le même jour/source
+            cursor.execute(
+                "SELECT id, weight_kg, external_id, measured_at FROM weights WHERE user_id = ? AND date = ? AND source = ? LIMIT 1",
+                (user_id, date_str, entry.source)
+            )
+            prior = cursor.fetchone()
+            if prior and (prior.get("external_id") != entry.external_id or prior.get("weight_kg") != entry.weight_kg):
+                try:
+                    payload_json = json.dumps({
+                        "event": "weight_overwritten",
+                        "previous_id": prior["id"],
+                        "previous_weight_kg": prior["weight_kg"],
+                        "previous_external_id": prior.get("external_id"),
+                        "new_weight_kg": entry.weight_kg,
+                        "new_external_id": entry.external_id,
+                        "measured_at": measured_at_str
+                    })
+                    overwrite_idemp = f"overwrite:{entry.source}:{date_str}:{entry.external_id or now_str}"
+                    cursor.execute("""
+                        INSERT INTO raw_ingest (user_id, source, endpoint, idempotency_key, payload_json, status, received_at)
+                        VALUES (?, ?, ?, ?, ?, 'received', ?)
+                    """, (user_id, f"{entry.source}:overwrite", "insert_weight", overwrite_idemp, payload_json, now_str))
+                except Exception:
+                    pass
+
             if self.is_postgres:
                 cursor.execute("""
                     INSERT INTO weights (

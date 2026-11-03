@@ -51,10 +51,16 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
 
         # Extraction Pesée
         weight_entry = None
-        if "weight_kg" in payload or "weight" in payload or "weight_lb" in payload:
-            # Détecter l'unité : weight_lb = livres, weight_kg/weight = kg
-            if "weight_lb" in payload:
-                w_kg = float(payload.get("weight_lb", 0.0)) * 0.45359237  # lb → kg
+        has_weight = any(k in payload for k in ("weight_kg", "weight", "weight_lb", "weight_st", "weight_stone"))
+        if has_weight:
+            # Détecter l'unité : weight_lb / lb = livres, weight_st / stone = stones, weight_kg / weight = kg
+            unit_val = str(payload.get("unit") or payload.get("weight_unit") or "").lower().strip()
+            if "weight_lb" in payload or "lb" in unit_val or "pound" in unit_val:
+                raw_w = float(payload.get("weight_lb", payload.get("weight_kg", payload.get("weight", 0.0))))
+                w_kg = raw_w * 0.45359237  # lb → kg
+            elif "weight_st" in payload or "weight_stone" in payload or "stone" in unit_val or unit_val == "st":
+                raw_w = float(payload.get("weight_st", payload.get("weight_stone", payload.get("weight_kg", payload.get("weight", 0.0)))))
+                w_kg = raw_w * 6.35029318  # stone → kg
             else:
                 w_kg = float(payload.get("weight_kg", payload.get("weight", 0.0)))
             
@@ -75,15 +81,46 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
                     )
                 )
 
+                # Date réelle de la mesure (weight_date prioritaire, ou déduit de measured_at/timestamp)
+                target_weight_date = target_date
+                weight_date_raw = payload.get("weight_date")
+                measured_at_val = payload.get("measured_at") or payload.get("weight_measured_at") or payload.get("timestamp")
+                measured_at_iso = None
+
+                if measured_at_val is not None:
+                    if isinstance(measured_at_val, (int, float)):
+                        epoch_sec = float(measured_at_val) / 1000.0 if float(measured_at_val) > 1e11 else float(measured_at_val)
+                        dt = datetime.fromtimestamp(epoch_sec, timezone.utc)
+                        measured_at_iso = dt.isoformat()
+                        if not weight_date_raw:
+                            target_weight_date = dt.date()
+                    elif isinstance(measured_at_val, str) and measured_at_val.strip():
+                        measured_at_iso = measured_at_val.strip()
+                        if not weight_date_raw:
+                            try:
+                                target_weight_date = date.fromisoformat(measured_at_iso[:10])
+                            except Exception:
+                                pass
+
+                if weight_date_raw:
+                    if isinstance(weight_date_raw, str):
+                        target_weight_date = date.fromisoformat(weight_date_raw[:10])
+                    elif isinstance(weight_date_raw, (date, datetime)):
+                        target_weight_date = weight_date_raw if isinstance(weight_date_raw, date) else weight_date_raw.date()
+
+                weight_ext_id = payload.get("weight_external_id") or payload.get("external_id") or payload.get("id")
+
                 weight_entry = WeightEntry(
-                    date=target_date,
+                    date=target_weight_date,
                     weight_kg=round(w_kg, 2),
                     body_fat_pct=float(fat_pct) if fat_pct is not None else None,
                     muscle_mass_kg=float(muscle_kg) if muscle_kg is not None else None,
                     water_pct=float(water_pct) if water_pct is not None else None,
                     bmi=float(bmi) if bmi is not None else None,
                     source=weight_source,
-                    notes=payload.get("notes", f"Ingéré via Mobile Webhook ({source_name})")
+                    notes=payload.get("notes", f"Ingéré via Mobile Webhook ({source_name})"),
+                    external_id=str(weight_ext_id) if weight_ext_id else None,
+                    measured_at=measured_at_iso
                 )
 
         # Extraction Activité

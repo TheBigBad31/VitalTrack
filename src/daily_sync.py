@@ -39,7 +39,7 @@ def run_daily_sync(db: Optional[Database] = None) -> bool:
     if db is None:
         db = Database()
     today = date.today()
-    start_date = today - timedelta(days=2)
+    start_date = today - timedelta(days=7)
     error_count = 0
 
     all_users = db.get_all_users()

@@ -75,15 +75,24 @@ def validate_physiological_ranges(item: Dict[str, Any]) -> None:
     Lève HTTPException(422) en cas de valeur absurde ou dangereuse.
     """
     # 1. Validation Poids
-    for w_key in ("weight_kg", "weight"):
+    unit_val = str(item.get("unit") or item.get("weight_unit") or "").lower().strip()
+    for w_key in ("weight_kg", "weight", "weight_lb", "weight_st", "weight_stone"):
         if w_key in item and item[w_key] is not None:
             try:
-                w_val = float(item[w_key])
+                raw_w = float(item[w_key])
+                if w_key == "weight_lb" or "lb" in unit_val or "pound" in unit_val:
+                    w_val = raw_w * 0.45359237
+                elif w_key in ("weight_st", "weight_stone") or "stone" in unit_val or unit_val == "st":
+                    w_val = raw_w * 6.35029318
+                else:
+                    w_val = raw_w
                 if w_val < 20.0 or w_val > 300.0:
                     raise HTTPException(
                         status_code=422,
-                        detail=f"Valeur physiologique invalide pour le poids ({w_val} kg). Doit être compris entre 20 et 300 kg."
+                        detail=f"Valeur physiologique invalide pour le poids ({round(w_val, 2)} kg). Doit être compris entre 20 et 300 kg."
                     )
+            except HTTPException:
+                raise
             except (ValueError, TypeError):
                 raise HTTPException(status_code=422, detail=f"Format invalide pour le poids: {item[w_key]}")
 
@@ -125,7 +134,13 @@ def validate_physiological_ranges(item: Dict[str, Any]) -> None:
             except (ValueError, TypeError):
                 raise HTTPException(status_code=422, detail=f"Format invalide pour la SpO2: {item[spo2_key]}")
 
-    # 5. Validation récursive sur sous-éléments (workouts, intraday_samples)
+    # 5. Validation récursive sur sous-éléments (workouts, intraday_samples, weights)
+    weights = item.get("weights")
+    if isinstance(weights, list):
+        for w in weights:
+            if isinstance(w, dict):
+                validate_physiological_ranges(w)
+
     workouts = item.get("workouts") or (item.get("workout") and [item.get("workout")])
     if isinstance(workouts, list):
         for w in workouts:
@@ -207,7 +222,7 @@ def process_single_item(
     can_ingest_biometrics = user_consents.get("biometrics", True)
     can_ingest_devices = user_consents.get("devices", True)
 
-    ext_id = item.get("external_id") or item.get("id")
+    ext_id = item.get("external_id") or item.get("id") or item.get("weight_external_id")
     idemp_key = f"{source_name}:{ext_id}" if ext_id else None
 
     # 1. Audit raw_ingest avec clé d'idempotence
@@ -233,6 +248,20 @@ def process_single_item(
         if ext_id and not weight_entry.external_id:
             weight_entry.external_id = str(ext_id)
         saved_weight = db_inst.insert_weight(weight_entry, user_id=resolved_user_id).model_dump()
+
+    if isinstance(item.get("weights"), list) and can_ingest_biometrics:
+        for w_item in item["weights"]:
+            if isinstance(w_item, dict):
+                w_payload = dict(item)
+                w_payload.update(w_item)
+                w_entry, _ = connector.process_webhook_payload(w_payload)
+                if w_entry:
+                    w_ext = w_item.get("external_id") or w_item.get("weight_external_id") or ext_id
+                    if w_ext and not w_entry.external_id:
+                        w_entry.external_id = str(w_ext)
+                    sw = db_inst.insert_weight(w_entry, user_id=resolved_user_id).model_dump()
+                    if not saved_weight:
+                        saved_weight = sw
 
     # 3. Activité quotidienne standard
     if act_entry and can_ingest_biometrics:
