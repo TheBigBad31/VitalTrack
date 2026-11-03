@@ -2,7 +2,7 @@
 <html lang="fr" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>VitalTrack — PWA Santé, Nutrition Photo & Objets Connectés</title>
   
   <!-- PWA Meta Tags -->
@@ -12,10 +12,13 @@
   <meta name="apple-mobile-web-app-title" content="VitalTrack">
   <link rel="manifest" href="/static/manifest.json">
   
-  <!-- Tailwind CSS & Lucide Icons & Chart.js (versions figées & chargement non bloquant) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+  <!-- Tailwind CSS compilé localement & purgé -->
+  <link rel="stylesheet" href="/static/modules/tailwind.min.css?v=1.0.0">
+  <link rel="stylesheet" href="/static/modules/theme.css?v=1.0.0">
+  
+  <!-- Vendor libraries self-hostées avec support offline PWA -->
+  <script src="/static/vendor/lucide.min.js?v=0.460.0" defer></script>
+  <script src="/static/vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <!-- Google Identity Services (GIS) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
@@ -76,34 +79,7 @@
       opacity: 0.7;
     }
   </style>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#F5F3FF',
-              100: '#EDE9FE',
-              400: '#A78BFA',
-              500: '#7C3AED',
-              600: '#6D28D9',
-              700: '#5B21B6'
-            },
-            electric: {
-              blue: '#2563FF',
-              cyan: '#22D3EE',
-              magenta: '#C026D3'
-            },
-            darkbg: '#0B0B1A',
-            darkcard: '#14142B',
-            darkborder: '#25254A'
-          }
-        }
-      }
-    }
-  </script>
-  <link rel="stylesheet" href="/static/modules/theme.css">
+  
 </head>
 <body class="bg-[#0B0F17] text-slate-100 min-h-screen flex flex-col font-sans pb-24 md:pb-8">
 
@@ -352,7 +328,7 @@
               <span class="text-brand-400">Tendance 7j: -- kg</span>
             </div>
           </div>
-          <div class="text-[10px] text-slate-500" id="val-weight-diff">Variation 7j: --</div>
+          <div class="text-[10px] text-slate-400" id="val-weight-diff">Variation 7j: --</div>
         </div>
 
         <!-- Jauge 2: Calories In vs Out -->
@@ -380,7 +356,7 @@
             <div class="text-2xl sm:text-3xl font-extrabold text-orange-400" id="val-cals-out">-- <span class="text-xs font-normal text-slate-400">kcal</span></div>
             <div class="text-[11px] text-slate-400">BMR: <span class="text-slate-300 font-semibold" id="val-bmr">-- kcal</span></div>
           </div>
-          <div class="text-[10px] text-slate-500">Métabolisme de base + Exercice</div>
+          <div class="text-[10px] text-slate-400">Métabolisme de base + Exercice</div>
         </div>
 
         <!-- Jauge 4: Balance nette -->
@@ -393,7 +369,7 @@
             <div class="text-2xl sm:text-3xl font-extrabold" id="val-net-balance">-- <span class="text-xs font-normal text-slate-400">kcal</span></div>
             <div class="text-[11px] font-medium" id="val-net-status">Statut: --</div>
           </div>
-          <div class="text-[10px] text-slate-500" id="val-projected-loss">Impact 7j: --</div>
+          <div class="text-[10px] text-slate-400" id="val-projected-loss">Impact 7j: --</div>
         </div>
 
         <!-- Jauge 5: Pas du jour -->
@@ -667,9 +643,9 @@
             <!-- Filtres et Recherche rapide -->
             <div class="flex flex-col gap-2.5">
               <div class="relative">
-                <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors">
-                <span class="absolute right-2.5 top-2 text-[10px] text-slate-500 font-mono hidden sm:inline">/</span>
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
+                <span class="absolute right-2.5 top-2 text-[10px] text-slate-400 font-mono hidden sm:inline">/</span>
               </div>
 
               <!-- Filtre par Source (BALI-85) : Tous, Mes Aliments, Catalogue Public, Amis -->
@@ -781,7 +757,7 @@
               </span>
             </div>
             <div id="journal-day-benefits-tags" class="flex flex-wrap gap-1.5 items-center">
-              <span class="text-xs text-slate-500 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>
+              <span class="text-xs text-slate-400 italic">Ajoutez des aliments à vos repas pour découvrir les bienfaits métaboliques et santé de votre journée.</span>
             </div>
           </div>
 
@@ -1053,7 +1029,7 @@
                 <div id="corridor-hrv-bar" class="absolute h-full bg-cyan-500/30 border-x border-cyan-400" style="left: 20%; width: 60%;"></div>
                 <div id="corridor-hrv-marker" class="absolute top-0 bottom-0 w-1.5 bg-white shadow-sm" style="left: 50%;"></div>
               </div>
-              <div class="flex items-center justify-between text-[10px] text-slate-500">
+              <div class="flex items-center justify-between text-[10px] text-slate-400">
                 <span id="corridor-hrv-min">-- ms</span>
                 <span id="corridor-hrv-status" class="text-cyan-400 font-medium">Dans la normale</span>
                 <span id="corridor-hrv-max">-- ms</span>
@@ -1080,7 +1056,7 @@
               </div>
               <div class="flex items-center space-x-2 text-xs">
                 <span class="text-slate-400">Dormi : <strong class="text-white" id="sleep-total-duration">--</strong></span>
-                <span class="text-slate-500">•</span>
+                <span class="text-slate-400">•</span>
                 <span class="text-slate-400">Efficacité : <strong class="text-emerald-400" id="sleep-efficiency-pct">--%</strong></span>
               </div>
             </div>
@@ -1186,7 +1162,7 @@
               <!-- Rempli dynamiquement -->
             </div>
 
-            <div class="text-[11px] text-slate-500 pt-1 border-t border-[#25254A]">
+            <div class="text-[11px] text-slate-400 pt-1 border-t border-[#25254A]">
               Synchronisé automatiquement via Google Santé Connect / Strava / Apple Santé.
             </div>
           </div>
@@ -1296,7 +1272,7 @@
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
               <span>Objectif : 8 500 pas/j</span>
-              <span class="text-slate-500">Choisir</span>
+              <span class="text-slate-400">Choisir</span>
             </div>
           </button>
 
@@ -1314,7 +1290,7 @@
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
               <span>Muscle & Force</span>
-              <span class="text-slate-500">Choisir</span>
+              <span class="text-slate-400">Choisir</span>
             </div>
           </button>
         </div>
@@ -1326,7 +1302,7 @@
             <span class="text-xs text-brand-400 font-medium" id="goal-target-weight-value">77 kg</span>
           </div>
           <input type="number" id="goal-target-weight-input" min="30" max="300" step="0.1" value="77" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-lg px-3 py-2 text-white font-bold text-xl focus:outline-none focus:border-brand-500 transition-colors">
-          <p class="text-xs text-slate-500 mt-1">Appuyez sur Entrée ou cliquez en dehors pour sauver</p>
+          <p class="text-xs text-slate-400 mt-1">Appuyez sur Entrée ou cliquez en dehors pour sauver</p>
         </div>
       </div>
 
@@ -1396,43 +1372,43 @@
 
   <!-- =================================================================== -->
   <!-- BARRE DE NAVIGATION INFÉRIEURE MOBILE (BOTTOM BAR PWA - 5 ENTRÉES AVEC MENU PLUS) -->
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0B0B1A]/95 backdrop-blur-lg border-t border-[#25254A] px-2 py-2 flex justify-around items-center">
-    <button onclick="switchTab('summary')" id="tab-summary-mob" class="flex flex-col items-center justify-center p-1 text-violet-400 text-[10px] font-medium transition-colors">
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0B0B1A]/95 backdrop-blur-lg border-t border-[#25254A] px-2 py-2 flex justify-around items-center" aria-label="Navigation principale mobile">
+    <button onclick="switchTab('summary')" id="tab-summary-mob" aria-label="Aujourd'hui" class="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center p-1 text-violet-400 text-[10px] font-medium transition-colors">
       <i data-lucide="layout-dashboard" class="w-5 h-5 mb-0.5"></i>
       <span>Aujourd'hui</span>
     </button>
-    <button onclick="switchTab('weight')" id="tab-weight-mob" class="flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors">
+    <button onclick="switchTab('weight')" id="tab-weight-mob" aria-label="Suivi du corps et pesée" class="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors">
       <i data-lucide="scale" class="w-5 h-5 mb-0.5"></i>
       <span>Corps</span>
     </button>
-    <button onclick="openMealModal()" class="flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-violet-600 to-electric-blue text-white rounded-full p-3 shadow-lg shadow-violet-600/30 active:scale-95 transition-transform">
+    <button onclick="openMealModal()" aria-label="Prendre une photo de repas" class="min-w-[48px] min-h-[48px] flex flex-col items-center justify-center -mt-5 bg-gradient-to-tr from-violet-600 to-electric-blue text-white rounded-full p-3 shadow-lg shadow-violet-600/30 active:scale-95 transition-transform">
       <i data-lucide="camera" class="w-6 h-6"></i>
     </button>
-    <button onclick="switchTab('nutrition')" id="tab-nutrition-mob" class="flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors">
+    <button onclick="switchTab('nutrition')" id="tab-nutrition-mob" aria-label="Nutrition et repas" class="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors">
       <i data-lucide="utensils" class="w-5 h-5 mb-0.5"></i>
       <span>Nutrition</span>
     </button>
-    <button onclick="toggleMobileMoreMenu()" id="tab-more-mob" class="flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors relative">
+    <button onclick="toggleMobileMoreMenu()" id="tab-more-mob" aria-label="Plus d'options de navigation" aria-haspopup="true" aria-expanded="false" class="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center p-1 text-slate-400 text-[10px] font-medium transition-colors relative">
       <i data-lucide="more-horizontal" class="w-5 h-5 mb-0.5"></i>
       <span>Plus</span>
       <!-- Menu Déroulant Plus Mobile -->
       <div id="mobile-more-menu" class="hidden absolute bottom-14 right-2 w-48 bg-[#14142B] border border-[#25254A] rounded-2xl shadow-xl p-2 space-y-1 text-left z-50">
-        <button onclick="switchTab('activity'); toggleMobileMoreMenu();" id="tab-activity-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
+        <button onclick="switchTab('activity'); toggleMobileMoreMenu();" id="tab-activity-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36] min-h-[44px]">
           <i data-lucide="footprints" class="w-4 h-4 text-cyan-400"></i>
           <span>Activité & Santé</span>
         </button>
-        <button onclick="switchTab('goals'); toggleMobileMoreMenu();" id="tab-goals-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
+        <button onclick="switchTab('goals'); toggleMobileMoreMenu();" id="tab-goals-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36] min-h-[44px]">
           <i data-lucide="target" class="w-4 h-4 text-violet-400"></i>
           <span>Objectifs & Profil</span>
         </button>
-        <button onclick="openFriendsModal(); toggleMobileMoreMenu();" id="tab-friends-mob" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
+        <button onclick="openFriendsModal(); toggleMobileMoreMenu();" id="tab-friends-mob" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36] min-h-[44px]">
           <div class="flex items-center space-x-2">
             <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
             <span>Amis & Partage</span>
           </div>
           <span id="badge-friends-incoming-mob" class="hidden text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-bold">0</span>
         </button>
-        <button onclick="switchTab('devices'); toggleMobileMoreMenu();" id="tab-devices-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36]">
+        <button onclick="switchTab('devices'); toggleMobileMoreMenu();" id="tab-devices-mob" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-[#1C1C36] min-h-[44px]">
           <i data-lucide="cpu" class="w-4 h-4 text-blue-400"></i>
           <span>Appareils & Données</span>
         </button>
@@ -1445,7 +1421,7 @@
   <!-- =================================================================== -->
   <!-- MODAL : CRÉATION / ÉDITION D'UN ÉLÉMENT DU CATALOGUE -->
   <!-- =================================================================== -->
-  <div id="modal-catalog-item" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-catalog-item" role="dialog" aria-modal="true" aria-labelledby="cat-modal-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
@@ -1453,7 +1429,7 @@
           <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="cat-modal-title">Créer un élément de catalogue</h3>
         </div>
-        <button onclick="closeCatalogItemModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeCatalogItemModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1463,7 +1439,7 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'aliment ou du plat *</label>
-          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-3 gap-2">
@@ -1523,7 +1499,7 @@
 
           <!-- Liste des ingrédients composant le plat -->
           <div id="dish-ingredients-list" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            <div class="py-3 text-center text-xs text-slate-500 italic bg-[#151D2A]/50 rounded-xl border border-dashed border-[#1F2A3C] p-2">
+            <div class="py-3 text-center text-xs text-slate-400 italic bg-[#151D2A]/50 rounded-xl border border-dashed border-[#1F2A3C] p-2">
               Aucun ingrédient ajouté pour l'instant. Choisissez un aliment ci-dessus pour composer votre plat.
             </div>
           </div>
@@ -1569,7 +1545,7 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Fibres (optionnel)</label>
-          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Section Bienfaits Santé EFSA / ANSES (Stage 13) -->
@@ -1591,7 +1567,7 @@
               <button type="button" onclick="triggerModalNutritionEvaluation()" class="text-[10px] text-brand-400 hover:underline">Recalculer</button>
             </div>
             <div id="modal-auto-benefits-container" class="flex flex-wrap gap-1.5 min-h-[28px] items-center">
-              <span class="text-[10px] text-slate-500 italic">Renseignez les valeurs nutritionnelles pour détecter les bienfaits éligibles.</span>
+              <span class="text-[10px] text-slate-400 italic">Renseignez les valeurs nutritionnelles pour détecter les bienfaits éligibles.</span>
             </div>
           </div>
 
@@ -1630,7 +1606,7 @@
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
             <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
               <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
@@ -1658,7 +1634,7 @@
   <!-- =================================================================== -->
   
   <!-- POP-IN INLINE RAPIDE POUR DROP DE QUANTITE -->
-  <div id="modal-drop-portion" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+  <div id="modal-drop-portion" role="dialog" aria-modal="true" aria-labelledby="drop-modal-title" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-[#151D2A] border-2 border-brand-500/60 shadow-2xl shadow-brand-500/20 w-full max-w-md rounded-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2.5">
@@ -1666,11 +1642,11 @@
             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
           </span>
           <div>
-            <h3 class="font-bold text-white text-base">Ajout au Repas</h3>
+            <h3 class="font-bold text-white text-base" id="drop-modal-title">Ajout au Repas</h3>
             <p class="text-xs text-slate-400">Cible : <span id="drop-modal-slot-title" class="text-brand-400 font-bold uppercase"></span></p>
           </div>
         </div>
-        <button onclick="closeDropPortionModal()" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+        <button onclick="closeDropPortionModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1732,18 +1708,18 @@
     </div>
   </div>
 
-  <div id="modal-select-catalog-item" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-select-catalog-item" role="dialog" aria-modal="true" aria-labelledby="modal-select-catalog-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="plus-circle" class="w-5 h-5 text-brand-400"></i>
           <div>
-            <h3 class="font-bold text-white text-base">Ajouter au repas</h3>
+            <h3 class="font-bold text-white text-base" id="modal-select-catalog-title">Ajouter au repas</h3>
             <p class="text-xs text-slate-400">Repas sélectionné : <span id="modal-select-cat-slot-title" class="text-brand-400 font-bold">Déjeuner</span></p>
           </div>
         </div>
-        <button onclick="closeSelectFromCatalogModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeSelectFromCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1751,8 +1727,8 @@
       <!-- Étape 1 : Choisir dans le catalogue -->
       <div id="picker-step-select" class="space-y-3">
         <div class="relative">
-          <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div id="modal-catalog-picker-list" class="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -1807,7 +1783,7 @@
       <!-- =================================================================== -->
   <!-- MODAL : GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85) -->
   <!-- =================================================================== -->
-  <div id="modal-friends-catalog" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-friends-catalog" role="dialog" aria-modal="true" aria-labelledby="modal-friends-cat-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-150">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
@@ -1816,14 +1792,14 @@
             <i data-lucide="users" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base flex items-center gap-2">
+            <h3 class="font-bold text-white text-base flex items-center gap-2" id="modal-friends-cat-title">
               <span>Catalogues Partagés d'Amis</span>
               <span id="friends-count-pill" class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-mono">0 abonnés</span>
             </h3>
             <p class="text-xs text-slate-400">Abonnez-vous aux catalogues de vos proches pour découvrir leurs plats &amp; recettes</p>
           </div>
         </div>
-        <button onclick="closeFriendsCatalogModal()" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+        <button onclick="closeFriendsCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1835,15 +1811,15 @@
         </label>
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
-            <i data-lucide="at-sign" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
-            <input type="text" id="friend-sub-input" placeholder="Adresse email ou identifiant de votre ami..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors" onkeydown="if(event.key==='Enter'){event.preventDefault(); addFriendSubscription();}">
+            <i data-lucide="at-sign" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" id="friend-sub-input" placeholder="Adresse email ou identifiant de votre ami..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors" onkeydown="if(event.key==='Enter'){event.preventDefault(); addFriendSubscription();}">
           </div>
           <button type="button" onclick="addFriendSubscription()" id="btn-add-friend-sub" class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-md shadow-brand-600/20 flex items-center space-x-1.5 shrink-0 active:scale-95">
             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
             <span>S'abonner</span>
           </button>
         </div>
-        <p class="text-[11px] text-slate-500 flex items-center gap-1">
+        <p class="text-[11px] text-slate-400 flex items-center gap-1">
           <i data-lucide="info" class="w-3 h-3 text-slate-400"></i>
           <span>Synchronisation automatique et instantanée des aliments et plats mis à jour par votre ami.</span>
         </p>
@@ -1901,15 +1877,15 @@
 
 <!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
   <!-- =================================================================== -->
-  <div id="modal-meal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-meal" role="dialog" aria-modal="true" aria-labelledby="modal-meal-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="camera" class="w-5 h-5 text-brand-400"></i>
-          <h3 class="font-bold text-white text-base">📸 Analyser mon repas</h3>
+          <h3 class="font-bold text-white text-base" id="modal-meal-title">📸 Analyser mon repas</h3>
         </div>
-        <button onclick="closeMealModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1924,7 +1900,7 @@
             <div id="meal-photo-placeholder" class="space-y-1">
               <i data-lucide="image-plus" class="w-8 h-8 mx-auto text-brand-400"></i>
               <div class="text-xs text-slate-300 font-medium">Appuyer pour ouvrir l'appareil photo</div>
-              <div class="text-[10px] text-slate-500">ou glisser une photo de plat</div>
+              <div class="text-[10px] text-slate-400">ou glisser une photo de plat</div>
             </div>
             <!-- Aperçu Photo -->
             <img id="meal-photo-preview" class="hidden max-h-48 mx-auto rounded-lg shadow-md object-cover w-full">
@@ -1950,7 +1926,7 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Description ou ingrédients (facultatif)</label>
-          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Bouton Déclenchement de l'analyse -->
@@ -1969,7 +1945,7 @@
               <span class="font-bold text-brand-400" id="portion-scale-val">1.0x (Normale)</span>
             </div>
             <input type="range" id="portion-scale-range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-brand-500 cursor-pointer" oninput="updatePortionScale(this.value)">
-            <div class="flex justify-between text-[10px] text-slate-500">
+            <div class="flex justify-between text-[10px] text-slate-400">
               <span>0.5x (Petite)</span>
               <span>1.0x (Standard)</span>
               <span>2.0x (Double)</span>
@@ -2025,20 +2001,20 @@
   <!-- =================================================================== -->
   <!-- MODAL : BIBLIOTHÈQUE DE PLATS SAUVEGARDÉS & SÉLECTEUR RAPIDE -->
   <!-- =================================================================== -->
-  <div id="modal-saved-meals" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-saved-meals" role="dialog" aria-modal="true" aria-labelledby="modal-saved-meals-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="bookmark" class="w-5 h-5 text-indigo-400"></i>
-          <h3 class="font-bold text-white text-base">Bibliothèque de Plats Réutilisables</h3>
+          <h3 class="font-bold text-white text-base" id="modal-saved-meals-title">Bibliothèque de Plats Réutilisables</h3>
         </div>
         <div class="flex items-center space-x-2">
           <button onclick="openCreateSavedMealModal()" class="px-2.5 py-1 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 border border-brand-500/30 text-xs font-semibold flex items-center space-x-1">
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             <span>Nouveau</span>
           </button>
-          <button onclick="closeSavedMealsLibraryModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+          <button onclick="closeSavedMealsLibraryModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
@@ -2074,7 +2050,7 @@
   <!-- =================================================================== -->
   <!-- MODAL : CRÉATION / ÉDITION D'UN PLAT TYPE -->
   <!-- =================================================================== -->
-  <div id="modal-create-saved-meal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-create-saved-meal" role="dialog" aria-modal="true" aria-labelledby="saved-meal-form-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
@@ -2082,7 +2058,7 @@
           <i data-lucide="utensils" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="saved-meal-form-title">Créer un Plat Type Réutilisable</h3>
         </div>
-        <button onclick="closeCreateSavedMealModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeCreateSavedMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2092,7 +2068,7 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du plat *</label>
-          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
@@ -2107,7 +2083,7 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Portion / Quantité</label>
-            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -2133,13 +2109,13 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Composition / Ingrédients (facultatif)</label>
-          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
             <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
               <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
@@ -2170,14 +2146,14 @@
     <!-- =================================================================== -->
   <!-- MODAL 2 : SAISIE DU POIDS (KG) -->
   <!-- =================================================================== -->
-  <div id="modal-weight" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+  <div id="modal-weight" role="dialog" aria-modal="true" aria-labelledby="modal-weight-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
           <i data-lucide="scale" class="w-5 h-5 text-brand-400"></i>
-          <span>Saisie rapide de la pesée</span>
+          <span id="modal-weight-title">Saisie rapide de la pesée</span>
         </h3>
-        <button onclick="closeWeightModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeWeightModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2213,14 +2189,14 @@
   <!-- =================================================================== -->
   <!-- MODAL 3 : SAISIE ACTIVITÉ / PAS -->
   <!-- =================================================================== -->
-  <div id="modal-activity" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+  <div id="modal-activity" role="dialog" aria-modal="true" aria-labelledby="modal-activity-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
           <i data-lucide="footprints" class="w-5 h-5 text-brand-400"></i>
-          <span>Ajouter Activité & Pas</span>
+          <span id="modal-activity-title">Ajouter Activité & Pas</span>
         </h3>
-        <button onclick="closeActivityModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeActivityModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2255,7 +2231,7 @@
   <!-- =================================================================== -->
   <!-- MODAL 4 : PROFIL UTILISATEUR & OBJECTIFS PERSONNALISÉS -->
   <!-- =================================================================== -->
-  <div id="modal-profile" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-profile" role="dialog" aria-modal="true" aria-labelledby="modal-profile-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2">
@@ -2263,11 +2239,11 @@
             <i data-lucide="user" class="w-4 h-4"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base">Mon Profil Utilisateur</h3>
+            <h3 class="font-bold text-white text-base" id="modal-profile-title">Mon Profil Utilisateur</h3>
             <p class="text-[10px] text-slate-400">Paramètres morphologiques et calcul du métabolisme basal</p>
           </div>
         </div>
-        <button onclick="closeProfileModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeProfileModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2443,7 +2419,7 @@
   <!-- =================================================================== -->
   <!-- MODAL 5 : ASSISTANT DE CONNEXION DES OBJETS (WIZARD RINGCONN & GOOGLE HEALTH) -->
   <!-- =================================================================== -->
-  <div id="modal-connect-wizard" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-connect-wizard" role="dialog" aria-modal="true" aria-labelledby="modal-connect-wizard-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
         <div class="flex items-center space-x-2.5">
@@ -2451,11 +2427,11 @@
             <i data-lucide="link-2" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base">Assistant de Connexion d'Appareils</h3>
+            <h3 class="font-bold text-white text-base" id="modal-connect-wizard-title">Assistant de Connexion d'Appareils</h3>
             <p class="text-[10px] text-slate-400">Connectez vos capteurs en 1-clic pour synchroniser vos données biométriques</p>
           </div>
         </div>
-        <button onclick="closeConnectWizardModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400">
+        <button onclick="closeConnectWizardModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2560,7 +2536,7 @@
   <!-- =================================================================== -->
   <!-- MODAL 6 : AUTHENTIFICATION UNIFIÉE (GOOGLE, EMAIL/MDP, INVITÉ) -->
   <!-- =================================================================== -->
-  <div id="modal-auth" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden" style="touch-action: pan-y;">
+  <div id="modal-auth" role="dialog" aria-modal="true" aria-labelledby="modal-auth-title" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden" style="touch-action: pan-y;">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <!-- En-tête de la Modale -->
@@ -2570,11 +2546,11 @@
             <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base">Authentification VitalTrack</h3>
+            <h3 class="font-bold text-white text-base" id="modal-auth-title">Authentification VitalTrack</h3>
             <p class="text-[10px] text-slate-400">Compte unifié, session sécurisée & cloud sync</p>
           </div>
         </div>
-        <button onclick="closeAuthModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+        <button onclick="closeAuthModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2757,8 +2733,8 @@
           <div id="email-field-name" class="space-y-1 hidden">
             <label class="block text-[11px] font-medium text-slate-300">Nom complet ou prénom :</label>
             <div class="relative">
-              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
-              <i data-lucide="user" class="w-4 h-4 text-slate-500 absolute right-3 top-2.5"></i>
+              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
             </div>
           </div>
 
@@ -2766,8 +2742,8 @@
           <div class="space-y-1">
             <label class="block text-[11px] font-medium text-slate-300">Adresse email :</label>
             <div class="relative">
-              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
-              <i data-lucide="at-sign" class="w-4 h-4 text-slate-500 absolute right-3 top-2.5"></i>
+              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <i data-lucide="at-sign" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
             </div>
           </div>
 
@@ -2775,10 +2751,10 @@
           <div class="space-y-1">
             <div class="flex items-center justify-between">
               <label class="block text-[11px] font-medium text-slate-300">Mot de passe :</label>
-              <span id="password-hint" class="text-[10px] text-slate-500 hidden">Minimum 6 caractères</span>
+              <span id="password-hint" class="text-[10px] text-slate-400 hidden">Minimum 6 caractères</span>
             </div>
             <div class="relative">
-              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
               <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-2 text-slate-400 hover:text-slate-200">
                 <i data-lucide="eye" id="icon-toggle-password" class="w-4 h-4"></i>
               </button>
@@ -2855,7 +2831,7 @@
   <!-- =================================================================== -->
   <!-- MODAL : GESTION DES AMIS & PARTAGE EN LECTURE SEULE -->
   <!-- =================================================================== -->
-  <div id="modal-friends" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+  <div id="modal-friends" role="dialog" aria-modal="true" aria-labelledby="modal-friends-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
     <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 space-y-5 max-h-[92vh] overflow-y-auto">
       
       <!-- En-tête Modale -->
@@ -2865,11 +2841,11 @@
             <i data-lucide="users" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base sm:text-lg">Amis & Partage en Lecture Seule</h3>
+            <h3 class="font-bold text-white text-base sm:text-lg" id="modal-friends-title">Amis & Partage en Lecture Seule</h3>
             <p class="text-xs text-slate-400">Partagez votre journal ou consultez celui de vos proches / coachs</p>
           </div>
         </div>
-        <button onclick="closeFriendsModal()" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors">
+        <button onclick="closeFriendsModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2885,12 +2861,12 @@
         </p>
         <form onsubmit="handleSendFriendRequest(event)" class="flex flex-col sm:flex-row gap-2">
           <div class="relative flex-1">
-            <i data-lucide="mail" class="w-4 h-4 text-slate-500 absolute left-3 top-3"></i>
+            <i data-lucide="mail" class="w-4 h-4 text-slate-400 absolute left-3 top-3"></i>
             <input 
               type="text" 
               id="friend-invite-input" 
               placeholder="Ex: ami@vitaltrack.io ou pseudo" 
-              class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               required
             >
           </div>
@@ -2962,12 +2938,104 @@
     </div>
   </div>
 
-  <!-- MODULES JAVASCRIPT MIS EN CACHE (ARCHITECTURE DÉCOUPLÉE) -->
-  <script src="/static/modules/api.js"></script>
-  <script src="/static/modules/lazy.js"></script>
-  <script src="/static/modules/dashboard.js?v=1793010035041"></script>
-  <script src="/static/modules/nutrition.js"></script>
-  <script src="/static/modules/friends.js"></script>
+  <!-- MODULES JAVASCRIPT MIS EN CACHE (ARCHITECTURE DÉCOUPLÉE & VERSIONNÉE) -->
+  <script src="/static/modules/api.js?v=1.0.0"></script>
+  <script src="/static/modules/lazy.js?v=1.0.0"></script>
+  <script src="/static/modules/dashboard.js?v=1.0.0"></script>
+  <script src="/static/modules/nutrition.js?v=1.0.0"></script>
+  <script src="/static/modules/friends.js?v=1.0.0"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then((reg) => {
+            console.log('[PWA] Service Worker actif, scope:', reg.scope);
+          })
+          .catch((err) => {
+            console.warn('[PWA] Service Worker échec:', err);
+          });
+      });
+    }
+
+    // Accessibilité : Piège de focus et touche Escape sur les modales
+    (function initModalFocusTrap() {
+      let activeModal = null;
+      let previousActiveElement = null;
+
+      function getFocusableElements(container) {
+        return Array.from(container.querySelectorAll(
+          'button:not([disabled]):not([aria-hidden="true"]), ' +
+          '[href]:not([disabled]):not([aria-hidden="true"]), ' +
+          'input:not([disabled]):not([type="hidden"]):not([aria-hidden="true"]), ' +
+          'select:not([disabled]):not([aria-hidden="true"]), ' +
+          'textarea:not([disabled]):not([aria-hidden="true"]), ' +
+          '[tabindex]:not([tabindex="-1"]):not([disabled])'
+        )).filter(el => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (!activeModal) return;
+        if (e.key === 'Escape') {
+          const closeBtn = activeModal.querySelector('button[onclick*="close"], button[aria-label*="Fermer"]');
+          if (closeBtn) closeBtn.click();
+          return;
+        }
+        if (e.key !== 'Tab') return;
+
+        const focusables = getFocusableElements(activeModal);
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !activeModal.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !activeModal.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      });
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((m) => {
+          if (m.type === 'attributes' && m.attributeName === 'class') {
+            const target = m.target;
+            if (target.getAttribute('role') === 'dialog') {
+              const isHidden = target.classList.contains('hidden');
+              if (!isHidden) {
+                previousActiveElement = document.activeElement;
+                activeModal = target;
+                const focusables = getFocusableElements(target);
+                if (focusables.length > 0) {
+                  setTimeout(() => focusables[0].focus(), 50);
+                }
+              } else if (activeModal === target) {
+                activeModal = null;
+                if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+                  previousActiveElement.focus();
+                }
+              }
+            }
+          }
+        });
+      });
+
+      window.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[role="dialog"]').forEach(dialog => {
+          observer.observe(dialog, { attributes: true, attributeFilter: ['class'] });
+        });
+      });
+    })();
+  </script>
   <script>
     function toggleMobileMoreMenu() {
       const menu = document.getElementById('mobile-more-menu');

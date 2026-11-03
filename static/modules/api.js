@@ -4,10 +4,6 @@
 const JWT_STORAGE_KEY = 'vitaltrack_jwt_token';
 const GOOGLE_SESSION_KEY = 'vitaltrack_google_session';
 
-try {
-  localStorage.removeItem('vitaltrack_backup_cache');
-} catch (e) {}
-
 /**
  * Main HTTP wrapper injecting Bearer token and handling global auth errors.
  * Shows global loading bar at start, hides it when request completes.

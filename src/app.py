@@ -40,6 +40,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.types import Scope
 
 # Configuration du logging structuré pour les latences et l'observabilité
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -193,7 +194,7 @@ async def vercel_path_resolver_middleware(request: Request, call_next):
     elif (
         not request.scope.get("path", "").startswith("/api")
         and not request.scope.get("path", "").startswith("/static")
-        and request.scope.get("path") not in ("/", "/docs", "/openapi.json", "/metrics")
+        and request.scope.get("path") not in ("/", "/docs", "/openapi.json", "/metrics", "/sw.js", "/offline.html")
     ):
         request.scope["path"] = f"/api{request.scope.get('path')}"
 
@@ -990,9 +991,51 @@ def download_android_bridge():
 # Fichiers Statiques et Fallback pour PWA
 # =====================================================================
 
+class CachedStaticFiles(StaticFiles):
+    """StaticFiles avec en-têtes de cache optimisés (immutable pour assets avec ?v=)."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        query_string = scope.get("query_string", b"").decode("latin-1")
+        if "v=" in query_string:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico")):
+            response.headers.setdefault("Cache-Control", "public, max-age=3600")
+        return response
+
+
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.isdir(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/static", CachedStaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/sw.js")
+def serve_service_worker():
+    """Sert le service worker PWA à la racine pour un scope / complet."""
+    sw_file = os.path.join(STATIC_DIR, "sw.js")
+    if os.path.isfile(sw_file):
+        return FileResponse(
+            sw_file,
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+    raise HTTPException(status_code=404, detail="Service worker non trouvé")
+
+
+@app.get("/offline.html")
+def serve_offline():
+    """Sert la page de fallback hors-ligne."""
+    offline_file = os.path.join(STATIC_DIR, "offline.html")
+    if os.path.isfile(offline_file):
+        return FileResponse(
+            offline_file,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(status_code=404, detail="Page hors-ligne non trouvée")
 
 
 @app.get("/")
@@ -1000,8 +1043,20 @@ def serve_index():
     """Sert l'application PWA index.html."""
     index_file = os.path.join(STATIC_DIR, "index.html")
     if os.path.isfile(index_file):
-        return FileResponse(index_file, media_type="text/html")
+        return FileResponse(
+            index_file,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
     root_index = os.path.join(os.path.dirname(__file__), "..", "index.html")
     if os.path.isfile(root_index):
-        return FileResponse(root_index, media_type="text/html")
-    return {"message": "VitalTrack PWA - interface en cours d'initialisation"}
+        return FileResponse(
+            root_index,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+    return Response(
+        content='{"message": "VitalTrack PWA - interface en cours d\'initialisation"}',
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache"},
+    )

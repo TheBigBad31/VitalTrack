@@ -1,0 +1,13 @@
+{
+  "name": "vitaltrack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VitalTrack - PWA Santé, Nutrition Photo & Objets Connectés",
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/input.css -o ./static/modules/tailwind.min.css --minify",
+    "check:js": "node --check static/sw.js && node --check static/modules/api.js && node --check static/modules/dashboard.js && node --check static/modules/friends.js && node --check static/modules/lazy.js && node --check static/modules/nutrition.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}

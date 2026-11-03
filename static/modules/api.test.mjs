@@ -5,7 +5,7 @@ import { escapeHtml, sanitizeUrl } from './api.js'
 describe('escapeHtml', () => {
   it('should escape HTML special characters', () => {
     const input = '<div>Test "quote" & more</div>'
-    expect(escapeHtml(input)).toBe('<div>Test "quote" & more</div>')
+    expect(escapeHtml(input)).toBe('&lt;div&gt;Test &quot;quote&quot; &amp; more&lt;/div&gt;')
   })
 
   it('should return empty string for null', () => {
@@ -25,7 +25,7 @@ describe('escapeHtml', () => {
   })
 
   it('should escape HTML tags', () => {
-    expect(escapeHtml('<test>')).toBe('<test>')
+    expect(escapeHtml('<test>')).toBe('&lt;test&gt;')
   })
 })
 

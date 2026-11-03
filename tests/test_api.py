@@ -732,17 +732,52 @@ def test_production_neon_failure_returns_503(monkeypatch):
 
 
 def test_api_serve_frontend_modules(client):
-    """Vérifie que les modules front découplés et le thème CSS sont bien servis."""
+    """Vérifie que les modules front découplés, le thème CSS, les vendors et le service worker sont bien servis."""
     for path in [
         "/static/modules/theme.css",
+        "/static/modules/tailwind.min.css",
         "/static/modules/api.js",
         "/static/modules/lazy.js",
         "/static/modules/dashboard.js",
         "/static/modules/nutrition.js",
-        "/static/manifest.json"
+        "/static/manifest.json",
+        "/static/vendor/lucide.min.js",
+        "/static/vendor/chart.umd.min.js",
+        "/static/offline.html",
+        "/static/sw.js",
     ]:
         res = client.get(path)
         assert res.status_code == 200, f"Échec pour {path}"
+
+
+def test_pwa_service_worker_and_caching_headers(client):
+    """Vérifie la route racine /sw.js, le scope Service-Worker-Allowed et les en-têtes Cache-Control."""
+    # 1. Service Worker racine
+    res_sw = client.get("/sw.js")
+    assert res_sw.status_code == 200
+    assert "application/javascript" in res_sw.headers.get("content-type", "")
+    assert res_sw.headers.get("cache-control") == "no-cache"
+    assert res_sw.headers.get("service-worker-allowed") == "/"
+
+    # 2. Page offline
+    res_offline = client.get("/offline.html")
+    assert res_offline.status_code == 200
+    assert res_offline.headers.get("cache-control") == "no-cache"
+
+    # 3. Index HTML
+    res_index = client.get("/")
+    assert res_index.status_code == 200
+    assert res_index.headers.get("cache-control") == "no-cache"
+
+    # 4. Assets versionnés (?v=) : Cache immutable 1 an
+    res_ver = client.get("/static/modules/theme.css?v=1.0.0")
+    assert res_ver.status_code == 200
+    assert "public, max-age=31536000, immutable" in res_ver.headers.get("cache-control", "")
+
+    # 5. Assets non versionnés : Cache standard
+    res_std = client.get("/static/modules/theme.css")
+    assert res_std.status_code == 200
+    assert "public, max-age=3600" in res_std.headers.get("cache-control", "")
 
 
 def test_prometheus_metrics_and_otel_resilience(client):

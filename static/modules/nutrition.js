@@ -388,14 +388,22 @@ function filterCatalogSource(source) {
   loadCatalogItems(true);
 }
 
-function handleCatalogSearch(e) {
-  currentCatalogSearch = e.target.value || '';
-  // Aucune requête réseau : on filtre currentCatalogItems en mémoire et on rend immédiatement.
-  if (catalogLoaded) {
-    renderCatalogItems();
-  } else {
-    loadCatalogItems();
-  }
+let catalogSearchDebounceTimer = null;
+
+function handleCatalogSearch(e) {
+  const val = e.target.value || '';
+  if (catalogSearchDebounceTimer) {
+    clearTimeout(catalogSearchDebounceTimer);
+  }
+  catalogSearchDebounceTimer = setTimeout(() => {
+    currentCatalogSearch = val;
+    // Aucune requête réseau : on filtre currentCatalogItems en mémoire et on rend immédiatement.
+    if (catalogLoaded) {
+      renderCatalogItems();
+    } else {
+      loadCatalogItems();
+    }
+  }, 250);
 }
 
 /** Normalise un texte pour la recherche : minuscules, sans accents, espaces compactés. */
@@ -447,191 +455,238 @@ function handleBenefitFilterChange(event) {
   renderCatalogItems();
 }
 
-function renderCatalogItems() {
-  const container = document.getElementById('catalog-items-grid');
-  const countBadge = document.getElementById('catalog-items-count');
-
-  let itemsToRender = Array.isArray(currentCatalogItems) ? currentCatalogItems : [];
-
-  // 1. Filtre par type (aliments / plats) — appliqué en mémoire
-  if (currentCatalogFilter && currentCatalogFilter !== 'all') {
-    itemsToRender = itemsToRender.filter(it => it.item_type === currentCatalogFilter);
-  }
-
-  // 2. Recherche libre — appliquée en mémoire à chaque frappe (0 requête réseau)
-  const normalizedQuery = normalizeSearchText(currentCatalogSearch);
-  if (normalizedQuery) {
-    itemsToRender = itemsToRender.filter(it => catalogItemMatchesSearch(it, normalizedQuery));
-  }
-
-  // 3. Filtre par bienfait santé
-  if (currentCatalogBenefitFilter) {
-    itemsToRender = itemsToRender.filter(it => {
-      const bList = it.benefits || [];
-      return bList.some(b => (b.benefit_id || b.id) === currentCatalogBenefitFilter);
-    });
-  }
-
-  if (countBadge) {
-    countBadge.textContent = `${itemsToRender.length} élément${itemsToRender.length > 1 ? 's' : ''}`;
-  }
-
-  if (!container) return;
-
-  if (itemsToRender.length === 0) {
-    const hasFilter = Boolean(normalizedQuery || currentCatalogBenefitFilter || (currentCatalogFilter && currentCatalogFilter !== 'all'));
-    const safeSearch = escapeHtml((currentCatalogSearch || '').trim());
-    container.innerHTML = `
-      <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
-        <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
-        <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${safeSearch} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
-        <div class="flex items-center justify-center gap-2 pt-2">
-          ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
-          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
-        </div>
-      </div>
-    `;
-    refreshIcons(container);
-    return;
-  }
-
-  container.innerHTML = itemsToRender.map(item => {
-    const isDish = item.item_type === 'dish';
-    const typeBadge = isDish
-      ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
-      : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
-
-    let sourceBadge = '';
-    const isPublic = Boolean(item.is_public || item.user_id === 0 || item.user_id === null || item.source === 'public');
-    const isFriend = Boolean(item.owner_name || item.friend_name || (item.source === 'friend' || item.source === 'friends'));
-    if (isPublic) {
-      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Aliment du socle public"><i data-lucide="globe" class="w-2.5 h-2.5"></i><span>Public</span></span>`;
-    } else if (isFriend) {
-      const rawFriendLabel = item.owner_name || item.friend_name || "Ami";
-      const friendLabel = escapeHtml(rawFriendLabel);
-      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${friendLabel}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${friendLabel}</span></span>`;
-    } else {
-      sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Ma création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i><span>Perso</span></span>`;
-    }
-
-    const unitLabel = escapeHtml(`${item.default_quantity}${item.default_unit || 'g'}`);
-    const p = Math.round((item.protein_per_unit_g || 0) * 10) / 10;
-    const g = Math.round((item.carbs_per_unit_g || 0) * 10) / 10;
-    const l = Math.round((item.fat_per_unit_g || 0) * 10) / 10;
-    const cal = Math.round(item.calories_per_unit);
-    const itemName = escapeHtml(item.name || '');
-    const itemId = escapeHtml(String(item.id));
-    const photoUrl = sanitizeUrl(item.photo_url);
-
-    const benefitsList = item.benefits || [];
-    const benefitsHtml = benefitsList.length > 0 ? `
-      <div class="flex flex-wrap items-center gap-1 pt-0.5">
-        ${benefitsList.map(b => {
-          const bTitle = escapeHtml(b.title || b.benefit_id || '');
-          const bExp = b.explanation ? ' : ' + escapeHtml(b.explanation) : '';
-          const bIcon = escapeHtml(b.icon || '🛡️');
-          return `
-            <span 
-              class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-brand-500/15 border border-brand-500/30 text-xs cursor-help hover:scale-110 hover:bg-brand-500/25 transition-all shadow-sm"
-              title="${bTitle}${bExp}"
-            >
-              ${bIcon}
-            </span>
-          `;
-        }).join('')}
-      </div>
-    ` : '';
-
-    const recipeHtml = (isDish && item.recipe_items && item.recipe_items.length > 0) ? `
-      <div class="px-2 py-0.5 bg-[#151D2A]/80 rounded-lg border border-indigo-500/20 text-[10px] text-slate-400 truncate" title="${escapeHtml(item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', '))}">
-        <span class="text-indigo-300 font-bold">🥗 ${item.recipe_items.length} ingr. :</span>
-        <span class="text-slate-300 font-medium">${escapeHtml(item.recipe_items.map(ing => ing.name).join(', '))}</span>
-      </div>
-    ` : '';
-
-    return `
-      <div 
-        class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
-        draggable="true"
-        ondragstart="handleCatalogDragStart(event, '${itemId}')"
-        ondragend="handleCatalogDragEnd(event)"
-        data-item-id="${itemId}"
-        title="Glisser vers un repas ou double-cliquer pour ajouter"
-        ondblclick="promptAddToMeal('${itemId}')"
-      >
-        <div class="flex items-center justify-between gap-1.5">
-          <div class="flex items-center space-x-1.5 min-w-0 flex-1">
-            <div class="text-slate-500 group-hover:text-brand-400 shrink-0 cursor-grab active:cursor-grabbing">
-              <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
-            </div>
-            ${typeBadge}
-            <h4 class="font-bold text-xs text-white truncate" title="${itemName}">${itemName}</h4>
-            ${sourceBadge}
-          </div>
-          <div class="text-right shrink-0">
-            <span class="text-xs font-black text-amber-400">${cal}</span>
-            <span class="text-[9px] text-slate-400">kcal</span>
-          </div>
-        </div>
-
-        ${photoUrl ? `
-          <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-14 bg-[#151D2A]">
-            <img src="${photoUrl}" alt="${itemName}" class="w-full h-full object-cover pointer-events-none">
-          </div>
-        ` : ''}
-
-        <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-[#151D2A] rounded-lg">
-          <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
-          <span class="shrink-0 space-x-1.5">
-            <span class="text-brand-400 font-semibold">P:${p}g</span>
-            <span class="text-sky-400 font-semibold">G:${g}g</span>
-            <span class="text-amber-400 font-semibold">L:${l}g</span>
-          </span>
-        </div>
-
-        ${recipeHtml}
-
-        ${benefitsHtml}
-
-        <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
-          <button 
-            type="button"
-            onclick="promptAddToMeal('${itemId}')" 
-            title="Ajouter au repas sélectionné"
-            class="text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 transition-colors"
-          >
-            <i data-lucide="plus" class="w-3 h-3"></i>
-            <span>Ajouter</span>
-          </button>
-          
-          <div class="flex items-center gap-1">
-            ${(!isPublic && !isFriend) ? `
-              <button onclick="openEditCatalogItemModal('${itemId}')" title="Modifier" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A]">
-                <i data-lucide="pencil" class="w-3 h-3"></i>
-              </button>
-              <button onclick="deleteCatalogItem('${itemId}')" title="Supprimer" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10">
-                <i data-lucide="trash-2" class="w-3 h-3"></i>
-              </button>
-            ` : (isFriend ? `
-              <button onclick="copyFriendItemToMyCatalog('${itemId}')" title="Importer dans mon catalogue" class="px-1.5 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 text-[10px] font-semibold flex items-center space-x-1">
-                <i data-lucide="copy" class="w-2.5 h-2.5"></i>
-                <span>Importer</span>
-              </button>
-            ` : '')}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  refreshIcons(container);
-
-  // 3. Synthèse des bienfaits du jour (Stage 13)
-  if (typeof renderJournalDayBenefitsSummary === "function" && typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.meals) {
-    renderJournalDayBenefitsSummary(currentJournalData.meals);
-  }
+function buildCatalogItemCardHtml(item) {
+  const isDish = item.item_type === 'dish';
+  const typeBadge = isDish
+    ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
+    : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
+
+  let sourceBadge = '';
+  const isPublic = Boolean(item.is_public || item.user_id === 0 || item.user_id === null || item.source === 'public');
+  const isFriend = Boolean(item.owner_name || item.friend_name || (item.source === 'friend' || item.source === 'friends'));
+  if (isPublic) {
+    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Aliment du socle public"><i data-lucide="globe" class="w-2.5 h-2.5"></i><span>Public</span></span>`;
+  } else if (isFriend) {
+    const rawFriendLabel = item.owner_name || item.friend_name || "Ami";
+    const friendLabel = escapeHtml(rawFriendLabel);
+    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${friendLabel}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${friendLabel}</span></span>`;
+  } else {
+    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Ma création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i><span>Perso</span></span>`;
+  }
+
+  const unitLabel = escapeHtml(`${item.default_quantity}${item.default_unit || 'g'}`);
+  const p = Math.round((item.protein_per_unit_g || 0) * 10) / 10;
+  const g = Math.round((item.carbs_per_unit_g || 0) * 10) / 10;
+  const l = Math.round((item.fat_per_unit_g || 0) * 10) / 10;
+  const cal = Math.round(item.calories_per_unit);
+  const itemName = escapeHtml(item.name || '');
+  const itemId = escapeHtml(String(item.id));
+  const photoUrl = sanitizeUrl(item.photo_url);
+
+  const benefitsList = item.benefits || [];
+  const benefitsHtml = benefitsList.length > 0 ? `
+    <div class="flex flex-wrap items-center gap-1 pt-0.5">
+      ${benefitsList.map(b => {
+        const bTitle = escapeHtml(b.title || b.benefit_id || '');
+        const bExp = b.explanation ? ' : ' + escapeHtml(b.explanation) : '';
+        const bIcon = escapeHtml(b.icon || '🛡️');
+        return `
+          <span 
+            class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-brand-500/15 border border-brand-500/30 text-xs cursor-help hover:scale-110 hover:bg-brand-500/25 transition-all shadow-sm"
+            title="${bTitle}${bExp}"
+          >
+            ${bIcon}
+          </span>
+        `;
+      }).join('')}
+    </div>
+  ` : '';
+
+  const recipeHtml = (isDish && item.recipe_items && item.recipe_items.length > 0) ? `
+    <div class="px-2 py-0.5 bg-[#151D2A]/80 rounded-lg border border-indigo-500/20 text-[10px] text-slate-400 truncate" title="${escapeHtml(item.recipe_items.map(ing => `${ing.name} (${ing.quantity}${ing.unit || 'g'})`).join(', '))}">
+      <span class="text-indigo-300 font-bold">🥗 ${item.recipe_items.length} ingr. :</span>
+      <span class="text-slate-300 font-medium">${escapeHtml(item.recipe_items.map(ing => ing.name).join(', '))}</span>
+    </div>
+  ` : '';
+
+  return `
+    <div 
+      class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
+      draggable="true"
+      ondragstart="handleCatalogDragStart(event, '${itemId}')"
+      ondragend="handleCatalogDragEnd(event)"
+      data-item-id="${itemId}"
+      title="Glisser vers un repas ou double-cliquer pour ajouter"
+      ondblclick="promptAddToMeal('${itemId}')"
+    >
+      <div class="flex items-center justify-between gap-1.5">
+        <div class="flex items-center space-x-1.5 min-w-0 flex-1">
+          <div class="text-slate-400 group-hover:text-brand-400 shrink-0 cursor-grab active:cursor-grabbing">
+            <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
+          </div>
+          ${typeBadge}
+          <h4 class="font-bold text-xs text-white truncate" title="${itemName}">${itemName}</h4>
+          ${sourceBadge}
+        </div>
+        <div class="text-right shrink-0">
+          <span class="text-xs font-black text-amber-400">${cal}</span>
+          <span class="text-[9px] text-slate-400">kcal</span>
+        </div>
+      </div>
+
+      ${photoUrl ? `
+        <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-14 bg-[#151D2A]">
+          <img src="${photoUrl}" alt="${itemName}" class="w-full h-full object-cover pointer-events-none">
+        </div>
+      ` : ''}
+
+      <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-[#151D2A] rounded-lg">
+        <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
+        <span class="shrink-0 space-x-1.5">
+          <span class="text-brand-400 font-semibold">P:${p}g</span>
+          <span class="text-sky-400 font-semibold">G:${g}g</span>
+          <span class="text-amber-400 font-semibold">L:${l}g</span>
+        </span>
+      </div>
+
+      ${recipeHtml}
+
+      ${benefitsHtml}
+
+      <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
+        <button 
+          type="button"
+          onclick="promptAddToMeal('${itemId}')" 
+          title="Ajouter au repas sélectionné"
+          aria-label="Ajouter ${itemName} au repas sélectionné"
+          class="text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 transition-colors min-h-[36px]"
+        >
+          <i data-lucide="plus" class="w-3 h-3"></i>
+          <span>Ajouter</span>
+        </button>
+        
+        <div class="flex items-center gap-1">
+          ${(!isPublic && !isFriend) ? `
+            <button onclick="openEditCatalogItemModal('${itemId}')" title="Modifier" aria-label="Modifier cet aliment" class="p-1 rounded-md text-slate-400 hover:text-white hover:bg-[#151D2A] min-w-[36px] min-h-[36px] flex items-center justify-center">
+              <i data-lucide="pencil" class="w-3 h-3"></i>
+            </button>
+            <button onclick="deleteCatalogItem('${itemId}')" title="Supprimer" aria-label="Supprimer cet aliment" class="p-1 rounded-md text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 min-w-[36px] min-h-[36px] flex items-center justify-center">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+            </button>
+          ` : (isFriend ? `
+            <button onclick="copyFriendItemToMyCatalog('${itemId}')" title="Importer dans mon catalogue" aria-label="Importer dans mon catalogue" class="px-1.5 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/20 text-brand-300 text-[10px] font-semibold flex items-center space-x-1 min-h-[36px]">
+              <i data-lucide="copy" class="w-2.5 h-2.5"></i>
+              <span>Importer</span>
+            </button>
+          ` : '')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCatalogItems() {
+  const container = document.getElementById('catalog-items-grid');
+  const countBadge = document.getElementById('catalog-items-count');
+
+  let itemsToRender = Array.isArray(currentCatalogItems) ? currentCatalogItems : [];
+
+  // 1. Filtre par type (aliments / plats) — appliqué en mémoire
+  if (currentCatalogFilter && currentCatalogFilter !== 'all') {
+    itemsToRender = itemsToRender.filter(it => it.item_type === currentCatalogFilter);
+  }
+
+  // 2. Recherche libre — appliquée en mémoire avec debounce (0 requête réseau)
+  const normalizedQuery = normalizeSearchText(currentCatalogSearch);
+  if (normalizedQuery) {
+    itemsToRender = itemsToRender.filter(it => catalogItemMatchesSearch(it, normalizedQuery));
+  }
+
+  // 3. Filtre par bienfait santé
+  if (currentCatalogBenefitFilter) {
+    itemsToRender = itemsToRender.filter(it => {
+      const bList = it.benefits || [];
+      return bList.some(b => (b.benefit_id || b.id) === currentCatalogBenefitFilter);
+    });
+  }
+
+  if (countBadge) {
+    countBadge.textContent = `${itemsToRender.length} élément${itemsToRender.length > 1 ? 's' : ''}`;
+  }
+
+  if (!container) return;
+
+  if (itemsToRender.length === 0) {
+    const hasFilter = Boolean(normalizedQuery || currentCatalogBenefitFilter || (currentCatalogFilter && currentCatalogFilter !== 'all'));
+    const safeSearch = escapeHtml((currentCatalogSearch || '').trim());
+    container.innerHTML = `
+      <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
+        <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
+        <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
+        <p class="text-xs text-slate-400 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${safeSearch} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
+        <div class="flex items-center justify-center gap-2 pt-2">
+          ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
+          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
+        </div>
+      </div>
+    `;
+    refreshIcons(container);
+    return;
+  }
+
+  // Nettoyage de l'état vide s'il était affiché
+  if (container.querySelector('.col-span-full')) {
+    container.innerHTML = '';
+  }
+
+  // Rendu différentiel : réutilisation des cartes DOM existantes sans tout détruire
+  const targetIds = itemsToRender.map(it => String(it.id));
+  const targetIdsSet = new Set(targetIds);
+
+  // 1. Supprimer les nœuds devenus obsolètes
+  const currentCards = Array.from(container.children);
+  const existingMap = new Map();
+  for (const child of currentCards) {
+    const id = child.getAttribute('data-item-id');
+    if (!id || !targetIdsSet.has(id)) {
+      child.remove();
+    } else {
+      existingMap.set(id, child);
+    }
+  }
+
+  // 2. Mettre à jour, réordonner ou insérer les cartes nécessaires
+  const newlyCreatedCards = [];
+  const template = document.createElement('template');
+
+  for (let i = 0; i < itemsToRender.length; i++) {
+    const item = itemsToRender[i];
+    const itemIdStr = String(item.id);
+    let card = existingMap.get(itemIdStr);
+
+    if (card) {
+      if (container.children[i] !== card) {
+        container.insertBefore(card, container.children[i] || null);
+      }
+    } else {
+      template.innerHTML = buildCatalogItemCardHtml(item).trim();
+      card = template.content.firstElementChild;
+      container.insertBefore(card, container.children[i] || null);
+      existingMap.set(itemIdStr, card);
+      newlyCreatedCards.push(card);
+    }
+  }
+
+  // Rafraîchir les icônes Lucide uniquement sur les éléments nouvellement insérés
+  if (newlyCreatedCards.length > 0) {
+    newlyCreatedCards.forEach(c => refreshIcons(c));
+  }
+
+  // 3. Synthèse des bienfaits du jour (Stage 13)
+  if (typeof renderJournalDayBenefitsSummary === "function" && typeof currentJournalData !== "undefined" && currentJournalData && currentJournalData.meals) {
+    renderJournalDayBenefitsSummary(currentJournalData.meals);
+  }
 }
 
 
