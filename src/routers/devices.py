@@ -169,6 +169,16 @@ def get_devices_comparison():
     }
 
 
+@router.get("/api/devices/data-map")
+def get_devices_data_map_endpoint(
+    current_user: AuthUser = Depends(app_module.get_current_user)
+):
+    """Cartographie complète des données connectées : lu / stocké / rendu / dernier point / 7j / pesées (BALI-197)."""
+    db = get_db()
+    user_id = current_user.id if current_user else 1
+    return db.get_devices_data_map(user_id=user_id)
+
+
 @router.post("/api/devices/connect")
 def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(app_module.get_current_user)):
     """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté avec chiffrement et test immédiat."""

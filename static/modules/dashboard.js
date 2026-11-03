@@ -1800,7 +1800,342 @@
 
       grid.innerHTML = cardsHtml + addCardHtml;
       if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+      // Actualiser le tableau des données connectées & diagnostic pesées (BALI-197)
+      loadConnectedDataMap();
     }
+
+    // =========================================================================
+    // Cartographie des Données Connectées & Diagnostic Pesées (BALI-197)
+    // =========================================================================
+
+    let currentDataMapFilter = 'all';
+    let cachedDataMap = null;
+
+    async function loadConnectedDataMap(forceRefresh = false) {
+      const panel = document.getElementById('connected-data-panel');
+      if (!panel) return;
+
+      if (!forceRefresh && cachedDataMap) {
+        renderConnectedDataMap(cachedDataMap);
+        return;
+      }
+
+      const refreshBtn = document.getElementById('btn-refresh-data-map');
+      if (refreshBtn) {
+        const icon = refreshBtn.querySelector('i');
+        if (icon) icon.classList.add('animate-spin');
+      }
+
+      try {
+        const res = await apiFetch('/api/devices/data-map');
+        if (!res.ok) {
+          throw new Error('Erreur HTTP ' + res.status);
+        }
+        const data = await res.json();
+        cachedDataMap = data;
+        renderConnectedDataMap(data);
+      } catch (err) {
+        console.error('[DataMap Error] Impossible de charger la cartographie:', err);
+        const tbody = document.getElementById('data-map-tbody');
+        if (tbody) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="py-6 text-center text-rose-400">
+                Impossible de charger la cartographie des flux connectés.
+              </td>
+            </tr>
+          `;
+        }
+      } finally {
+        if (refreshBtn) {
+          const icon = refreshBtn.querySelector('i');
+          if (icon) icon.classList.remove('animate-spin');
+        }
+      }
+    }
+
+    function renderConnectedDataMap(data) {
+      if (!data) return;
+
+      // 1. Badge d'actualisation
+      const syncBadge = document.getElementById('data-map-sync-status-badge');
+      if (syncBadge && data.generated_at) {
+        const timeStr = (typeof formatRelativeTime === 'function')
+          ? formatRelativeTime(data.generated_at)
+          : data.generated_at.slice(11, 16);
+        syncBadge.innerText = 'Mis à jour ' + timeStr;
+      }
+
+      // 2. Diagnostic des pesées de Sébastien
+      const diag = data.weights_diagnostic || {};
+      const diagSummaryEl = document.getElementById('diag-summary-text');
+      if (diagSummaryEl) {
+        diagSummaryEl.innerText = diag.diagnosis_summary || 'Aucune information de diagnostic.';
+      }
+
+      const diagPrimaryBadge = document.getElementById('diag-primary-badge');
+      if (diagPrimaryBadge) {
+        if (diag.primary_source === 'health_connect') {
+          diagPrimaryBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-semibold';
+          diagPrimaryBadge.innerText = 'Source active : Santé Connect (Android)';
+        } else if (diag.primary_source === 'withings') {
+          diagPrimaryBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30 font-semibold';
+          diagPrimaryBadge.innerText = 'Source active : Balance Withings';
+        } else if (diag.primary_source && diag.primary_source.indexOf('hybrid') !== -1) {
+          diagPrimaryBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/30 font-semibold';
+          diagPrimaryBadge.innerText = 'Sources mixtes : Withings + Santé Connect';
+        } else {
+          diagPrimaryBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold';
+          diagPrimaryBadge.innerText = 'Aucune pesée connectée';
+        }
+      }
+
+      const diagCountsContainer = document.getElementById('diag-source-counts');
+      if (diagCountsContainer && diag.by_source) {
+        const hcCount = diag.by_source.health_connect || 0;
+        const wCount = diag.by_source.withings || 0;
+        const manCount = diag.by_source.manual || 0;
+        diagCountsContainer.innerHTML = `
+          <span class="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Santé Connect : <strong>${hcCount}</strong></span>
+          <span class="px-2 py-0.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 font-medium">Withings : <strong>${wCount}</strong></span>
+          <span class="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-medium">Manuel : <strong>${manCount}</strong></span>
+        `;
+      }
+
+      const diagRecentCountEl = document.getElementById('diag-recent-count');
+      if (diagRecentCountEl) {
+        diagRecentCountEl.innerText = (diag.total_weights || 0) + ' pesée(s) au total';
+      }
+
+      // Rendu de la table des pesées récentes avec badges certifiés
+      const weightsTbody = document.getElementById('diag-weights-tbody');
+      if (weightsTbody) {
+        const recentWeights = diag.recent_weights || [];
+        if (recentWeights.length === 0) {
+          weightsTbody.innerHTML = `
+            <tr>
+              <td colspan="5" class="py-4 text-center text-slate-500">
+                Aucune pesée enregistrée dans votre compte.
+              </td>
+            </tr>
+          `;
+        } else {
+          weightsTbody.innerHTML = recentWeights.map(w => {
+            const dateStr = escapeHtml(w.measured_at ? w.measured_at.slice(0, 16).replace('T', ' ') : w.date);
+            const wVal = w.weight_kg ? `<strong>${w.weight_kg} kg</strong>` : '--';
+            const compParts = [];
+            if (w.body_fat_pct) compParts.push(`MG ${w.body_fat_pct}%`);
+            if (w.muscle_mass_kg) compParts.push(`Muscle ${w.muscle_mass_kg} kg`);
+            if (w.water_pct) compParts.push(`Eau ${w.water_pct}%`);
+            const compStr = compParts.length > 0 ? compParts.join(' · ') : '<span class="text-slate-500">Non mesurée</span>';
+
+            let sourceBadge = '';
+            const sNorm = w.source_normalized || w.source;
+            if (sNorm === 'health_connect') {
+              sourceBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span>Santé Connect</span></span>`;
+            } else if (sNorm === 'withings') {
+              sourceBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20 inline-flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span>Withings</span></span>`;
+            } else if (sNorm === 'manual') {
+              sourceBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Manuel</span>`;
+            } else {
+              sourceBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20">${escapeHtml(w.source)}</span>`;
+            }
+
+            const extIdStr = w.external_id
+              ? `<span class="font-mono text-[10px] text-slate-400 bg-slate-900/60 px-1 py-0.5 rounded">${escapeHtml(w.external_id)}</span>`
+              : `<span class="text-slate-600 text-[10px]">--</span>`;
+
+            return `
+              <tr class="hover:bg-[#151D2A] transition-colors">
+                <td class="py-2.5 px-3 font-medium text-white">${dateStr}</td>
+                <td class="py-2.5 px-3 text-white">${wVal}</td>
+                <td class="py-2.5 px-3 text-slate-300">${compStr}</td>
+                <td class="py-2.5 px-3">${sourceBadge}</td>
+                <td class="py-2.5 px-3">${extIdStr}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      // 3. Mise à jour des compteurs de filtres
+      const summary = data.summary || {};
+      const countAll = document.getElementById('count-filter-all');
+      if (countAll) countAll.innerText = summary.total_metric_types || (data.metrics ? data.metrics.length : 17);
+
+      const countUnrendered = document.getElementById('count-filter-unrendered');
+      if (countUnrendered) countUnrendered.innerText = summary.unrendered_ingested_count || 0;
+
+      const countRendered = document.getElementById('count-filter-rendered');
+      if (countRendered) countRendered.innerText = summary.rendered_count || 0;
+
+      // 4. Rendu des lignes de la matrice des flux
+      renderDataMapRows(data.metrics || [], currentDataMapFilter);
+
+      if (window.lucide && lucide.createIcons) {
+        try { lucide.createIcons(); } catch (e) {}
+      }
+    }
+
+    function renderDataMapRows(metrics, filterType) {
+      const tbody = document.getElementById('data-map-tbody');
+      if (!tbody) return;
+
+      let filtered = metrics;
+      if (filterType === 'unrendered') {
+        filtered = metrics.filter(m => m.global_status === 'unrendered');
+      } else if (filterType === 'rendered') {
+        filtered = metrics.filter(m => m.global_status === 'rendered');
+      } else if (filterType === 'health_connect') {
+        filtered = metrics.filter(m => m.by_source && m.by_source.health_connect && m.by_source.health_connect.supported_by_connector);
+      } else if (filterType === 'withings') {
+        filtered = metrics.filter(m => m.by_source && m.by_source.withings && m.by_source.withings.supported_by_connector);
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-slate-500">
+              Aucun type de donnée ne correspond au filtre sélectionné.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(m => {
+        const isUnrendered = (m.global_status === 'unrendered');
+        const isRendered = (m.global_status === 'rendered');
+        const isUnsupported = (m.global_status === 'unsupported');
+
+        let rowBg = 'hover:bg-[#151D2A]/80 transition-colors';
+        if (isUnrendered) {
+          rowBg = 'bg-rose-950/20 hover:bg-rose-950/30 border-l-4 border-l-rose-500 transition-colors';
+        } else if (isUnsupported) {
+          rowBg = 'opacity-65 hover:opacity-100 hover:bg-[#151D2A]/40 transition-all';
+        }
+
+        // Badges sources supportées / actives
+        const sourcesBadges = Object.keys(m.by_source || {}).map(sKey => {
+          const sData = m.by_source[sKey];
+          if (!sData.supported_by_connector) return '';
+          const hasData = (sData.last_point !== null || sData.points_7d > 0);
+          let label = 'HC';
+          let color = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+          if (sKey === 'withings') { label = 'Withings'; color = 'bg-sky-500/10 text-sky-400 border-sky-500/20'; }
+          else if (sKey === 'health_connect') { label = 'Santé Connect'; color = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'; }
+          else if (sKey === 'ringconn') { label = 'RingConn'; color = 'bg-violet-500/10 text-violet-300 border-violet-500/20'; }
+          else if (sKey === 'oura') { label = 'Oura'; color = 'bg-amber-500/10 text-amber-300 border-amber-500/20'; }
+          else if (sKey === 'manual') { label = 'Manuel'; color = 'bg-slate-800 text-slate-400 border-slate-700'; }
+
+          const opacityClass = hasData ? 'font-semibold' : 'opacity-60 font-normal';
+          return `<span class="px-1.5 py-0.5 rounded text-[10px] border ${color} ${opacityClass}" title="${escapeHtml(sKey)}">${escapeHtml(label)}</span>`;
+        }).filter(Boolean).join(' ');
+
+        // Dernier flux reçu
+        let lastPointHtml = '<span class="text-slate-500 italic">Aucun flux</span>';
+        if (m.latest_point) {
+          const dateStr = escapeHtml(m.latest_point.date || '');
+          const valStr = escapeHtml(String(m.latest_point.value));
+          const unitStr = escapeHtml(m.unit || '');
+          const srcTag = m.latest_point.source ? `<span class="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 ml-1">via ${escapeHtml(m.latest_point.source)}</span>` : '';
+          lastPointHtml = `<span class="text-white font-medium">${valStr} ${unitStr}</span> <span class="text-slate-400 text-[11px]">(${dateStr})</span> ${srcTag}`;
+        }
+
+        // Nb points 7j
+        const points7dHtml = (m.points_7d_total > 0)
+          ? `<span class="font-bold text-white">${m.points_7d_total}</span>`
+          : '<span class="text-slate-500">0</span>';
+
+        // Stocké en BDD
+        const dbTableHtml = `<code class="text-[11px] font-mono text-cyan-300 bg-cyan-950/30 px-1.5 py-0.5 rounded border border-cyan-500/20">${escapeHtml(m.db_table)}</code>`;
+
+        // Rendu dans l'UI (oui/non + où)
+        let uiHtml = '';
+        if (m.rendered_in_ui) {
+          uiHtml = `<span class="text-slate-300 text-xs">${escapeHtml(m.ui_location)}</span>`;
+        } else {
+          uiHtml = `<span class="text-rose-400 font-semibold text-xs inline-flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+            <span>Non affiché dans l'UI</span>
+          </span>`;
+        }
+
+        // Badge Statut
+        let statusBadge = '';
+        if (isUnrendered) {
+          statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 inline-flex items-center gap-1 animate-pulse">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span>Ingéré non affiché</span>
+          </span>`;
+        } else if (isRendered) {
+          statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>Actif &amp; Affiché</span>
+          </span>`;
+        } else if (isUnsupported) {
+          statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+            Non lu par connecteur
+          </span>`;
+        } else {
+          statusBadge = `<span class="px-2.5 py-1 rounded-full text-[10px] font-medium bg-sky-500/10 text-sky-300 border border-sky-500/20">
+            En attente de flux
+          </span>`;
+        }
+
+        return `
+          <tr class="${rowBg}">
+            <td class="py-3 px-3.5">
+              <div class="font-bold text-white text-xs">${escapeHtml(m.label)}</div>
+              <div class="text-[10px] text-slate-400 uppercase tracking-wider">${escapeHtml(m.category || '')} (${escapeHtml(m.unit || '')})</div>
+            </td>
+            <td class="py-3 px-3.5">
+              <div class="flex flex-wrap gap-1">${sourcesBadges || '<span class="text-slate-500 text-[10px]">--</span>'}</div>
+            </td>
+            <td class="py-3 px-3.5 text-xs">${lastPointHtml}</td>
+            <td class="py-3 px-3.5 text-center text-xs">${points7dHtml}</td>
+            <td class="py-3 px-3.5">${dbTableHtml}</td>
+            <td class="py-3 px-3.5">${uiHtml}</td>
+            <td class="py-3 px-3.5 text-right">${statusBadge}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterDataMap(filterType) {
+      currentDataMapFilter = filterType;
+      const mapFilterToId = {
+        'all': 'btn-filter-all',
+        'unrendered': 'btn-filter-unrendered',
+        'rendered': 'btn-filter-rendered',
+        'health_connect': 'btn-filter-hc',
+        'withings': 'btn-filter-withings'
+      };
+
+      Object.keys(mapFilterToId).forEach(fKey => {
+        const btn = document.getElementById(mapFilterToId[fKey]);
+        if (!btn) return;
+        if (fKey === filterType) {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40 shadow-sm';
+        } else if (fKey === 'unrendered') {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30';
+        } else if (fKey === 'rendered') {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-emerald-400 hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30';
+        } else {
+          btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-slate-300 hover:bg-[#2A374D] border border-transparent';
+        }
+      });
+
+      if (cachedDataMap && cachedDataMap.metrics) {
+        renderDataMapRows(cachedDataMap.metrics, filterType);
+        if (window.lucide && lucide.createIcons) {
+          try { lucide.createIcons(); } catch (e) {}
+        }
+      }
+    }
+
+    window.loadConnectedDataMap = loadConnectedDataMap;
+    window.filterDataMap = filterDataMap;
 
     async function triggerDeviceSync(deviceId) {
       try {

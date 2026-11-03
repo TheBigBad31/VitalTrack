@@ -237,3 +237,250 @@ def test_multi_user_device_isolation(isolated_client):
     dev_a_still_there = test_db.get_user_device("ringconn", user_id=u1["user"]["id"])
     assert dev_a_still_there is not None
     assert dev_a_still_there["name"] == "Bague de A"
+
+
+def test_devices_data_map_with_fixtures_and_diagnostic(isolated_client):
+    """Vérifie l'endpoint GET /api/devices/data-map (BALI-197) :
+    - Matrice complète des 17 métriques avec statuts lu/stocké/rendu/7j/dernier point.
+    - Diagnostic explicite de l'origine des pesées (Withings vs Santé Connect).
+    - Coloration/statuts : 'unrendered' pour ingérés jamais affichés (SpO2, température, hydratation, etc.).
+    """
+    from datetime import date
+    from src.models import (
+        WeightEntry, DailyMetricsEntry, HydrationLogEntry, IntradaySampleEntry
+    )
+
+    client, test_db = isolated_client
+
+    # 1. Inscription et token d'authentification
+    reg = client.post("/api/auth/register", json={
+        "email": "sebastien_diagnostic@vitaltrack.io",
+        "password": "PasswordSebastien123!",
+        "name": "Sébastien LAMOLIATE"
+    })
+    assert reg.status_code == 200
+    user_id = reg.json()["user"]["id"]
+    token = reg.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Injection de données de fixtures
+    # A. Pesée Santé Connect
+    w_hc = WeightEntry(
+        date=date.today(),
+        weight_kg=78.5,
+        body_fat_pct=18.2,
+        muscle_mass_kg=39.1,
+        water_pct=58.0,
+        bmi=24.8,
+        source="health_connect",
+        external_id="hc_weight_uuid_101",
+        measured_at=f"{date.today().isoformat()}T07:15:00Z"
+    )
+    test_db.insert_weight(w_hc, user_id=user_id)
+
+    # B. Pesée Withings
+    w_withings = WeightEntry(
+        date=date.today(),
+        weight_kg=78.7,
+        body_fat_pct=18.4,
+        muscle_mass_kg=39.0,
+        water_pct=57.8,
+        bmi=24.9,
+        source="withings",
+        external_id="withings_measure_202",
+        measured_at=f"{date.today().isoformat()}T08:30:00Z"
+    )
+    test_db.insert_weight(w_withings, user_id=user_id)
+
+    # C. Métriques enrichies de Santé Connect (SpO2, température cutanée, HRV SDNN - jamais affichés dans l'UI)
+    dm = DailyMetricsEntry(
+        user_id=user_id,
+        date=date.today(),
+        source="health_connect",
+        steps=10450,
+        active_calories_kcal=420.0,
+        resting_hr_bpm=55,
+        hrv_rmssd_ms=64.0,
+        hrv_sdnn_ms=71.0,
+        spo2_pct=98.5,
+        skin_temperature_c=36.4,
+        sleep_score=88
+    )
+    test_db.insert_daily_metric(dm, user_id=user_id)
+
+    # D. Hydratation (non rendue dans l'UI)
+    hyd = HydrationLogEntry(
+        user_id=user_id,
+        date=date.today(),
+        timestamp=f"{date.today().isoformat()}T10:00:00Z",
+        volume_ml=750.0,
+        source="health_connect",
+        external_id="hc_hydration_303"
+    )
+    test_db.insert_hydration_log(hyd, user_id=user_id)
+
+    # E. Échantillon intraday FC (non rendu)
+    sample = IntradaySampleEntry(
+        user_id=user_id,
+        source="health_connect",
+        metric_type="hr",
+        timestamp=f"{date.today().isoformat()}T07:15:30Z",
+        value=62.0,
+        unit="bpm"
+    )
+    test_db.insert_intraday_samples([sample], user_id=user_id)
+
+    # F. Ingest brut avec masse osseuse
+    test_db.insert_raw_ingest(
+        source="health_connect",
+        payload={"bone_mass_kg": 3.25, "date": date.today().isoformat()},
+        user_id=user_id,
+        endpoint="/api/webhook/health"
+    )
+
+    # G. Appareils configurés
+    test_db.update_user_device(
+        device_id="health_connect",
+        name="Santé Connect (Xiaomi)",
+        device_type="mobile_aggregator",
+        connected=True,
+        user_id=user_id
+    )
+    test_db.update_user_device(
+        device_id="withings",
+        name="Withings Body Smart",
+        device_type="scale",
+        connected=True,
+        user_id=user_id
+    )
+
+    # 3. Appel de l'endpoint
+    res = client.get("/api/devices/data-map", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+
+    # 4. Vérification de la structure globale
+    assert "summary" in data
+    assert "devices" in data
+    assert "weights_diagnostic" in data
+    assert "metrics" in data
+    assert len(data["metrics"]) == 17
+
+    summary = data["summary"]
+    assert summary["total_metric_types"] == 17
+    assert summary["ingested_count"] >= 8
+    # Des métriques ingérées mais non affichées doivent être détectées
+    assert summary["unrendered_ingested_count"] >= 4
+
+    # 5. Diagnostic des pesées de Sébastien
+    diag = data["weights_diagnostic"]
+    assert diag["total_weights"] == 2
+    assert diag["by_source"]["health_connect"] == 1
+    assert diag["by_source"]["withings"] == 1
+    assert "Santé Connect" in diag["diagnosis_summary"]
+    assert "Withings" in diag["diagnosis_summary"]
+    assert "hybrid" in diag["primary_source"]
+
+    recent_w = diag["recent_weights"]
+    assert len(recent_w) == 2
+    sources = [w["source_normalized"] for w in recent_w]
+    assert "health_connect" in sources
+    assert "withings" in sources
+
+    # 6. Vérification fine par métrique
+    metrics_by_key = {m["metric_key"]: m for m in data["metrics"]}
+
+    # A. Poids (affiché dans l'UI)
+    m_weight = metrics_by_key["weight"]
+    assert m_weight["rendered_in_ui"] is True
+    assert m_weight["global_status"] == "rendered"
+    assert m_weight["by_source"]["health_connect"]["status"] == "rendered"
+    assert m_weight["by_source"]["withings"]["status"] == "rendered"
+    assert m_weight["by_source"]["health_connect"]["last_point"]["value"] == 78.5
+    assert m_weight["by_source"]["withings"]["last_point"]["value"] == 78.7
+    assert m_weight["by_source"]["oura"]["status"] == "unsupported"
+
+    # B. SpO2 (ingéré mais jamais affiché -> ROUGE 'unrendered')
+    m_spo2 = metrics_by_key["spo2_pct"]
+    assert m_spo2["rendered_in_ui"] is False
+    assert m_spo2["global_status"] == "unrendered"
+    assert m_spo2["by_source"]["health_connect"]["status"] == "unrendered"
+    assert m_spo2["by_source"]["health_connect"]["last_point"]["value"] == 98.5
+    assert m_spo2["by_source"]["withings"]["status"] == "unsupported"
+
+    # C. Température cutanée (ingéré mais jamais affiché -> ROUGE 'unrendered')
+    m_temp = metrics_by_key["skin_temperature_c"]
+    assert m_temp["rendered_in_ui"] is False
+    assert m_temp["global_status"] == "unrendered"
+    assert m_temp["by_source"]["health_connect"]["last_point"]["value"] == 36.4
+
+    # D. HRV SDNN (ingéré mais jamais affiché -> ROUGE 'unrendered')
+    m_sdnn = metrics_by_key["hrv_sdnn_ms"]
+    assert m_sdnn["rendered_in_ui"] is False
+    assert m_sdnn["global_status"] == "unrendered"
+    assert m_sdnn["by_source"]["health_connect"]["last_point"]["value"] == 71.0
+
+    # E. Hydratation (ingéré mais jamais affiché -> ROUGE 'unrendered')
+    m_hyd = metrics_by_key["hydration"]
+    assert m_hyd["rendered_in_ui"] is False
+    assert m_hyd["global_status"] == "unrendered"
+    assert "ml" in m_hyd["by_source"]["health_connect"]["last_point"]["value"]
+
+    # F. FC Intraday (ingéré mais jamais affiché -> ROUGE 'unrendered')
+    m_intra = metrics_by_key["intraday_hr"]
+    assert m_intra["rendered_in_ui"] is False
+    assert m_intra["global_status"] == "unrendered"
+
+    # G. Masse osseuse (détectée via raw_ingest)
+    m_bone = metrics_by_key["bone_mass_kg"]
+    assert m_bone["rendered_in_ui"] is False
+    assert m_bone["global_status"] == "unrendered"
+
+    # 7. Vérification des sources et sync
+    devs = data["devices"]
+    assert devs["health_connect"]["connected"] is True
+    assert devs["withings"]["connected"] is True
+    assert devs["health_connect"]["last_sync_at"] is not None
+
+
+def test_devices_data_map_empty_user(isolated_client):
+    """Vérifie le comportement de /api/devices/data-map sur un profil vierge sans aucune donnée."""
+    client, test_db = isolated_client
+
+    reg = client.post("/api/auth/register", json={
+        "email": "virgin_user@vitaltrack.io",
+        "password": "PasswordVirgin1!",
+        "name": "Utilisateur Vierge"
+    })
+    token = reg.json()["access_token"]
+
+    res = client.get("/api/devices/data-map", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["summary"]["ingested_count"] == 0
+    assert data["weights_diagnostic"]["total_weights"] == 0
+    assert data["weights_diagnostic"]["primary_source"] == "none"
+    assert len(data["metrics"]) == 17
+
+
+def test_devices_ui_data_map_panel_presence():
+    """Vérifie la présence du panneau 'Données connectées' dans le hub devices (BALI-197)."""
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="connected-data-panel"' in html
+    assert 'id="data-map-weights-diagnostic"' in html
+    assert 'id="diag-weights-tbody"' in html
+    assert 'id="data-map-tbody"' in html
+    assert "Données Connectées" in html
+    assert "Diagnostic Pesées" in html
+
+    with open("static/modules/dashboard.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "function loadConnectedDataMap" in js
+    assert "function renderConnectedDataMap" in js
+    assert "function filterDataMap" in js
+    assert "/api/devices/data-map" in js
+
+

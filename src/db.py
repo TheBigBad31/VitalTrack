@@ -604,6 +604,10 @@ class Database:
             is_active=is_active, sync_status=sync_status, user_id=user_id
         )
 
+    def get_devices_data_map(self, user_id: int = 1) -> Dict[str, Any]:
+        """Retourne la cartographie complète des flux de données connectées (BALI-197)."""
+        return self.devices.get_devices_data_map(user_id=user_id)
+
     # -------------------------------------------------------------------------
     # Façade : Métriques, Workouts, Sommeil, Intraday & Ingest (MetricsRepository)
     # -------------------------------------------------------------------------

@@ -1366,6 +1366,137 @@
         </div>
       </div>
 
+      <!-- =================================================================== -->
+      <!-- PANNEAU DONNÉES CONNECTÉES & CARTOGRAPHIE DES FLUX (BALI-197) -->
+      <!-- =================================================================== -->
+      <div id="connected-data-panel" class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-6">
+        <!-- En-tête du panneau -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#1F2A3C] pb-4">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Cartographie en direct</span>
+              </span>
+              <span id="data-map-sync-status-badge" class="text-xs text-slate-400">Flux connecteurs &amp; base de données</span>
+            </div>
+            <h3 class="font-bold text-white text-lg">Données Connectées</h3>
+            <p class="text-xs text-slate-400">
+              Matrice complète des données de santé : statut lu côté connecteur, stocké en base et rendu dans l'UI.
+            </p>
+          </div>
+
+          <div class="flex items-center space-x-2 shrink-0">
+            <button type="button" onclick="loadConnectedDataMap(true)" id="btn-refresh-data-map" class="px-3 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors" title="Actualiser la matrice et le diagnostic">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
+              <span>Actualiser</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. Diagnostic des Pesées de Sébastien (Withings vs Santé Connect) -->
+        <div id="data-map-weights-diagnostic" class="bg-gradient-to-r from-sky-950/40 via-[#0B0F17] to-[#151D2A] border border-sky-500/30 rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#1F2A3C]/70 pb-3">
+            <div class="flex items-center space-x-3">
+              <div class="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center justify-center shrink-0">
+                <i data-lucide="scale" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h4 class="font-bold text-white text-sm flex items-center gap-2">
+                  <span>Diagnostic Pesées : D'où viennent mes pesées ?</span>
+                  <span id="diag-primary-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20 font-semibold">Withings vs Santé Connect</span>
+                </h4>
+                <p id="diag-summary-text" class="text-xs text-slate-300 mt-0.5">Analyse des flux récents en cours...</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 text-xs flex-wrap" id="diag-source-counts">
+              <!-- Compteurs par source injectés dynamiquement -->
+            </div>
+          </div>
+
+          <!-- Tableau des pesées récentes avec badge source explicite -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs text-slate-400">
+              <span class="font-medium">Dernières pesées enregistrées (traçabilité de la source)</span>
+              <span id="diag-recent-count" class="text-[11px] text-slate-400">0 pesée</span>
+            </div>
+            <div class="overflow-x-auto rounded-xl border border-[#1F2A3C]">
+              <table class="w-full text-xs text-left text-slate-300">
+                <thead class="bg-[#0B0F17] text-slate-400 uppercase text-[10px] tracking-wider border-b border-[#1F2A3C]">
+                  <tr>
+                    <th scope="col" class="py-2.5 px-3">Date &amp; Heure</th>
+                    <th scope="col" class="py-2.5 px-3">Poids</th>
+                    <th scope="col" class="py-2.5 px-3">Composition</th>
+                    <th scope="col" class="py-2.5 px-3">Source certifiée</th>
+                    <th scope="col" class="py-2.5 px-3">Identifiant externe</th>
+                  </tr>
+                </thead>
+                <tbody id="diag-weights-tbody" class="divide-y divide-[#1F2A3C]/60 bg-[#111826]/60">
+                  <tr>
+                    <td colspan="5" class="py-4 text-center text-slate-500">Chargement des pesées récentes...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Synthèse et Filtres de la Matrice -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div class="flex items-center flex-wrap gap-2 text-xs" id="data-map-filter-buttons">
+            <button type="button" onclick="filterDataMap('all')" id="btn-filter-all" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
+              Toutes (<span id="count-filter-all">17</span>)
+            </button>
+            <button type="button" onclick="filterDataMap('unrendered')" id="btn-filter-unrendered" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30">
+              ⚠️ Ingérés non affichés (<span id="count-filter-unrendered">0</span>)
+            </button>
+            <button type="button" onclick="filterDataMap('rendered')" id="btn-filter-rendered" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-emerald-400 hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30">
+              ✓ Actifs &amp; Affichés (<span id="count-filter-rendered">0</span>)
+            </button>
+            <button type="button" onclick="filterDataMap('health_connect')" id="btn-filter-hc" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-slate-300 hover:bg-[#2A374D] border border-transparent">
+              Santé Connect
+            </button>
+            <button type="button" onclick="filterDataMap('withings')" id="btn-filter-withings" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1F2A3C] text-slate-300 hover:bg-[#2A374D] border border-transparent">
+              Withings
+            </button>
+          </div>
+
+          <!-- Légende des couleurs -->
+          <div class="flex items-center gap-3 text-[11px] text-slate-400 shrink-0">
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span>Affiché dans l'UI</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span><span class="text-rose-400 font-medium">Ingéré mais jamais affiché</span></span>
+            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span><span>Non lu par connecteur</span></span>
+          </div>
+        </div>
+
+        <!-- 3. Tableau principal de la Matrice -->
+        <div class="overflow-x-auto rounded-2xl border border-[#1F2A3C] bg-[#0B0F17]/80">
+          <table class="w-full text-xs text-left text-slate-300">
+            <thead class="bg-[#111826] text-slate-400 uppercase text-[10px] tracking-wider border-b border-[#1F2A3C]">
+              <tr>
+                <th scope="col" class="py-3 px-3.5">Type de donnée</th>
+                <th scope="col" class="py-3 px-3.5">Source(s)</th>
+                <th scope="col" class="py-3 px-3.5">Dernier point reçu</th>
+                <th scope="col" class="py-3 px-3.5 text-center">Nb 7 j</th>
+                <th scope="col" class="py-3 px-3.5">Stocké en BDD</th>
+                <th scope="col" class="py-3 px-3.5">Affiché où</th>
+                <th scope="col" class="py-3 px-3.5 text-right">Statut</th>
+              </tr>
+            </thead>
+            <tbody id="data-map-tbody" class="divide-y divide-[#1F2A3C]/60">
+              <tr>
+                <td colspan="7" class="py-8 text-center text-slate-500">
+                  <div class="flex flex-col items-center justify-center space-y-2">
+                    <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-brand-400"></i>
+                    <span>Chargement de la matrice des flux connectés...</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       </section>
 
   </main>
