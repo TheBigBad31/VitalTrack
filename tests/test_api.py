@@ -572,10 +572,20 @@ def test_health_webhook_endpoints(client):
     assert res_payload.status_code == 401
 
 
-def test_daily_sync_execution():
+def test_daily_sync_execution(monkeypatch):
     """Vérifie que le script de synchronisation journalière s'exécute correctement."""
     from src.daily_sync import run_daily_sync
-    run_daily_sync()
+    from src.connectors.withings import WithingsScaleConnector
+    from src.connectors.oura import OuraRingConnector
+
+    # Mock les connecteurs : simuler qu'ils ne sont pas configurés
+    with monkeypatch.context() as m:
+        m.setattr(WithingsScaleConnector, "_check_configuration", lambda self: False)
+        m.setattr(OuraRingConnector, "_check_configuration", lambda self: False)
+
+        # La synchronisation doit s'exécuter sans erreur même sans connecteurs configurés
+        result = run_daily_sync()
+        assert result is True, "La synchronisation doit réussir lorsqu'aucun connecteur n'est configuré"
 
 
 # =====================================================================

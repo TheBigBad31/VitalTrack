@@ -57,19 +57,37 @@ jobs:
             python -m py_compile "$f" || exit 1
           done
 
-      - name: Lint with ruff (non-blocking)
+      - name: Lint with ruff (blocking)
         if: inputs.run-lint == true
         working-directory: ${{ inputs.working-directory }}
         run: |
           pip install ruff
-          ruff check . || true
+          ruff check .
 
-      - name: Lint with flake8 (non-blocking)
+      - name: Lint with flake8 (blocking)
         if: inputs.run-lint == true
         working-directory: ${{ inputs.working-directory }}
         run: |
           pip install flake8
-          flake8 . --count --select=E9,F6,F7,W501 || true
+          flake8 . --count --select=E9,F6,F7,W501
+
+      - name: Security scan with bandit
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install bandit
+          bandit -r . || exit 1
+
+      - name: Vulnerability scan with pip-audit
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install pip-audit
+          pip-audit || exit 1
+
+      - name: Type check with mypy
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install mypy
+          mypy . || exit 1
 
   test:
     runs-on: ubuntu-latest
@@ -97,11 +115,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run pytest
+      - name: Run pytest with coverage
         working-directory: ${{ inputs.working-directory }}
         if: inputs.run-tests == true
         run: |
-          uv run pytest -v
+          uv run pytest -v --cov=. --cov-report=html
+          coverage run -m pytest || exit 1
+          coverage report -m
+          # Fail if coverage is below 80%
+          coverage report --fail-under=80 || exit 1
 
           # Run postgres compatibility tests if available
           if [ -f tests/test_postgres_compat.py ]; then

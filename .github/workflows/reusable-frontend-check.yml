@@ -43,7 +43,7 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f manifest.json ]; then
-            echo "ERROR: manifest.json not found"
+          if [ ! -f static/manifest.json ]; then
+            echo "ERROR: static/manifest.json not found"
             exit 1
           fi
