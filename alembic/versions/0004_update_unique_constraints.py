@@ -130,6 +130,8 @@ def downgrade() -> None:
         op.drop_table('weights')
         op.rename_table('weights_new', 'weights')
         op.create_index('idx_weights_user_date', 'weights', ['user_id', 'date'])
+        # Recréer les index attendus par la migration 0002 downgrade
+        op.create_index('idx_weights_source_external', 'weights', ['source', 'external_id'])
         
         op.execute("""
             CREATE TABLE activities_new (
@@ -156,3 +158,5 @@ def downgrade() -> None:
         op.drop_table('activities')
         op.rename_table('activities_new', 'activities')
         op.create_index('idx_activities_user_date', 'activities', ['user_id', 'date'])
+        # Recréer les index attendus par la migration 0002 downgrade
+        op.create_index('idx_activities_source_external', 'activities', ['source', 'external_id'])
