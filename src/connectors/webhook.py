@@ -9,7 +9,7 @@ Valide et convertit le payload JSON universel vers WeightEntry et ActivityEntry.
 """
 
 import hmac
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.connectors.base import BaseHealthConnector
@@ -104,7 +104,10 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
 
                 if weight_date_raw:
                     if isinstance(weight_date_raw, str):
-                        target_weight_date = date.fromisoformat(weight_date_raw[:10])
+                        try:
+                            target_weight_date = date.fromisoformat(weight_date_raw[:10])
+                        except (ValueError, TypeError):
+                            target_weight_date = target_date
                     elif isinstance(weight_date_raw, (date, datetime)):
                         target_weight_date = weight_date_raw if isinstance(weight_date_raw, date) else weight_date_raw.date()
 

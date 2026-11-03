@@ -198,3 +198,60 @@ def test_daily_sync_window_7_days(tmp_path):
 
     assert captured_start_date is not None
     assert captured_start_date == date.today() - timedelta(days=7)
+
+
+def test_weight_measured_at_numeric_epoch(client):
+    """Vérifie que measured_at numérique en secondes et millisecondes est géré sans NameError timezone."""
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Smart Scale Epoch"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    # 1. Epoch en secondes
+    epoch_sec = 1762126200  # 2025-11-02T23:30:00+00:00
+    payload_sec = {
+        "source": "health_connect",
+        "date": "2026-11-03",
+        "weight_kg": 74.5,
+        "measured_at": epoch_sec,
+        "external_id": "epoch_sec_test"
+    }
+    res_sec = client.post("/api/webhook/health", json=payload_sec, headers={"X-Webhook-Token": token})
+    assert res_sec.status_code == 200
+    w_sec = res_sec.json()["results"]["weight"]
+    assert "2025-11-02" in w_sec["date"] or "2025-11-03" in w_sec["date"]
+    assert "T" in w_sec["measured_at"]
+
+    # 2. Epoch en millisecondes (format natif Android / timestamp long)
+    epoch_ms = 1762126200000
+    payload_ms = {
+        "source": "health_connect",
+        "date": "2026-11-03",
+        "weight_kg": 74.8,
+        "measured_at": epoch_ms,
+        "external_id": "epoch_ms_test"
+    }
+    res_ms = client.post("/api/webhook/health", json=payload_ms, headers={"X-Webhook-Token": token})
+    assert res_ms.status_code == 200
+    w_ms = res_ms.json()["results"]["weight"]
+    assert "T" in w_ms["measured_at"]
+
+
+def test_weight_date_malformed_fallback(client):
+    """Vérifie qu'un weight_date malformé ne provoque pas de 500 mais retombe sur la date du sync."""
+    tok_resp = client.post("/api/devices/health_connect/token", json={"name": "Malformed Date Scale"})
+    assert tok_resp.status_code == 200
+    token = tok_resp.json()["token"]
+
+    payload = {
+        "source": "health_connect",
+        "date": "2026-11-03",
+        "weight_date": "not-a-valid-date",
+        "weight_kg": 75.0,
+        "external_id": "malformed_date_test"
+    }
+    res = client.post("/api/webhook/health", json=payload, headers={"X-Webhook-Token": token})
+    assert res.status_code == 200
+    w = res.json()["results"]["weight"]
+    assert w["date"] == "2026-11-03"
+    assert w["weight_kg"] == 75.0
+
