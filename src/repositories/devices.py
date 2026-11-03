@@ -376,9 +376,9 @@ class DevicesRepository(BaseRepository):
                 })
 
             # Stats sur les pesées
-            cursor.execute("SELECT COUNT(*) FROM weights WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+            cursor.execute("SELECT COUNT(*) as cnt FROM weights WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
             row_cnt = cursor.fetchone()
-            weights_7d_count = row_cnt[0] if (row_cnt and not isinstance(row_cnt, dict)) else (row_cnt["COUNT(*)"] if isinstance(row_cnt, dict) else 0)
+            weights_7d_count = (row_cnt.get("cnt") if isinstance(row_cnt, dict) else (row_cnt[0] if row_cnt else 0)) or 0
 
             # 4. Derniers points des métriques dans daily_metrics
             cursor.execute(
@@ -389,11 +389,11 @@ class DevicesRepository(BaseRepository):
             last_dm_dict = dict(last_daily_metric) if last_daily_metric else {}
 
             cursor.execute(
-                "SELECT COUNT(*) FROM daily_metrics WHERE user_id = ? AND date >= ?",
+                "SELECT COUNT(*) as cnt FROM daily_metrics WHERE user_id = ? AND date >= ?",
                 (user_id, cutoff_7d)
             )
             row_dm_cnt = cursor.fetchone()
-            dm_7d_cnt = row_dm_cnt[0] if (row_dm_cnt and not isinstance(row_dm_cnt, dict)) else (row_dm_cnt["COUNT(*)"] if isinstance(row_dm_cnt, dict) else 0)
+            dm_7d_cnt = (row_dm_cnt.get("cnt") if isinstance(row_dm_cnt, dict) else (row_dm_cnt[0] if row_dm_cnt else 0)) or 0
 
             # 5. Dernier Sommeil
             last_sleep = None
@@ -411,9 +411,9 @@ class DevicesRepository(BaseRepository):
                         "source": r_sl["source"] if isinstance(r_sl, dict) else r_sl[2],
                         "sleep_score": r_sl["sleep_score"] if isinstance(r_sl, dict) else r_sl[3]
                     }
-                cursor.execute("SELECT COUNT(*) FROM sleep_sessions WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+                cursor.execute("SELECT COUNT(*) as cnt FROM sleep_sessions WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
                 r_sl_cnt = cursor.fetchone()
-                sleep_7d_cnt = r_sl_cnt[0] if (r_sl_cnt and not isinstance(r_sl_cnt, dict)) else (r_sl_cnt["COUNT(*)"] if isinstance(r_sl_cnt, dict) else 0)
+                sleep_7d_cnt = (r_sl_cnt.get("cnt") if isinstance(r_sl_cnt, dict) else (r_sl_cnt[0] if r_sl_cnt else 0)) or 0
             except Exception:
                 pass
 
@@ -433,9 +433,9 @@ class DevicesRepository(BaseRepository):
                         "calories_kcal": r_wk["calories_kcal"] if isinstance(r_wk, dict) else r_wk[2],
                         "source": r_wk["source"] if isinstance(r_wk, dict) else r_wk[3]
                     }
-                cursor.execute("SELECT COUNT(*) FROM workouts WHERE user_id = ? AND start_time >= ?", (user_id, cutoff_7d))
+                cursor.execute("SELECT COUNT(*) as cnt FROM workouts WHERE user_id = ? AND start_time >= ?", (user_id, cutoff_7d))
                 r_wk_cnt = cursor.fetchone()
-                workout_7d_cnt = r_wk_cnt[0] if (r_wk_cnt and not isinstance(r_wk_cnt, dict)) else (r_wk_cnt["COUNT(*)"] if isinstance(r_wk_cnt, dict) else 0)
+                workout_7d_cnt = (r_wk_cnt.get("cnt") if isinstance(r_wk_cnt, dict) else (r_wk_cnt[0] if r_wk_cnt else 0)) or 0
             except Exception:
                 pass
 
@@ -455,9 +455,9 @@ class DevicesRepository(BaseRepository):
                         "source": r_hy["source"] if isinstance(r_hy, dict) else r_hy[2],
                         "timestamp": r_hy["timestamp"] if isinstance(r_hy, dict) else r_hy[3]
                     }
-                cursor.execute("SELECT COUNT(*) FROM hydration_logs WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
+                cursor.execute("SELECT COUNT(*) as cnt FROM hydration_logs WHERE user_id = ? AND date >= ?", (user_id, cutoff_7d))
                 r_hy_cnt = cursor.fetchone()
-                hydration_7d_cnt = r_hy_cnt[0] if (r_hy_cnt and not isinstance(r_hy_cnt, dict)) else (r_hy_cnt["COUNT(*)"] if isinstance(r_hy_cnt, dict) else 0)
+                hydration_7d_cnt = (r_hy_cnt.get("cnt") if isinstance(r_hy_cnt, dict) else (r_hy_cnt[0] if r_hy_cnt else 0)) or 0
             except Exception:
                 pass
 
@@ -476,9 +476,9 @@ class DevicesRepository(BaseRepository):
                         "value": r_intra["value"] if isinstance(r_intra, dict) else r_intra[1],
                         "source": r_intra["source"] if isinstance(r_intra, dict) else r_intra[2]
                     }
-                cursor.execute("SELECT COUNT(*) FROM intraday_samples WHERE user_id = ? AND metric_type = 'hr' AND timestamp >= ?", (user_id, cutoff_7d))
+                cursor.execute("SELECT COUNT(*) as cnt FROM intraday_samples WHERE user_id = ? AND metric_type = 'hr' AND timestamp >= ?", (user_id, cutoff_7d))
                 r_intra_cnt = cursor.fetchone()
-                hr_intra_7d_cnt = r_intra_cnt[0] if (r_intra_cnt and not isinstance(r_intra_cnt, dict)) else (r_intra_cnt["COUNT(*)"] if isinstance(r_intra_cnt, dict) else 0)
+                hr_intra_7d_cnt = (r_intra_cnt.get("cnt") if isinstance(r_intra_cnt, dict) else (r_intra_cnt[0] if r_intra_cnt else 0)) or 0
             except Exception:
                 pass
 
