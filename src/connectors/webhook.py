@@ -51,8 +51,13 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
 
         # Extraction Pesée
         weight_entry = None
-        if "weight_kg" in payload or "weight" in payload:
-            w_kg = float(payload.get("weight_kg", payload.get("weight", 0.0)))
+        if "weight_kg" in payload or "weight" in payload or "weight_lb" in payload:
+            # Détecter l'unité : weight_lb = livres, weight_kg/weight = kg
+            if "weight_lb" in payload:
+                w_kg = float(payload.get("weight_lb", 0.0)) * 0.45359237  # lb → kg
+            else:
+                w_kg = float(payload.get("weight_kg", payload.get("weight", 0.0)))
+            
             if w_kg > 0:
                 fat_pct = payload.get("body_fat_pct", payload.get("body_fat"))
                 muscle_kg = payload.get("muscle_mass_kg", payload.get("muscle_mass"))
@@ -72,7 +77,7 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
 
                 weight_entry = WeightEntry(
                     date=target_date,
-                    weight_kg=w_kg,
+                    weight_kg=round(w_kg, 2),
                     body_fat_pct=float(fat_pct) if fat_pct is not None else None,
                     muscle_mass_kg=float(muscle_kg) if muscle_kg is not None else None,
                     water_pct=float(water_pct) if water_pct is not None else None,
@@ -85,14 +90,30 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
         activity_entry = None
         has_activity_fields = any(k in payload for k in [
             "steps", "active_calories_kcal", "active_calories",
-            "resting_hr_bpm", "resting_heart_rate", "hrv_ms", "sleep_score"
+            "active_energy_kj", "resting_hr_bpm", "resting_heart_rate", "hrv_ms", "sleep_score"
         ])
 
         if has_activity_fields:
             steps = int(payload.get("steps", 0))
-            active_cal = float(payload.get("active_calories_kcal", payload.get("active_calories", 0.0)))
-            bmr = float(payload.get("bmr_kcal", payload.get("bmr", 1750.0)))
-            total_cal = float(payload.get("total_burned_kcal", payload.get("total_calories", bmr + active_cal)))
+            
+            # Détecter l'unité des calories : kJ ou kcal
+            if "active_energy_kj" in payload:
+                active_cal = float(payload.get("active_energy_kj", 0.0)) / 4.184  # kJ → kcal
+            else:
+                active_cal = float(payload.get("active_calories_kcal", payload.get("active_calories", 0.0)))
+            
+            # BMR peut aussi être en kJ
+            if "bmr_kj" in payload:
+                bmr = float(payload.get("bmr_kj", 0.0)) / 4.184  # kJ → kcal
+            else:
+                bmr = float(payload.get("bmr_kcal", payload.get("bmr", 1750.0)))
+            
+            # Total calories peut être en kJ
+            if "total_energy_kj" in payload:
+                total_cal = float(payload.get("total_energy_kj", 0.0)) / 4.184  # kJ → kcal
+            else:
+                total_cal = float(payload.get("total_burned_kcal", payload.get("total_calories", bmr + active_cal)))
+            
             workout_min = int(payload.get("workout_minutes", 0))
             workout_type = payload.get("workout_type")
             resting_hr = payload.get("resting_hr_bpm", payload.get("resting_heart_rate"))
@@ -112,9 +133,9 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
             activity_entry = ActivityEntry(
                 date=target_date,
                 steps=steps,
-                active_calories_kcal=active_cal,
-                bmr_kcal=bmr,
-                total_burned_kcal=total_cal,
+                active_calories_kcal=round(active_cal, 1),
+                bmr_kcal=round(bmr, 1),
+                total_burned_kcal=round(total_cal, 1),
                 workout_minutes=workout_min,
                 workout_type=workout_type,
                 resting_hr_bpm=int(resting_hr) if resting_hr is not None else None,

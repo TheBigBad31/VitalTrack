@@ -420,6 +420,7 @@ class Database:
                         google_picture TEXT,
                         google_sub TEXT,
                         is_demo_profile INTEGER DEFAULT 0,
+                        timezone TEXT DEFAULT 'UTC',
                         updated_at TEXT NOT NULL,
                         CONSTRAINT uq_user_profile_user UNIQUE (user_id)
                     );
@@ -438,8 +439,11 @@ class Database:
                         trend_7d_kg REAL,
                         source TEXT NOT NULL,
                         notes TEXT,
+                        external_id TEXT,
+                        measured_at TEXT,
+                        idempotency_key TEXT,
                         created_at TEXT NOT NULL,
-                        CONSTRAINT uq_weights_user_date UNIQUE (user_id, date)
+                        CONSTRAINT uq_weights_user_date_source UNIQUE (user_id, date, source)
                     );
                 """)
 
@@ -458,8 +462,10 @@ class Database:
                         hrv_ms REAL,
                         sleep_score INTEGER,
                         source TEXT NOT NULL,
+                        external_id TEXT,
+                        idempotency_key TEXT,
                         created_at TEXT NOT NULL,
-                        CONSTRAINT uq_activities_user_date UNIQUE (user_id, date)
+                        CONSTRAINT uq_activities_user_date_source UNIQUE (user_id, date, source)
                     );
                 """)
 
@@ -905,6 +911,7 @@ class Database:
                         google_picture TEXT,
                         google_sub TEXT,
                         is_demo_profile INTEGER DEFAULT 0,
+                        timezone TEXT DEFAULT 'UTC',
                         updated_at TEXT NOT NULL
                     );
                 """)
@@ -922,8 +929,11 @@ class Database:
                         trend_7d_kg REAL,
                         source TEXT NOT NULL,
                         notes TEXT,
+                        external_id TEXT,
+                        measured_at TEXT,
+                        idempotency_key TEXT,
                         created_at TEXT NOT NULL,
-                        UNIQUE(user_id, date)
+                        UNIQUE(user_id, date, source)
                     );
                 """)
 
@@ -942,8 +952,10 @@ class Database:
                         hrv_ms REAL,
                         sleep_score INTEGER,
                         source TEXT NOT NULL,
+                        external_id TEXT,
+                        idempotency_key TEXT,
                         created_at TEXT NOT NULL,
-                        UNIQUE(user_id, date)
+                        UNIQUE(user_id, date, source)
                     );
                 """)
 
@@ -1283,6 +1295,7 @@ class Database:
                     ("current_weight_kg", "REAL"),
                     ("meal_distribution", "TEXT"),
                     ("is_demo_profile", "INTEGER DEFAULT 0"),
+                    ("timezone", "TEXT DEFAULT 'UTC'"),
                 ]:
                     self._safe_alter_column(cursor, "user_profile", col, def_val)
 
@@ -1307,9 +1320,9 @@ class Database:
                     );
                 """)
 
-                # Index uniques pour SQLite garantissant ON CONFLICT(user_id, date)
-                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_weights_user_date ON weights(user_id, date);")
-                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_user_date ON activities(user_id, date);")
+                # Index uniques pour SQLite garantissant ON CONFLICT(user_id, date, source)
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_weights_user_date_source ON weights(user_id, date, source);")
+                cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_activities_user_date_source ON activities(user_id, date, source);")
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_devices_user_dev ON user_devices(user_id, device_id);")
 
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_meal_logs_user_date_type ON meal_logs(user_id, date, meal_type);")
@@ -1553,14 +1566,13 @@ class Database:
                         bmi, trend_7d_kg, source, notes, external_id, measured_at, idempotency_key, created_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
                         weight_kg = EXCLUDED.weight_kg,
                         body_fat_pct = EXCLUDED.body_fat_pct,
                         muscle_mass_kg = EXCLUDED.muscle_mass_kg,
                         water_pct = EXCLUDED.water_pct,
                         bmi = EXCLUDED.bmi,
                         trend_7d_kg = EXCLUDED.trend_7d_kg,
-                        source = EXCLUDED.source,
                         notes = EXCLUDED.notes,
                         external_id = COALESCE(EXCLUDED.external_id, weights.external_id),
                         measured_at = COALESCE(EXCLUDED.measured_at, weights.measured_at),
@@ -1580,14 +1592,13 @@ class Database:
                         bmi, trend_7d_kg, source, notes, external_id, measured_at, idempotency_key, created_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
                         weight_kg = excluded.weight_kg,
                         body_fat_pct = excluded.body_fat_pct,
                         muscle_mass_kg = excluded.muscle_mass_kg,
                         water_pct = excluded.water_pct,
                         bmi = excluded.bmi,
                         trend_7d_kg = excluded.trend_7d_kg,
-                        source = excluded.source,
                         notes = excluded.notes,
                         external_id = COALESCE(excluded.external_id, weights.external_id),
                         measured_at = COALESCE(excluded.measured_at, weights.measured_at),
@@ -1769,7 +1780,7 @@ class Database:
                         source, external_id, idempotency_key, created_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
                         steps = EXCLUDED.steps,
                         active_calories_kcal = EXCLUDED.active_calories_kcal,
                         bmr_kcal = EXCLUDED.bmr_kcal,
@@ -1779,7 +1790,6 @@ class Database:
                         resting_hr_bpm = EXCLUDED.resting_hr_bpm,
                         hrv_ms = EXCLUDED.hrv_ms,
                         sleep_score = EXCLUDED.sleep_score,
-                        source = EXCLUDED.source,
                         external_id = COALESCE(EXCLUDED.external_id, activities.external_id),
                         idempotency_key = COALESCE(EXCLUDED.idempotency_key, activities.idempotency_key)
                     RETURNING id;
@@ -1799,7 +1809,7 @@ class Database:
                         source, external_id, idempotency_key, created_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, date) DO UPDATE SET
+                    ON CONFLICT(user_id, date, source) DO UPDATE SET
                         steps = excluded.steps,
                         active_calories_kcal = excluded.active_calories_kcal,
                         bmr_kcal = excluded.bmr_kcal,
@@ -1809,7 +1819,6 @@ class Database:
                         resting_hr_bpm = excluded.resting_hr_bpm,
                         hrv_ms = excluded.hrv_ms,
                         sleep_score = excluded.sleep_score,
-                        source = excluded.source,
                         external_id = COALESCE(excluded.external_id, activities.external_id),
                         idempotency_key = COALESCE(excluded.idempotency_key, activities.idempotency_key)
                 """, (
