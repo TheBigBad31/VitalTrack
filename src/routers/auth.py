@@ -22,6 +22,7 @@ from src.auth import (
     GoogleConfigUpdate,
     LoginRequest,
     RegisterRequest,
+    UserPublicResponse,
     create_access_token,
     decode_access_token,
     hash_password,
@@ -82,12 +83,23 @@ def register_user(payload: RegisterRequest):
         auth_provider="email"
     )
     token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
+    user_public = UserPublicResponse(
+        id=user["id"],
+        uuid=user["uuid"],
+        email=user["email"],
+        name=user.get("name"),
+        picture=user.get("picture"),
+        auth_provider=user.get("auth_provider", "email"),
+        google_sub=user.get("google_sub"),
+        created_at=user.get("created_at"),
+        updated_at=user.get("updated_at")
+    ).model_dump()
     return {
         "status": "success",
         "message": "Compte créé avec succès",
         "access_token": token,
         "token_type": "bearer",
-        "user": user
+        "user": user_public
     }
 
 
@@ -109,12 +121,23 @@ def login_user(payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
     token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
+    user_public = UserPublicResponse(
+        id=user["id"],
+        uuid=user["uuid"],
+        email=user["email"],
+        name=user.get("name"),
+        picture=user.get("picture"),
+        auth_provider=user.get("auth_provider", "email"),
+        google_sub=user.get("google_sub"),
+        created_at=user.get("created_at"),
+        updated_at=user.get("updated_at")
+    ).model_dump()
     return {
         "status": "success",
         "message": "Connexion réussie",
         "access_token": token,
         "token_type": "bearer",
-        "user": dict(user)
+        "user": user_public
     }
 
 

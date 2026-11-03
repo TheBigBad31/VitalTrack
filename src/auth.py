@@ -122,6 +122,19 @@ class AuthUser(BaseModel):
     google_sub: Optional[str] = None
 
 
+class UserPublicResponse(BaseModel):
+    """Modèle public pour les réponses API excluant strictement password_hash et tout secret."""
+    id: int
+    uuid: str
+    email: str
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    auth_provider: str = "email"
+    google_sub: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 PBKDF2_ITERATIONS = 600_000
 PBKDF2_LEGACY_ITERATIONS = 100_000
 
@@ -284,13 +297,7 @@ def verify_google_id_token(token: str, expected_client_id: Optional[str] = None)
             raise ValueError(f"Émetteur Google invalide : {issuer}")
         return payload
     except Exception as e:
-        try:
-            claims = decode_jwt_unverified(token)
-            if claims.get("iss") in ["accounts.google.com", "https://accounts.google.com"] and not claims.get("test_mock"):
-                raise ValueError(f"Validation cryptographique Google échouée : {str(e)}")
-            return claims
-        except Exception:
-            raise ValueError(f"Échec de validation du Google ID Token : {str(e)}")
+        raise ValueError(f"Validation cryptographique Google échouée : {str(e)}")
 
 
 def parse_google_identity(
@@ -300,17 +307,10 @@ def parse_google_identity(
 ) -> Dict[str, Any]:
     """Extrait et normalise les informations de l'utilisateur Google à partir du token ou du payload."""
     if payload.credential:
-        claims: Dict[str, Any] = {}
-        try:
-            if verify_signature:
-                try:
-                    claims = verify_google_id_token(payload.credential, expected_client_id=client_id)
-                except Exception:
-                    claims = decode_jwt_unverified(payload.credential)
-            else:
-                claims = decode_jwt_unverified(payload.credential)
-        except Exception:
-            claims = {}
+        if verify_signature:
+            claims = verify_google_id_token(payload.credential, expected_client_id=client_id)
+        else:
+            claims = decode_jwt_unverified(payload.credential)
 
         email = claims.get("email") or payload.email or "sebastienlamoliate@gmail.com"
         name = claims.get("name") or payload.name or "Sébastien LAMOLIATE"
