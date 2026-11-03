@@ -3,12 +3,15 @@
 Gère :
 - Interconnexion directe via RingConn Open API ou via passerelle Google Health Connect
 - Métriques biométriques : Sommeil (score, durée), HRV nocturne (RMSSD), Fréquence Cardiaque au repos, Pas, Calories actives
+- Webhook sécurisé avec compare_digest, refus si secret absent
 - Mode Démo / Simulation 30 jours si les identifiants ou le token d'API ne sont pas encore renseignés.
 """
 
 import math
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 from src.connectors.base import BaseHealthConnector
 from src.models import ActivityEntry, WeightEntry
@@ -23,6 +26,10 @@ class RingConnConnector(BaseHealthConnector):
         """Vérifie si le token d'accès RingConn OpenAPI est configuré."""
         token = self.config.get("api_key") or self.config.get("access_token")
         return bool(token)
+
+    def _get_headers(self) -> Dict[str, str]:
+        token = self.config.get("api_key") or self.config.get("access_token")
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     def parse_ringconn_daily_data(
         self,
@@ -74,19 +81,25 @@ class RingConnConnector(BaseHealthConnector):
         )
 
     def authenticate_webhook(self, token: Optional[str]) -> bool:
-        """Vérifie le token secret d'authentification du webhook RingConn s'il est configuré."""
+        """Vérifie le token secret d'authentification du webhook RingConn s'il est configuré.
+        
+        OBLIGATOIRE: refuse si secret absent (fail-closed). Utilise hmac.compare_digest.
+        """
         secret = self.config.get("webhook_token") or self.config.get("webhook_secret")
         if not secret:
-            return True
-        return token == secret
+            return False
+        if not token:
+            return False
+        import hmac
+        return hmac.compare_digest(str(token).strip(), str(secret).strip())
 
     def sync_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
-        """Récupère les activités RingConn ou génère la simulation réaliste Gen 3."""
+        """Récupère les activités RingConn via API réelle, ou génère la simulation réaliste Gen 3."""
         if not self.is_configured:
             self.assert_simulation_allowed()
             return self._generate_simulated_activities(start_date, end_date)
 
-        # Si des payloads de test/mock sont configurés
+        # Mode test avec mock_payloads injectés
         if "mock_payloads" in self.config:
             results = []
             for item in self.config["mock_payloads"]:
@@ -97,31 +110,35 @@ class RingConnConnector(BaseHealthConnector):
                 ))
             return results
 
-        # En production : appel RingConn Open API Cloud si token disponible
+        # Appel API réel RingConn Open API Cloud
         api_key = self.config.get("api_key") or self.config.get("access_token")
-        if api_key:
-            try:
-                import urllib.request
-                import json
+        if not api_key:
+            raise RuntimeError("RingConn API key / access_token manquant")
 
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Accept": "application/json"
-                }
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                headers = self._get_headers()
                 date_from = start_date.isoformat()
                 date_to = end_date.isoformat()
-                url = f"{self.BASE_URL}/daily_activity?start_date={date_from}&end_date={date_to}"
-
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        records = data.get("data", []) if isinstance(data, dict) else []
-                        return [self.parse_ringconn_daily_data(rec) for rec in records]
-            except Exception:
-                return []
-
-        return []
+                url = f"{self.BASE_URL}/daily_activity"
+                params = {"start_date": date_from, "end_date": date_to}
+                
+                resp = client.get(url, headers=headers, params=params)
+                
+                if resp.status_code == 401:
+                    raise RuntimeError("RingConn API 401: Token invalide ou expiré")
+                
+                resp.raise_for_status()
+                data = resp.json()
+                records = data.get("data", []) if isinstance(data, dict) else []
+                return [self.parse_ringconn_daily_data(rec) for rec in records]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise RuntimeError("RingConn API 401: Token invalide ou expiré")
+            raise
+        except Exception as e:
+            # NE PAS avaler l'exception - la propager
+            raise RuntimeError(f"Erreur synchronisation RingConn: {e}")
 
     def _generate_simulated_activities(self, start_date: date, end_date: date) -> List[ActivityEntry]:
         """Simulation biométrique réaliste RingConn Gen 3 (sommeil réparateur, HRV précis, pas)."""
