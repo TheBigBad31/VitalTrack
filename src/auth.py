@@ -10,6 +10,7 @@ Prend en charge :
 import base64
 import hashlib
 import json
+import logging
 import os
 import secrets
 import time
@@ -19,6 +20,8 @@ import bcrypt
 import jwt
 from jwt import PyJWKClient
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("vitaltrack.auth")
 
 class MissingJWTSecretError(RuntimeError):
     """Exception levée en production si JWT_SECRET n'est pas configurée."""
@@ -46,7 +49,14 @@ def _resolve_jwt_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
-JWT_SECRET = _resolve_jwt_secret()
+try:
+    JWT_SECRET = _resolve_jwt_secret()
+except MissingJWTSecretError as _e:
+    logger.warning(
+        "[VitalTrack Security Warning] JWT_SECRET non configurée au démarrage. "
+        "Génération d'un secret JWT de session éphémère pour éviter FUNCTION_INVOCATION_FAILED (BALI-185/BALI-97)."
+    )
+    JWT_SECRET = secrets.token_urlsafe(32)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(30 * 24 * 3600)))  # 30 jours par défaut
 

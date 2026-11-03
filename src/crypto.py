@@ -53,7 +53,14 @@ def _get_fernet_key(seed: str) -> bytes:
     return base64.urlsafe_b64encode(digest)
 
 
-_FERNET_INSTANCE = Fernet(_get_fernet_key(_resolve_key_seed()))
+try:
+    _FERNET_INSTANCE = Fernet(_get_fernet_key(_resolve_key_seed()))
+except MissingEncryptionKeyError as _e:
+    logger.warning(
+        "[VitalTrack Security Warning] DATA_ENCRYPTION_KEY non configurée au démarrage. "
+        "Initialisation d'une clé de session éphémère pour éviter FUNCTION_INVOCATION_FAILED (BALI-185/BALI-97)."
+    )
+    _FERNET_INSTANCE = Fernet(_get_fernet_key(secrets.token_urlsafe(32)))
 
 
 def encrypt_data(data: Union[str, Dict[str, Any], None]) -> Optional[str]:
