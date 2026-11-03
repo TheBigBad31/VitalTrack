@@ -16,6 +16,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -75,10 +76,50 @@ class HealthSyncWorker(
             val isCatchupRequested = inputData.getBoolean("is_catchup", false)
             val isCatchup = isFirstSync || isCatchupRequested
 
-            // Période d'interrogation : 7 jours pour un rattrapage / première synchro, 24 heures en routine
-            val syncDays = if (isCatchup) 7L else 1L
-            val startTime = now.minus(syncDays * 24L, ChronoUnit.HOURS)
+            // 1. Curseur adaptatif & backfill 30 jours (BALI-193)
+            val startTime: Instant
+            if (isCatchup) {
+                // Backfill 30 jours au premier lancement ou sur bouton "Synchroniser maintenant"
+                startTime = now.minus(30L * 24L, ChronoUnit.HOURS)
+            } else {
+                val lastSyncEpoch = prefs.getLong("last_successful_sync_epoch", 0L)
+                val min24h = now.minus(24L, ChronoUnit.HOURS)
+                val cap30d = now.minus(30L * 24L, ChronoUnit.HOURS)
+                if (lastSyncEpoch > 0) {
+                    val lastSyncInstant = Instant.ofEpochMilli(lastSyncEpoch)
+                    val candidate = if (lastSyncInstant.isBefore(min24h)) lastSyncInstant else min24h
+                    startTime = if (candidate.isBefore(cap30d)) cap30d else candidate
+                } else {
+                    startTime = min24h
+                }
+            }
             val timeRange = TimeRangeFilter.between(startTime, now)
+
+            // Rejeu de la file d'attente offline si présente
+            val offlineFile = File(applicationContext.filesDir, "pending_sync_queue.json")
+            if (offlineFile.exists()) {
+                try {
+                    val offlineContent = offlineFile.readText()
+                    if (offlineContent.isNotBlank()) {
+                        val offlineMedia = "application/json; charset=utf-8".toMediaType()
+                        val offlineBody = offlineContent.toRequestBody(offlineMedia)
+                        val offlineReq = Request.Builder()
+                            .url(webhookUrl)
+                            .addHeader("X-Webhook-Token", deviceToken)
+                            .addHeader("Content-Type", "application/json")
+                            .post(offlineBody)
+                            .build()
+                        httpClient.newCall(offlineReq).execute().use { offResp ->
+                            if (offResp.isSuccessful) {
+                                Log.i(TAG, "File offline rejouée avec succès")
+                                offlineFile.delete()
+                            }
+                        }
+                    }
+                } catch (oe: Exception) {
+                    Log.w(TAG, "Impossible de rejouer la file offline", oe)
+                }
+            }
 
             // Fenêtre spécifique d'aujourd'hui (depuis minuit) pour les pas et calories du jour
             val todayStart = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant()
@@ -168,9 +209,9 @@ class HealthSyncWorker(
                     }
                 }
                 val hrSamples = JSONArray()
-                if (allSamples.size > 500) {
+                if (allSamples.size > 2000) {
                     // Sous-échantillonnage régulier pour conserver la courbe sans surcharger le serveur
-                    val step = (allSamples.size + 499) / 500
+                    val step = (allSamples.size + 1999) / 2000
                     for (i in allSamples.indices step step) {
                         hrSamples.put(allSamples[i])
                     }
@@ -244,7 +285,7 @@ class HealthSyncWorker(
                 Log.w(TAG, "Impossible d'agréger les calories actives depuis Health Connect", e)
             }
 
-            // 5. Poids & Composition corporelle (Withings)
+            // 5. Poids & Composition corporelle (Withings / Health Connect)
             try {
                 val weightResp = healthConnectClient.readRecords(
                     ReadRecordsRequest(
@@ -252,12 +293,28 @@ class HealthSyncWorker(
                         timeRangeFilter = timeRange
                     )
                 )
-                weightResp.records.lastOrNull()?.let { lastWeight ->
-                    payload.put("weight_kg", lastWeight.weight.inKilograms)
-                    payload.put("weight_external_id", lastWeight.metadata.id)
-                    val weightDate = lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString()
-                    payload.put("weight_date", weightDate)
-                    // Si aucune date n'était définie ou pour compatibilité, mais sans écraser la date du jour du payload
+                val weightsArray = JSONArray()
+                for (rec in weightResp.records) {
+                    val wObj = JSONObject()
+                    wObj.put("weight_kg", rec.weight.inKilograms)
+                    wObj.put("external_id", rec.metadata.id)
+                    wObj.put("weight_external_id", rec.metadata.id)
+                    val weightDate = rec.time.atZone(ZoneId.systemDefault()).toLocalDate().toString()
+                    wObj.put("weight_date", weightDate)
+                    wObj.put("date", weightDate)
+                    wObj.put("measured_at", rec.time.toEpochMilli())
+                    wObj.put("source", "health_connect")
+                    weightsArray.put(wObj)
+                }
+                if (weightsArray.length() > 0) {
+                    payload.put("weights", weightsArray)
+                    weightResp.records.lastOrNull()?.let { lastWeight ->
+                        payload.put("weight_kg", lastWeight.weight.inKilograms)
+                        payload.put("weight_external_id", lastWeight.metadata.id)
+                        val weightDate = lastWeight.time.atZone(ZoneId.systemDefault()).toLocalDate().toString()
+                        payload.put("weight_date", weightDate)
+                        payload.put("measured_at", lastWeight.time.toEpochMilli())
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Impossible de lire le poids depuis Health Connect", e)
@@ -319,6 +376,7 @@ class HealthSyncWorker(
                 hrvResp.records.lastOrNull()?.let { lastHrv ->
                     payload.put("hrv_ms", lastHrv.heartRateVariabilityMillis)
                     payload.put("hrv_rmssd_ms", lastHrv.heartRateVariabilityMillis)
+                    payload.put("hrv_measured_at", lastHrv.time.toEpochMilli())
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Impossible de lire le HRV depuis Health Connect", e)
@@ -333,6 +391,7 @@ class HealthSyncWorker(
                 )
                 rhrResp.records.lastOrNull()?.let { lastRhr ->
                     payload.put("resting_hr_bpm", lastRhr.beatsPerMinute)
+                    payload.put("resting_hr_measured_at", lastRhr.time.toEpochMilli())
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Impossible de lire la FC de repos depuis Health Connect", e)
@@ -347,6 +406,7 @@ class HealthSyncWorker(
                 )
                 spo2Resp.records.lastOrNull()?.let { lastSpo2 ->
                     payload.put("spo2_pct", lastSpo2.percentage.value)
+                    payload.put("spo2_measured_at", lastSpo2.time.toEpochMilli())
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Impossible de lire la SpO2 depuis Health Connect", e)
@@ -461,12 +521,16 @@ class HealthSyncWorker(
                 if (response.isSuccessful) {
                     Log.i(TAG, "Ingestion VitalTrack réussie: ${response.code} - $respBody")
                     editor.putString("last_sync_timestamp", now.toString())
+                    editor.putLong("last_successful_sync_epoch", now.toEpochMilli())
                     editor.putInt("last_sync_metrics_count", metricsCount)
                     editor.remove("last_sync_error")
                     if (isFirstSync) {
                         editor.putBoolean("has_completed_first_sync", true)
                     }
                     editor.apply()
+                    if (offlineFile.exists()) {
+                        offlineFile.delete()
+                    }
                     val output = Data.Builder()
                         .putInt("metrics_count", metricsCount)
                         .putInt("http_code", response.code)
@@ -474,6 +538,11 @@ class HealthSyncWorker(
                     Result.success(output)
                 } else {
                     Log.e(TAG, "Erreur serveur VitalTrack HTTP: ${response.code} - $respBody")
+                    try {
+                        offlineFile.writeText(payload.toString())
+                    } catch (fe: Exception) {
+                        Log.w(TAG, "Impossible d'écrire dans la file offline", fe)
+                    }
                     editor.putString("last_sync_error", "HTTP ${response.code}: ${respBody.take(100)}")
                     editor.apply()
                     val output = Data.Builder()
@@ -485,6 +554,10 @@ class HealthSyncWorker(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Erreur synchronisation Health Connect", e)
+            try {
+                val offlineFile = File(applicationContext.filesDir, "pending_sync_queue.json")
+                offlineFile.writeText(JSONObject().put("source", "health_connect").put("error", e.message).toString())
+            } catch (_: Exception) {}
             val prefs = applicationContext.getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
             prefs.edit()
                 .putString("last_sync_attempt", Instant.now().toString())

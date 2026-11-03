@@ -127,6 +127,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(buildModernUi())
         checkCurrentPermissions()
         refreshSyncHistory()
+
+        val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("auto_sync_enabled", true)) {
+            scheduleSyncWorker()
+        }
     }
 
     override fun onResume() {
