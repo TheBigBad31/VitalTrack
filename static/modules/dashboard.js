@@ -22,6 +22,7 @@
     const TAB_VIEW_IDS = ['summary', 'weight', 'nutrition', 'activity', 'goals', 'devices'];
 
     let currentEstimatedMeal = null;
+    let currentEstimatedMealRaw = null;
     let currentUploadedPhotoUrl = null;
 
     // Constantes de configuration servees par le backend (/api-config).
@@ -1961,129 +1962,213 @@
     window.loadDataMapView = loadDataMapView;
 
 
-        function openMealModal(mealType) {
-      if (mealType) {
-        const sel = document.getElementById('meal-type-select');
-        if (sel) sel.value = mealType;
-      }
-      const dateInp = document.getElementById('meal-date-input');
-      if (dateInp && !dateInp.value) {
-        const activeDate = (typeof window.getActiveMealDate === 'function')
-          ? window.getActiveMealDate()
-          : new Date().toISOString().split('T')[0];
-        dateInp.value = activeDate;
-      }
-      document.getElementById('modal-meal').classList.remove('hidden');
-    }
-    function closeMealModal() {
-      document.getElementById('modal-meal').classList.add('hidden');
+        function openMealModal(mealType) {
+      // Reset état photo/estimation à l'ouverture de la modale
+      currentUploadedPhotoUrl = null;
+      currentEstimatedMeal = null;
+      currentEstimatedMealRaw = null;
+      const previewContainer = document.getElementById('meal-photo-preview-container');
+      const dropzone = document.getElementById('meal-photo-dropzone');
+      const fileInput = document.getElementById('meal-file-input');
+      if (previewContainer) previewContainer.classList.add('hidden');
+      if (dropzone) dropzone.classList.remove('hidden');
+      if (fileInput) fileInput.value = '';
+      document.getElementById('meal-estimation-result').classList.add('hidden');
+      document.getElementById('meal-loading-skeleton').classList.add('hidden');
+
+      if (mealType) {
+        const sel = document.getElementById('meal-type-select');
+        if (sel) sel.value = mealType;
+      }
+      const dateInp = document.getElementById('meal-date-input');
+      if (dateInp && !dateInp.value) {
+        const activeDate = (typeof window.getActiveMealDate === 'function')
+          ? window.getActiveMealDate()
+          : new Date().toISOString().split('T')[0];
+        dateInp.value = activeDate;
+      }
+      document.getElementById('modal-meal').classList.remove('hidden');
+    }
+    function closeMealModal() {
+      document.getElementById('modal-meal').classList.add('hidden');
+      // Nettoyer l'état à la fermeture
+      currentUploadedPhotoUrl = null;
+      currentEstimatedMeal = null;
+      currentEstimatedMealRaw = null;
+      const previewContainer = document.getElementById('meal-photo-preview-container');
+      const dropzone = document.getElementById('meal-photo-dropzone');
+      const fileInput = document.getElementById('meal-file-input');
+      if (previewContainer) previewContainer.classList.add('hidden');
+      if (dropzone) dropzone.classList.remove('hidden');
+      if (fileInput) fileInput.value = '';
+      document.getElementById('meal-estimation-result').classList.add('hidden');
+      document.getElementById('meal-loading-skeleton').classList.add('hidden');
     }
 
     function handleMealPhotoSelected(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        currentUploadedPhotoUrl = e.target.result;
-        const preview = document.getElementById('meal-photo-preview');
-        const placeholder = document.getElementById('meal-photo-placeholder');
-        preview.src = currentUploadedPhotoUrl;
-        preview.classList.remove('hidden');
-        placeholder.classList.add('hidden');
-      };
-      reader.readAsDataURL(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        currentUploadedPhotoUrl = e.target.result;
+        const preview = document.getElementById('meal-photo-preview');
+        const previewContainer = document.getElementById('meal-photo-preview-container');
+        const dropzone = document.getElementById('meal-photo-dropzone');
+        preview.src = currentUploadedPhotoUrl;
+        previewContainer.classList.remove('hidden');
+        dropzone.classList.add('hidden');
+        document.getElementById('meal-estimation-result').classList.add('hidden');
+        document.getElementById('meal-loading-skeleton').classList.add('hidden');
+        currentEstimatedMeal = null;
+        currentEstimatedMealRaw = null;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function resetMealPhoto() {
+      currentUploadedPhotoUrl = null;
+      currentEstimatedMeal = null;
+      currentEstimatedMealRaw = null;
+      const previewContainer = document.getElementById('meal-photo-preview-container');
+      const dropzone = document.getElementById('meal-photo-dropzone');
+      const fileInput = document.getElementById('meal-file-input');
+      previewContainer.classList.add('hidden');
+      dropzone.classList.remove('hidden');
+      if (fileInput) fileInput.value = '';
+      document.getElementById('meal-estimation-result').classList.add('hidden');
+      document.getElementById('meal-loading-skeleton').classList.add('hidden');
     }
 
-    async function triggerMealEstimation() {
-      const btn = document.getElementById('btn-estimate-meal');
-      btn.disabled = true;
-      btn.innerHTML = `<span class="animate-spin mr-2">⏳</span> Analyse IA en cours...`;
-
-      const desc = document.getElementById('meal-desc-input').value;
-      const mealType = document.getElementById('meal-type-select').value;
-      const scale = parseFloat(document.getElementById('portion-scale-range').value);
-
-      try {
-        const res = await apiFetch('/api/meals/estimate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            photo_data_url: currentUploadedPhotoUrl,
-            description: desc,
-            meal_type: mealType,
-            portion_scale: scale
-          })
-        });
-
-        if (res.ok) {
-          currentEstimatedMeal = await res.json();
-        } else {
-          // Fallback local estimation
-          currentEstimatedMeal = {
-            items: [
-              { name: "Blanc de poulet", portion_g: 150 * scale, calories_kcal: 180 * scale, protein_g: 39 * scale, carbs_g: 0, fat_g: 2.7 * scale },
-              { name: "Riz basmati", portion_g: 180 * scale, calories_kcal: 234 * scale, protein_g: 4.8 * scale, carbs_g: 50.4 * scale, fat_g: 0.5 * scale },
-              { name: "Brocolis", portion_g: 150 * scale, calories_kcal: 52 * scale, protein_g: 4.2 * scale, carbs_g: 10.5 * scale, fat_g: 0.6 * scale }
-            ],
-            total_calories_kcal: Math.round(466 * scale),
-            total_protein_g: Math.round(48 * scale),
-            total_carbs_g: Math.round(61 * scale),
-            total_fat_g: Math.round(3.8 * scale)
-          };
-        }
-      } catch (err) {
-        currentEstimatedMeal = {
-          items: [
-            { name: "Assiette équilibrée", portion_g: 450 * scale, calories_kcal: 550 * scale, protein_g: 35 * scale, carbs_g: 65 * scale, fat_g: 14 * scale }
-          ],
-          total_calories_kcal: Math.round(550 * scale),
-          total_protein_g: Math.round(35 * scale),
-          total_carbs_g: Math.round(65 * scale),
-          total_fat_g: Math.round(14 * scale)
-        };
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="sparkles" class="w-4 h-4 mr-1"></i> Ré-estimer les Calories & Macros`;
-        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-        renderEstimationResult();
-      }
+    async function triggerMealEstimation() {
+      const btn = document.getElementById('btn-estimate-meal');
+      btn.disabled = true;
+      document.getElementById('btn-estimate-text').textContent = 'Analyse IA en cours...';
+      document.getElementById('meal-estimation-result').classList.add('hidden');
+      document.getElementById('meal-loading-skeleton').classList.remove('hidden');
+
+      const desc = document.getElementById('meal-desc-input').value;
+      const mealType = document.getElementById('meal-type-select').value;
+
+      try {
+        const res = await apiFetch('/api/meals/estimate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            photo_data_url: currentUploadedPhotoUrl,
+            description: desc,
+            meal_type: mealType,
+            portion_scale: 1.0
+          })
+        });
+
+        if (res.ok) {
+          currentEstimatedMeal = await res.json();
+          currentEstimatedMealRaw = JSON.parse(JSON.stringify(currentEstimatedMeal));
+          document.getElementById('estimation-badge-text').textContent = 'Estimation IA';
+          document.getElementById('estimation-badge').className = 'flex items-center space-x-2 px-2 py-1 rounded-lg text-xs font-semibold';
+          document.getElementById('estimation-badge').querySelector('i').className = 'w-3 h-3 text-brand-400';
+          document.getElementById('estimation-badge-text').className = 'text-brand-400';
+        } else {
+          // Fallback local estimation — badge explicite, jamais silencieux
+          currentEstimatedMeal = {
+            items: [
+              { name: "Blanc de poulet", portion_g: 150, calories_kcal: 180, protein_g: 39, carbs_g: 0, fat_g: 2.7 },
+              { name: "Riz basmati", portion_g: 180, calories_kcal: 234, protein_g: 4.8, carbs_g: 50.4, fat_g: 0.5 },
+              { name: "Brocolis", portion_g: 150, calories_kcal: 52, protein_g: 4.2, carbs_g: 10.5, fat_g: 0.6 }
+            ],
+            total_calories_kcal: 466,
+            total_protein_g: 48,
+            total_carbs_g: 61,
+            total_fat_g: 3.8,
+            _isFallback: true
+          };
+          currentEstimatedMealRaw = JSON.parse(JSON.stringify(currentEstimatedMeal));
+          document.getElementById('estimation-badge-text').textContent = 'Estimation hors-ligne (démo)';
+          document.getElementById('estimation-badge').className = 'flex items-center space-x-2 px-2 py-1 rounded-lg text-xs font-semibold bg-amber-900/20 border border-amber-500/30';
+          document.getElementById('estimation-badge').querySelector('i').className = 'w-3 h-3 text-amber-400';
+          document.getElementById('estimation-badge-text').className = 'text-amber-400';
+        }
+      } catch (err) {
+        currentEstimatedMeal = {
+          items: [
+            { name: "Assiette équilibrée", portion_g: 450, calories_kcal: 550, protein_g: 35, carbs_g: 65, fat_g: 14 }
+          ],
+          total_calories_kcal: 550,
+          total_protein_g: 35,
+          total_carbs_g: 65,
+          total_fat_g: 14,
+          _isFallback: true
+        };
+        currentEstimatedMealRaw = JSON.parse(JSON.stringify(currentEstimatedMeal));
+        document.getElementById('estimation-badge-text').textContent = 'Estimation hors-ligne (démo)';
+        document.getElementById('estimation-badge').className = 'flex items-center space-x-2 px-2 py-1 rounded-lg text-xs font-semibold bg-amber-900/20 border border-amber-500/30';
+        document.getElementById('estimation-badge').querySelector('i').className = 'w-3 h-3 text-amber-400';
+        document.getElementById('estimation-badge-text').className = 'text-amber-400';
+      } finally {
+        btn.disabled = false;
+        document.getElementById('btn-estimate-text').textContent = 'Ré-estimer les Calories & Macros';
+        document.getElementById('meal-loading-skeleton').classList.add('hidden');
+        document.getElementById('meal-estimation-result').classList.remove('hidden');
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
+        renderEstimationResult();
+      }
     }
 
-    function updatePortionScale(val) {
-      const scale = parseFloat(val);
-      const label = scale === 1.0 ? "1.0x (Normale)" : (scale < 1.0 ? `${scale}x (Petite)` : `${scale}x (Grande/Double)`);
-      document.getElementById('portion-scale-val').innerText = label;
-
-      if (currentEstimatedMeal && currentEstimatedMeal.items) {
-        // Recalcul proportionnel immédiat dans l'interface
-        triggerMealEstimation();
-      }
+    function updatePortionScale(val) {
+      const scale = parseFloat(val);
+      const label = scale === 1.0 ? "1.0x (Normale)" : (scale < 1.0 ? `${scale}x (Petite)` : `${scale}x (Grande/Double)`);
+      document.getElementById('portion-scale-val').innerText = label;
+
+      if (currentEstimatedMeal && currentEstimatedMeal.items && currentEstimatedMealRaw) {
+        // Recalcul LOCAL des macros/kcal à partir du résultat IA brut (multiplicateur 0.5–2.0)
+        // Zéro appel API au mouvement du curseur
+        const items = currentEstimatedMealRaw.items.map(item => ({
+          ...item,
+          portion_g: item.portion_g * scale,
+          calories_kcal: item.calories_kcal * scale,
+          protein_g: item.protein_g * scale,
+          carbs_g: item.carbs_g * scale,
+          fat_g: item.fat_g * scale
+        }));
+        currentEstimatedMeal = {
+          ...currentEstimatedMealRaw,
+          items: items,
+          total_calories_kcal: currentEstimatedMealRaw.total_calories_kcal * scale,
+          total_protein_g: currentEstimatedMealRaw.total_protein_g * scale,
+          total_carbs_g: currentEstimatedMealRaw.total_carbs_g * scale,
+          total_fat_g: currentEstimatedMealRaw.total_fat_g * scale
+        };
+        renderEstimationResult();
+      }
     }
 
-    function renderEstimationResult() {
-      if (!currentEstimatedMeal) return;
-      document.getElementById('meal-estimation-result').classList.remove('hidden');
-
-      document.getElementById('est-calories').innerText = `${Math.round(currentEstimatedMeal.total_calories_kcal || 0)} kcal`;
-      document.getElementById('est-protein').innerText = `${Math.round(currentEstimatedMeal.total_protein_g || 0)}g`;
-      document.getElementById('est-carbs').innerText = `${Math.round(currentEstimatedMeal.total_carbs_g || 0)}g`;
-      document.getElementById('est-fat').innerText = `${Math.round(currentEstimatedMeal.total_fat_g || 0)}g`;
-
-      const listEl = document.getElementById('est-items-list');
-      listEl.innerHTML = (currentEstimatedMeal.items || []).map(item => `
-        <div class="flex items-center justify-between p-2 rounded-lg bg-[#151D2A] border border-[#1F2A3C]">
-          <div>
-            <span class="font-bold text-white text-xs">${escapeHtml(item.name || '')}</span>
-            <span class="text-[10px] text-slate-400 block">${Math.round(item.portion_g)}g • ${Math.round(item.calories_kcal)} kcal</span>
-          </div>
-          <div class="text-[10px] text-slate-300">
-            P: <b class="text-brand-400">${Math.round(item.protein_g)}g</b> | 
-            G: <b class="text-sky-400">${Math.round(item.carbs_g)}g</b> | 
-            L: <b class="text-amber-400">${Math.round(item.fat_g)}g</b>
-          </div>
-        </div>
-      `).join('');
+    function renderEstimationResult() {
+      if (!currentEstimatedMeal) return;
+      document.getElementById('meal-estimation-result').classList.remove('hidden');
+
+      document.getElementById('est-calories').innerText = `${Math.round(currentEstimatedMeal.total_calories_kcal || 0)} kcal`;
+      document.getElementById('est-protein').innerText = `${Math.round(currentEstimatedMeal.total_protein_g || 0)}g`;
+      document.getElementById('est-carbs').innerText = `${Math.round(currentEstimatedMeal.total_carbs_g || 0)}g`;
+      document.getElementById('est-fat').innerText = `${Math.round(currentEstimatedMeal.total_fat_g || 0)}g`;
+
+      const listEl = document.getElementById('est-items-list');
+      listEl.innerHTML = (currentEstimatedMeal.items || []).map(item => `
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[#1E1E38] border border-[#1F2A3C]">
+          <div class="flex-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-white text-sm">${escapeHtml(item.name || '')}</span>
+              <span class="px-2 py-0.5 rounded bg-[#0B0F17] border border-[#25254A] text-[10px] text-slate-300 font-medium">${Math.round(item.portion_g)}g</span>
+            </div>
+            <div class="text-[10px] text-slate-400">${Math.round(item.calories_kcal)} kcal</div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 text-[10px] font-bold border border-brand-500/20">P ${Math.round(item.protein_g)}g</span>
+            <span class="px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 text-[10px] font-bold border border-sky-500/20">G ${Math.round(item.carbs_g)}g</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-bold border border-amber-500/20">L ${Math.round(item.fat_g)}g</span>
+          </div>
+        </div>
+      `).join('');
     }
 
     async function saveMealToJournal() {
@@ -2103,23 +2188,28 @@
         items: currentEstimatedMeal ? currentEstimatedMeal.items : []
       };
 
-      try {
-        await apiFetch('/api/meals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (err) {
-        console.warn("Save fallback");
-      }
-
-      btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="check" class="w-4 h-4 mr-1"></i> Enregistré !`;
-      setTimeout(() => {
-        closeMealModal();
-        loadDashboardData();
-        switchTab('nutrition');
-      }, 500);
+      try {
+        const res = await apiFetch('/api/meals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          throw new Error(`Erreur serveur (${res.status})`);
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="check" class="w-4 h-4 mr-1"></i> Enregistré !`;
+        if (typeof showToast === 'function') showToast("Repas enregistré dans votre journal !", 'success');
+        setTimeout(() => {
+          closeMealModal();
+          loadDashboardData();
+          switchTab('nutrition');
+        }, 500);
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 mr-1"></i> Erreur`;
+        if (typeof showToast === 'function') showToast("Échec de l'enregistrement : " + err.message, 'error');
+      }
     }
 
     // =====================================================================
