@@ -39,7 +39,7 @@ def upgrade() -> None:
         op.create_unique_constraint('uq_activities_user_date_source', 'activities', ['user_id', 'date', 'source'])
     else:
         # SQLite: recréer les tables (approche plus sûre)
-        # weights
+        # weights - explicit column list to match old table column order (created_at was before external_id, measured_at, idempotency_key)
         op.execute("""
             CREATE TABLE weights_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,16 +56,19 @@ def upgrade() -> None:
                 external_id TEXT,
                 measured_at TEXT,
                 idempotency_key TEXT,
-                created_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00',
                 UNIQUE(user_id, date, source)
             )
         """)
-        op.execute("INSERT INTO weights_new SELECT * FROM weights")
+        op.execute("""
+            INSERT INTO weights_new (id, user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at, external_id, measured_at, idempotency_key)
+            SELECT id, user_id, date, weight_kg, body_fat_pct, muscle_mass_kg, water_pct, bmi, trend_7d_kg, source, notes, created_at, external_id, measured_at, idempotency_key FROM weights
+        """)
         op.drop_table('weights')
         op.rename_table('weights_new', 'weights')
         op.create_index('idx_weights_user_date', 'weights', ['user_id', 'date'])
         
-        # activities
+        # activities - explicit column list to match old table column order (created_at was before external_id, idempotency_key)
         op.execute("""
             CREATE TABLE activities_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,11 +86,14 @@ def upgrade() -> None:
                 source TEXT NOT NULL,
                 external_id TEXT,
                 idempotency_key TEXT,
-                created_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00',
                 UNIQUE(user_id, date, source)
             )
         """)
-        op.execute("INSERT INTO activities_new SELECT * FROM activities")
+        op.execute("""
+            INSERT INTO activities_new (id, user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at, external_id, idempotency_key)
+            SELECT id, user_id, date, steps, active_calories_kcal, bmr_kcal, total_burned_kcal, workout_minutes, workout_type, resting_hr_bpm, hrv_ms, sleep_score, source, created_at, external_id, idempotency_key FROM activities
+        """)
         op.drop_table('activities')
         op.rename_table('activities_new', 'activities')
         op.create_index('idx_activities_user_date', 'activities', ['user_id', 'date'])
@@ -122,7 +128,7 @@ def downgrade() -> None:
                 external_id TEXT,
                 measured_at TEXT,
                 idempotency_key TEXT,
-                created_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00',
                 UNIQUE(user_id, date)
             )
         """)
@@ -150,7 +156,7 @@ def downgrade() -> None:
                 source TEXT NOT NULL,
                 external_id TEXT,
                 idempotency_key TEXT,
-                created_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00',
                 UNIQUE(user_id, date)
             )
         """)
