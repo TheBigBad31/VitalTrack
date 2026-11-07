@@ -1,3 +1,1 @@
-"""Package des routeurs modulaires de VitalTrack."""
-
-
+# Package routers pour VitalTrack
