@@ -81,6 +81,7 @@ from src.rate_limit import (
     rate_limit_photo_analysis,
     rate_limit_register,
 )
+from src.versioning import APIVersioningMiddleware
 
 
 # Initialisation de FastAPI
@@ -124,6 +125,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(APIVersioningMiddleware)
 
 
 @app.middleware("http")
@@ -365,6 +367,7 @@ from src.routers.devices import router as devices_router
 from src.routers.auth import router as auth_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.friends import router as friends_router
+from src.routers.v2 import router as v2_router
 
 
 # =====================================================================
@@ -411,6 +414,8 @@ class UserProfileInput(BaseModel):
 @app.post("/api/health")
 @app.get("/api/health/")
 @app.post("/api/health/")
+@app.get("/api/v1/health")
+@app.post("/api/v1/health")
 def health_check():
     """Vérification de l'état du backend, de la base de données et des connecteurs IoT."""
     db_status = "ok"
@@ -487,6 +492,7 @@ def invalidate_dashboard_cache(user_id: Optional[int] = None):
                 DASHBOARD_CACHE.pop(k, None)
 
 @app.get("/api/dashboard")
+@app.get("/api/v1/dashboard")
 async def get_dashboard_data(
     include_simulation: bool = Query(False, description="Inclure ou exclure les données de simulation"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
@@ -631,6 +637,7 @@ async def get_dashboard_data(
 # =====================================================================
 
 @app.get("/api/profile")
+@app.get("/api/v1/profile")
 def get_user_profile(
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(get_current_user),
@@ -664,6 +671,8 @@ def get_user_profile(
 
 @app.post("/api/profile")
 @app.put("/api/profile")
+@app.post("/api/v1/profile")
+@app.put("/api/v1/profile")
 def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(get_current_user)):
     """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
     updated = db.update_user_profile(profile_in.model_dump(), user_id=current_user.id)
@@ -686,6 +695,8 @@ class BackupRestoreInput(BaseModel):
 
 @app.get("/api/backup/export")
 @app.get("/api/export/json")
+@app.get("/api/v1/backup/export")
+@app.get("/api/v1/export/json")
 def export_backup(current_user: AuthUser = Depends(get_current_user)):
     """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique en JSON (RGPD)."""
     backup_data = db.export_full_backup(user_id=current_user.id)
@@ -693,6 +704,7 @@ def export_backup(current_user: AuthUser = Depends(get_current_user)):
 
 
 @app.get("/api/export/csv")
+@app.get("/api/v1/export/csv")
 def export_data_csv(
     limit: Optional[int] = Query(None, description="Limite optionnelle pour pagination ou export complet"),
     current_user: AuthUser = Depends(get_current_user),
@@ -757,6 +769,7 @@ class ConfirmDeletionPayload(BaseModel):
 
 
 @app.delete("/api/user/data")
+@app.delete("/api/v1/user/data")
 def delete_user_data_only_endpoint(
     confirm: bool = Query(True, description="Confirmation de purge des données"),
     payload: Optional[ConfirmDeletionPayload] = None,
@@ -776,6 +789,7 @@ def delete_user_data_only_endpoint(
 
 
 @app.delete("/api/user/account")
+@app.delete("/api/v1/user/account")
 def delete_user_account_endpoint(
     confirm: bool = Query(True, description="Confirmation de suppression du compte"),
     payload: Optional[ConfirmDeletionPayload] = None,
@@ -795,6 +809,7 @@ def delete_user_account_endpoint(
 
 
 @app.get("/api/user/consents")
+@app.get("/api/v1/user/consents")
 def get_user_consents_endpoint(current_user: AuthUser = Depends(get_current_user)):
     """Retourne les préférences de consentement RGPD par catégorie pour l'utilisateur."""
     consents = db.get_user_consents(user_id=current_user.id)
@@ -810,6 +825,7 @@ class ConsentUpdatePayload(BaseModel):
 
 
 @app.post("/api/user/consents")
+@app.post("/api/v1/user/consents")
 def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: AuthUser = Depends(get_current_user)):
     """Met à jour le consentement pour une catégorie spécifique."""
     allowed_categories = {"biometrics", "nutrition", "analytics", "devices"}
@@ -823,6 +839,7 @@ def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: Au
 
 
 @app.post("/api/backup/import")
+@app.post("/api/v1/backup/import")
 def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(get_current_user)):
     """Restaure ou synchronise les données depuis un export JSON ou le localStorage/IndexedDB."""
     result = db.import_full_backup(payload.data, overwrite=payload.overwrite, user_id=current_user.id)
@@ -831,6 +848,7 @@ def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(
 
 
 @app.post("/api/profile/reset-demo")
+@app.post("/api/v1/profile/reset-demo")
 def reset_demo(current_user: AuthUser = Depends(get_current_user)):
     """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
     db.update_user_profile({"is_demo_profile": 1}, user_id=current_user.id)
@@ -843,6 +861,7 @@ def reset_demo(current_user: AuthUser = Depends(get_current_user)):
 
 
 @app.post("/api/profile/clear-history")
+@app.post("/api/v1/profile/clear-history")
 def clear_history(current_user: AuthUser = Depends(get_current_user)):
     """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
     db.clear_all_history(keep_profile=True, user_id=current_user.id)
@@ -855,9 +874,12 @@ def clear_history(current_user: AuthUser = Depends(get_current_user)):
 
 
 # =====================================================================
-# Inclusion des routeurs modulaires (BALI-105)
+# Inclusion des routeurs modulaires (BALI-105 & BALI-221)
 # =====================================================================
 
+from src.routers.v1 import create_v1_router
+
+# Routeurs legacy / unversioned (/api/...)
 app.include_router(weights_router)
 app.include_router(activities_router)
 app.include_router(meals_router)
@@ -866,6 +888,84 @@ app.include_router(devices_router)
 app.include_router(auth_router)
 app.include_router(webhooks_router)
 app.include_router(friends_router)
+
+# Routeurs versionnés v1 (/api/v1/...) via router factory
+app.include_router(create_v1_router(weights_router))
+app.include_router(create_v1_router(activities_router))
+app.include_router(create_v1_router(meals_router))
+app.include_router(create_v1_router(metrics_router))
+app.include_router(create_v1_router(devices_router))
+app.include_router(create_v1_router(auth_router))
+app.include_router(create_v1_router(webhooks_router))
+app.include_router(create_v1_router(friends_router))
+
+# Routeurs versionnés v2 (/api/v2/...)
+app.include_router(v2_router)
+
+
+# =====================================================================
+# Documentation OpenAPI Spécifique par Version (v1 et v2)
+# =====================================================================
+
+from fastapi.openapi.docs import get_swagger_ui_html
+
+
+@app.get("/api/v1/openapi.json", include_in_schema=False)
+def get_v1_openapi():
+    """Génère la spécification OpenAPI dédiée pour l'API v1."""
+    full_schema = app.openapi()
+    v1_paths = {
+        path: item for path, item in full_schema.get("paths", {}).items()
+        if path.startswith("/api/v1") or (path.startswith("/api") and not path.startswith("/api/v2"))
+    }
+    return {
+        "openapi": full_schema.get("openapi", "3.1.0"),
+        "info": {
+            "title": "VitalTrack API v1 (Legacy & LTS)",
+            "version": "1.1.0",
+            "description": "Spécification OpenAPI officielle pour l'API VitalTrack v1. Support garanti jusqu'au 31/12/2026.",
+        },
+        "paths": v1_paths,
+        "components": full_schema.get("components", {}),
+    }
+
+
+@app.get("/api/v1/docs", include_in_schema=False)
+def get_v1_docs():
+    """Interface Swagger UI dédiée à l'API v1."""
+    return get_swagger_ui_html(
+        openapi_url="/api/v1/openapi.json",
+        title="VitalTrack API v1 - Swagger UI",
+    )
+
+
+@app.get("/api/v2/openapi.json", include_in_schema=False)
+def get_v2_openapi():
+    """Génère la spécification OpenAPI dédiée pour l'API v2."""
+    full_schema = app.openapi()
+    v2_paths = {
+        path: item for path, item in full_schema.get("paths", {}).items()
+        if path.startswith("/api/v2")
+    }
+    return {
+        "openapi": full_schema.get("openapi", "3.1.0"),
+        "info": {
+            "title": "VitalTrack API v2 (Next-Gen)",
+            "version": "2.0.0",
+            "description": "Spécification OpenAPI officielle pour l'API VitalTrack v2. Réponses standardisées et contrats renforcés.",
+        },
+        "paths": v2_paths,
+        "components": full_schema.get("components", {}),
+    }
+
+
+@app.get("/api/v2/docs", include_in_schema=False)
+def get_v2_docs():
+    """Interface Swagger UI dédiée à l'API v2."""
+    return get_swagger_ui_html(
+        openapi_url="/api/v2/openapi.json",
+        title="VitalTrack API v2 - Swagger UI",
+    )
 
 
 # =====================================================================
@@ -931,6 +1031,7 @@ DEFAULT_GOALS_PRESETS = {
 
 
 @app.get("/api/goals/presets")
+@app.get("/api/v1/goals/presets")
 def get_goals_presets():
     """Retourne la configuration des profils métaboliques prédéfinis 1-clic."""
     if os.path.isfile(GOALS_CONFIG_FILE):
@@ -945,6 +1046,7 @@ def get_goals_presets():
 
 
 @app.get("/api/config")
+@app.get("/api/v1/config")
 def get_config():
     """Expose les constantes de configuration (source de verite backend) pour le client.
 
@@ -970,6 +1072,7 @@ GITHUB_LATEST_RELEASE_APK_URL = "https://github.com/TheBigBad31/VitalTrack/relea
 
 
 @app.get("/api/downloads/android-bridge")
+@app.get("/api/v1/downloads/android-bridge")
 def download_android_bridge():
     """Téléchargement direct de l'APK VitalTrack Android Health Bridge.
 
