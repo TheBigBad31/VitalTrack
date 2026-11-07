@@ -199,24 +199,37 @@ class Database:
     directement (`db.weights`, `db.meals`, etc.) ou via les méthodes de façade de `db.*`.
     """
 
-    def __new__(cls, *args, **kwargs):
-        instance = super().__new__(cls)
-        instance.weights = WeightsRepository(instance)
-        instance.meals = MealsRepository(instance)
-        instance.devices = DevicesRepository(instance)
-        instance.users = UsersRepository(instance)
-        instance.metrics = MetricsRepository(instance)
-        return instance
-
     def __init__(
         self,
         db_path: Optional[str] = None,
         database_url: Optional[str] = None,
-        auto_migrate: bool = True
+        auto_migrate: bool = True,
+        weights_repo: Optional[WeightsRepository] = None,
+        meals_repo: Optional[MealsRepository] = None,
+        devices_repo: Optional[DevicesRepository] = None,
+        users_repo: Optional[UsersRepository] = None,
+        metrics_repo: Optional[MetricsRepository] = None,
+        container: Optional[Any] = None,
     ):
         self.database_url = database_url or get_database_url()
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
+
+        # Composition explicite & Container DI
+        if container is not None:
+            self._container = container
+            self.weights = weights_repo or container.weights
+            self.meals = meals_repo or container.meals
+            self.devices = devices_repo or container.devices
+            self.users = users_repo or container.users
+            self.metrics = metrics_repo or container.metrics
+        else:
+            self.weights = weights_repo or WeightsRepository(self)
+            self.meals = meals_repo or MealsRepository(self)
+            self.devices = devices_repo or DevicesRepository(self)
+            self.users = users_repo or UsersRepository(self)
+            self.metrics = metrics_repo or MetricsRepository(self)
+            self._container = None
 
         if auto_migrate:
             try:
@@ -225,6 +238,20 @@ class Database:
                 raise
             except Exception as mig_err:
                 print(f"[VitalTrack DB Warning] Migrations ignorées au démarrage: {mig_err}")
+
+    @property
+    def container(self):
+        """Fournit le conteneur DI associé à cette base (initialisé à la demande si non fourni)."""
+        if self._container is None:
+            from src.container import Container
+            self._container = Container(self)
+            # Aligner les repositories
+            self._container.weights = self.weights
+            self._container.meals = self.meals
+            self._container.devices = self.devices
+            self._container.users = self.users
+            self._container.metrics = self.metrics
+        return self._container
 
     def _get_pool(self) -> Optional[Any]:
         """Initialise ou réutilise le pool de connexions psycopg_pool pour Neon Serverless."""

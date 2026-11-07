@@ -703,11 +703,12 @@ def test_production_neon_failure_returns_503(monkeypatch):
     # Simuler l'échec de psycopg.connect
     with patch("psycopg.connect", side_effect=Exception("could not connect to server: Connection refused")):
         # Création d'une instance Database en environnement Neon défaillant
-        # Sans exécuter _init_db pour tester directement get_connection
-        broken_db = Database.__new__(Database)
-        broken_db.database_url = "postgresql://user:pass@ep-fake-123.eu-central-1.aws.neon.tech/neondb?sslmode=require"
-        broken_db.is_postgres = True
-        broken_db.db_path = "/tmp/vitaltrack.db"
+        # Sans exécuter run_migrations pour tester directement get_connection
+        broken_db = Database(
+            database_url="postgresql://user:pass@ep-fake-123.eu-central-1.aws.neon.tech/neondb?sslmode=require",
+            db_path="/tmp/vitaltrack.db",
+            auto_migrate=False
+        )
 
         # Vérifier que get_connection lève bien DatabaseServiceUnavailableError
         with pytest.raises(DatabaseServiceUnavailableError) as exc_info:
