@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
-from src.models import WeightEntry
+from src.models import WeightEntry, WeightSource
 from src.routers.friends import verify_view_access
 
 
@@ -32,7 +32,7 @@ class WeightInput(BaseModel):
     water_pct: Optional[float] = Field(None, ge=30.0, le=80.0, description="% eau")
     bmi: Optional[float] = Field(None, ge=10.0, le=70.0, description="IMC")
     notes: Optional[str] = None
-    source: Literal["manual", "withings", "garmin", "apple_health", "health_connect", "demo", "simulation"] = "manual"
+    source: WeightSource = "manual"
 
 
 def get_db() -> Database:

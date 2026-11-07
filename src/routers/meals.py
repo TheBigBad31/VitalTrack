@@ -46,6 +46,7 @@ from src.auth import AuthUser
 from src.db import Database
 from src.models import (
     CatalogItem,
+    CatalogItemType,
     FoodItem,
     MealEntry,
     MealLog,
@@ -153,7 +154,7 @@ class NutritionEvaluateRequest(BaseModel):
 
 class CatalogItemCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
-    item_type: Literal["food", "dish"] = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
+    item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
     default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
     default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
     calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")
@@ -169,7 +170,7 @@ class CatalogItemCreateRequest(BaseModel):
 
 class CatalogItemUpdateRequest(BaseModel):
     name: Optional[str] = None
-    item_type: Optional[Literal["food", "dish"]] = None
+    item_type: Optional[CatalogItemType] = None
     default_unit: Optional[str] = None
     default_quantity: Optional[float] = None
     calories_per_unit: Optional[float] = None

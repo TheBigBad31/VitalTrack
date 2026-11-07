@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
-from src.models import ActivityEntry
+from src.models import ActivityEntry, ActivitySource
 
 
 router = APIRouter(tags=["activities"])
@@ -30,7 +30,7 @@ class ActivityInput(BaseModel):
     resting_hr_bpm: Optional[int] = Field(None, ge=30, le=220, description="Fréquence cardiaque au repos")
     hrv_ms: Optional[float] = Field(None, ge=0.0, description="Variabilité cardiaque (HRV en ms)")
     sleep_score: Optional[int] = Field(None, ge=0, le=100, description="Score de sommeil")
-    source: Literal["oura", "health_connect", "apple_health", "strava", "demo", "simulation"] = "health_connect"
+    source: ActivitySource = "health_connect"
 
 
 def get_db() -> Database:
