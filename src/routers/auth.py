@@ -12,10 +12,9 @@ Endpoints :
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import (
     AuthUser,
     GoogleAuthPayload,
@@ -31,15 +30,41 @@ from src.auth import (
     verify_password
 )
 from src.db import Database
+from src.dependencies import get_db
 from src.rate_limit import rate_limit_login, rate_limit_register
 
 
 router = APIRouter(tags=["auth"])
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token")
+) -> AuthUser:
+    """Résout l'utilisateur courant via src.app.get_current_user de manière dynamique."""
+    import sys
+    app_module = sys.modules.get("src.app")
+    if app_module and hasattr(app_module, "get_current_user"):
+        return app_module.get_current_user(authorization=authorization, x_webhook_token=x_webhook_token)
+
+    # Résolution directe en fallback
+    db = get_db()
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1].strip()
+        payload = decode_access_token(token)
+        if payload and "user_id" in payload:
+            user_data = db.get_user_by_id(int(payload["user_id"]))
+            if user_data:
+                return AuthUser(
+                    id=user_data["id"],
+                    uuid=user_data["uuid"],
+                    email=user_data["email"],
+                    name=user_data.get("name"),
+                    picture=user_data.get("picture"),
+                    auth_provider=user_data.get("auth_provider", "google"),
+                    google_sub=user_data.get("google_sub"),
+                )
+    raise HTTPException(status_code=401, detail="Authentification requise")
 
 
 @router.get("/api/auth/config")
@@ -187,7 +212,7 @@ def authenticate_google_user(payload: GoogleAuthPayload):
 
 
 @router.get("/api/auth/me")
-def get_current_google_session(current_user: AuthUser = Depends(app_module.get_current_user)):
+def get_current_google_session(current_user: AuthUser = Depends(get_current_user)):
     """Retourne la session active, le jeton JWT et le profil associé."""
     db = get_db()
     session = db.get_google_session()

@@ -47,6 +47,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("vitaltrack.observability")
 
 from src.db import Database, DatabaseServiceUnavailableError, get_db_path
+from src.dependencies import set_db
 from src.models import MealType
 from src.nutrition_engine import NutritionEngine
 from src.analytics import BiometricsAnalyticsService
@@ -233,6 +234,8 @@ except Exception as db_err:
     db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("NEON_DATABASE_URL")
     db.is_postgres = bool(db.database_url)
     db.db_path = get_db_path()
+
+set_db(db)
 
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
