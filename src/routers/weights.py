@@ -18,6 +18,7 @@ import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
 from src.models import WeightEntry
+from src.otel import record_weight_log_metric
 from src.routers.friends import verify_view_access
 
 
@@ -81,6 +82,7 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_mo
         notes=entry_in.notes,
     )
     saved = db.insert_weight(entry, user_id=current_user.id)
+    record_weight_log_metric(source=entry_in.source or "manual", status="success")
     app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 

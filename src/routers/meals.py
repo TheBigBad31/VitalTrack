@@ -54,6 +54,7 @@ from src.models import (
 )
 from src.nutrition_engine import NutritionEngine
 from src.nutrition_rules import evaluate_dish_benefits
+from src.otel import record_photo_analysis_metric
 from src.rate_limit import rate_limit_photo_analysis
 from src.routers.friends import verify_view_access
 
@@ -344,6 +345,9 @@ def estimate_meal_calories(req: MealEstimateRequest):
         portion_scale=scale,
         meal_type=req.meal_type
     )
+    # Enregistrer la métrique métier observabilité
+    engine_used = "gemini_vision" if image_bytes else "nlp_local"
+    record_photo_analysis_metric(engine=engine_used, status="success")
     # Aplatir les macros à la racine si présentes pour compatibilité client
     if isinstance(result, dict) and "macros" in result and isinstance(result["macros"], dict):
         macros = result["macros"]

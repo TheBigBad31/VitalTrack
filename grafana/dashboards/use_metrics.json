@@ -1,0 +1,108 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "USE Metrics — Utilization",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "red", "value": 0.85 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "vitaltrack_system_cpu_utilization_ratio{service=\"vitaltrack\"}",
+          "legendFormat": "CPU Utilization"
+        },
+        {
+          "expr": "vitaltrack_system_memory_utilization_ratio{service=\"vitaltrack\"}",
+          "legendFormat": "Memory Utilization"
+        }
+      ],
+      "title": "Resource Utilization (CPU / Memory)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 3,
+      "title": "USE Metrics — Saturation & Errors",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "vitaltrack_concurrency_in_flight_requests{service=\"vitaltrack\"}",
+          "legendFormat": "In-flight Concurrency (Saturation)"
+        }
+      ],
+      "title": "Saturation (Active In-Flight Requests)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "rate(vitaltrack_error_events_total{service=\"vitaltrack\"}[5m])",
+          "legendFormat": "System Internal Error Rate"
+        }
+      ],
+      "title": "System Errors Rate (USE Errors)",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vitaltrack", "use", "observability", "bali-222"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "VitalTrack — USE Metrics (Utilization, Saturation, Errors)",
+  "uid": "vitaltrack-use-metrics"
+}
