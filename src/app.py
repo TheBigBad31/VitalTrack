@@ -1,11 +1,12 @@
 """FastAPI Backend pour VitalTrack (Local & Vercel Serverless).
 
 Point d'entrée modulaire : l'instance `app` inclut tous les routeurs dédiés
-(weights, activities, meals, metrics, devices, auth, webhooks, friends, profile, system, dashboard)
+(weights, activities, meals, metrics, devices, auth, webhooks, friends, profile, system, dashboard, v1, v2)
 ainsi que l'observabilité OpenTelemetry / Prometheus (`/metrics`).
 
 Endpoints conservés directement dans app.py :
 - GET  /api/health            : statut de l'API
+- GET  /api/v1/health         : statut de l'API v1
 - GET  /                      : sert l'index PWA
 - GET  /static/*              : fichiers statiques
 """
@@ -19,7 +20,8 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
@@ -39,6 +41,7 @@ from src.rate_limit import (
     limiter,
     rate_limit_exceeded_handler,
 )
+from src.versioning import APIVersioningMiddleware
 
 
 # Gestionnaire de cycle de vie de l'application FastAPI (BALI-213)
@@ -109,6 +112,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(APIVersioningMiddleware)
 
 
 @app.middleware("http")
@@ -337,6 +341,8 @@ def get_strict_user(authorization: Optional[str] = Header(None)) -> AuthUser:
 @app.post("/api/health")
 @app.get("/api/health/")
 @app.post("/api/health/")
+@app.get("/api/v1/health")
+@app.post("/api/v1/health")
 def health_check():
     """Vérification de l'état du backend, de la base de données et des connecteurs IoT."""
     db_status = "ok"
@@ -395,7 +401,7 @@ def health_check():
 
 
 # =====================================================================
-# Inclusion des routeurs modulaires (BALI-105 & BALI-210)
+# Inclusion des routeurs modulaires (BALI-105, BALI-210 & BALI-221)
 # =====================================================================
 
 from src.routers.weights import router as weights_router
@@ -406,10 +412,13 @@ from src.routers.devices import router as devices_router
 from src.routers.auth import router as auth_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.friends import router as friends_router
+from src.routers.profile import router as profile_router, UserProfileInput
 from src.routers.system import router as system_router, GITHUB_LATEST_RELEASE_APK_URL, KCAL_PER_KG
 from src.routers.dashboard import router as dashboard_router, DASHBOARD_CACHE, invalidate_dashboard_cache
-from src.routers.profile import router as profile_router, UserProfileInput
+from src.routers.v1 import create_v1_router
+from src.routers.v2 import router as v2_router
 
+# Routeurs legacy / unversioned (/api/...)
 app.include_router(weights_router)
 app.include_router(activities_router)
 app.include_router(meals_router)
@@ -421,6 +430,84 @@ app.include_router(friends_router)
 app.include_router(profile_router)
 app.include_router(system_router)
 app.include_router(dashboard_router)
+
+# Routeurs versionnés v1 (/api/v1/...) via router factory
+app.include_router(create_v1_router(weights_router))
+app.include_router(create_v1_router(activities_router))
+app.include_router(create_v1_router(meals_router))
+app.include_router(create_v1_router(metrics_router))
+app.include_router(create_v1_router(devices_router))
+app.include_router(create_v1_router(auth_router))
+app.include_router(create_v1_router(webhooks_router))
+app.include_router(create_v1_router(friends_router))
+app.include_router(create_v1_router(profile_router))
+app.include_router(create_v1_router(system_router))
+app.include_router(create_v1_router(dashboard_router))
+
+# Routeurs versionnés v2 (/api/v2/...)
+app.include_router(v2_router)
+
+
+# =====================================================================
+# Documentation OpenAPI Spécifique par Version (v1 et v2)
+# =====================================================================
+
+@app.get("/api/v1/openapi.json", include_in_schema=False)
+def get_v1_openapi():
+    """Génère la spécification OpenAPI dédiée pour l'API v1."""
+    full_schema = app.openapi()
+    v1_paths = {
+        path: item for path, item in full_schema.get("paths", {}).items()
+        if path.startswith("/api/v1") or (path.startswith("/api") and not path.startswith("/api/v2"))
+    }
+    return {
+        "openapi": full_schema.get("openapi", "3.1.0"),
+        "info": {
+            "title": "VitalTrack API v1 (Legacy & LTS)",
+            "version": "1.1.0",
+            "description": "Spécification OpenAPI officielle pour l'API VitalTrack v1. Support garanti jusqu'au 31/12/2026.",
+        },
+        "paths": v1_paths,
+        "components": full_schema.get("components", {}),
+    }
+
+
+@app.get("/api/v1/docs", include_in_schema=False)
+def get_v1_docs():
+    """Interface Swagger UI dédiée à l'API v1."""
+    return get_swagger_ui_html(
+        openapi_url="/api/v1/openapi.json",
+        title="VitalTrack API v1 - Swagger UI",
+    )
+
+
+@app.get("/api/v2/openapi.json", include_in_schema=False)
+def get_v2_openapi():
+    """Génère la spécification OpenAPI dédiée pour l'API v2."""
+    full_schema = app.openapi()
+    v2_paths = {
+        path: item for path, item in full_schema.get("paths", {}).items()
+        if path.startswith("/api/v2")
+    }
+    return {
+        "openapi": full_schema.get("openapi", "3.1.0"),
+        "info": {
+            "title": "VitalTrack API v2 (Next-Gen)",
+            "version": "2.0.0",
+            "description": "Spécification OpenAPI officielle pour l'API VitalTrack v2. Réponses standardisées et contrats renforcés.",
+        },
+        "paths": v2_paths,
+        "components": full_schema.get("components", {}),
+    }
+
+
+@app.get("/api/v2/docs", include_in_schema=False)
+def get_v2_docs():
+    """Interface Swagger UI dédiée à l'API v2."""
+    return get_swagger_ui_html(
+        openapi_url="/api/v2/openapi.json",
+        title="VitalTrack API v2 - Swagger UI",
+    )
 
 
 # =====================================================================
