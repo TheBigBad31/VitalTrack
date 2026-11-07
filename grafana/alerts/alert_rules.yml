@@ -1,0 +1,65 @@
+# Règles d'alerting Prometheus / Grafana Alertmanager pour VitalTrack
+# Lié au ticket BALI-222 / VTR-206 (Observabilité avancée & SLO/SLI)
+
+groups:
+  - name: vitaltrack_slo_alerts
+    rules:
+      # SLO 1 : Latence p95 > 200ms pendant plus de 2 minutes
+      - alert: VitalTrackLatencyP95Breached
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="vitaltrack"}[5m])) by (le)) * 1000 > 200
+        for: 2m
+        labels:
+          severity: warning
+          slo: latency_p95
+          service: vitaltrack
+        annotations:
+          summary: "VitalTrack p95 latency is exceeding SLO threshold (> 200ms)"
+          description: "La latence p95 observée est actuellement de {{ $value | printf \"%.2f\" }}ms, dépassant la cible contractuelle de 200ms."
+          runbook_url: "https://github.com/TheBigBad31/VitalTrack/wiki/Runbook-Latency"
+
+      # SLO 2 : Taux d'erreur > 0.1% sur fenêtre 5 minutes
+      - alert: VitalTrackErrorRateBreached
+        expr: (sum(rate(http_requests_total{service="vitaltrack",status=~"5.."}[5m])) / sum(rate(http_requests_total{service="vitaltrack"}[5m]))) * 100 > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          slo: error_rate
+          service: vitaltrack
+        annotations:
+          summary: "VitalTrack HTTP error rate is exceeding SLO threshold (> 0.1%)"
+          description: "Le taux d'erreur 5xx actuel est de {{ $value | printf \"%.3f\" }}%, dépassant le budget d'erreur de 0.1%."
+          runbook_url: "https://github.com/TheBigBad31/VitalTrack/wiki/Runbook-5xx"
+
+      # SLO 3 : Disponibilité système sous 99.9%
+      - alert: VitalTrackAvailabilityDegraded
+        expr: (1 - (sum(rate(http_requests_total{service="vitaltrack",status=~"5.."}[5m])) / sum(rate(http_requests_total{service="vitaltrack"}[5m])))) * 100 < 99.9
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          service: vitaltrack
+        annotations:
+          summary: "VitalTrack availability is below 99.9%"
+          description: "La disponibilité système calculée est tombée à {{ $value | printf \"%.3f\" }}%."
+
+      # Service Down / Inaccessible
+      - alert: VitalTrackServiceDown
+        expr: vitaltrack_up{service="vitaltrack"} == 0
+        for: 1m
+        labels:
+          severity: page
+          service: vitaltrack
+        annotations:
+          summary: "VitalTrack service instance is down"
+          description: "L'instance VitalTrack ne répond plus ou son probe healthcheck a échoué."
+
+      # Concurrence / Saturation (USE Saturation)
+      - alert: VitalTrackHighConcurrencySaturation
+        expr: vitaltrack_concurrency_in_flight_requests{service="vitaltrack"} > 100
+        for: 1m
+        labels:
+          severity: warning
+          service: vitaltrack
+        annotations:
+          summary: "VitalTrack high active requests saturation"
+          description: "Le nombre de requêtes concurrentes en vol dépasse 100 ({{ $value }} requêtes)."
