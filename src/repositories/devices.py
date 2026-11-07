@@ -833,3 +833,23 @@ class DevicesRepository(BaseRepository):
             }
         }
 
+    def delete_demo_devices(self, user_id: Optional[int] = None) -> int:
+        """Supprime les appareils de démonstration résiduels."""
+        demo_names = ('RingConn Gen 3 Sébastien',)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute("""
+                    DELETE FROM user_devices
+                    WHERE user_id = ? AND name IN (?)
+                """, (user_id, *demo_names))
+            else:
+                cursor.execute("""
+                    DELETE FROM user_devices
+                    WHERE name IN (?)
+                """, demo_names)
+            count = cursor.rowcount if cursor.rowcount != -1 else 0
+            conn.commit()
+            return count
+
+

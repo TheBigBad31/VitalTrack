@@ -635,3 +635,37 @@ class UsersRepository(BaseRepository):
             """, (observer_id, target_user_id, target_user_id, observer_id))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def delete_demo_users(self) -> int:
+        """Supprime les comptes utilisateurs de démonstration/test résiduels."""
+        demo_emails = ('sebastien.test@vitaltrack.io', 'test_err_diag@vitaltrack.io')
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE email IN (?, ?)", demo_emails)
+            users_to_delete = [r["id"] for r in cursor.fetchall()]
+            if not users_to_delete:
+                return 0
+
+            for uid in users_to_delete:
+                cursor.execute("DELETE FROM weights WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM activities WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM meals WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id IN (SELECT id FROM meal_logs WHERE user_id = ?)", (uid,))
+                cursor.execute("DELETE FROM meal_logs WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM daily_metrics WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM workouts WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM sleep_stages WHERE sleep_session_id IN (SELECT id FROM sleep_sessions WHERE user_id = ?)", (uid,))
+                cursor.execute("DELETE FROM sleep_sessions WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM intraday_samples WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM hydration_logs WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM raw_ingest WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM user_consents WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM friendships WHERE user_id = ? OR friend_user_id = ?", (uid, uid))
+                cursor.execute("DELETE FROM user_devices WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM food_items WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM users WHERE id = ?", (uid,))
+            conn.commit()
+            return len(users_to_delete)
+

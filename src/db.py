@@ -404,6 +404,9 @@ class Database:
     def check_friendship_access(self, observer_id: int, target_user_id: int) -> Optional[Dict[str, Any]]:
         return self.users.check_friendship_access(observer_id, target_user_id)
 
+    def delete_demo_users(self) -> int:
+        return self.users.delete_demo_users()
+
     # -------------------------------------------------------------------------
     # Façade : Pesées & Activités Physiques (WeightsRepository)
     # -------------------------------------------------------------------------
@@ -439,6 +442,12 @@ class Database:
 
     def batch_insert_activities(self, entries: List[ActivityEntry], user_id: int = 1) -> int:
         return self.weights.batch_insert_activities(entries, user_id=user_id)
+
+    def delete_demo_weights(self, user_id: Optional[int] = None) -> int:
+        return self.weights.delete_demo_weights(user_id=user_id)
+
+    def delete_demo_activities(self, user_id: Optional[int] = None) -> int:
+        return self.weights.delete_demo_activities(user_id=user_id)
 
     # -------------------------------------------------------------------------
     # Façade : Repas, Catalogue & Nutrition (MealsRepository)
@@ -552,6 +561,9 @@ class Database:
     def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
         return self.meals._recalculate_meal_log_totals(meal_log_id, user_id=user_id)
 
+    def delete_demo_meals(self, user_id: Optional[int] = None) -> int:
+        return self.meals.delete_demo_meals(user_id=user_id)
+
     def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
         return self.meals._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
 
@@ -593,6 +605,9 @@ class Database:
 
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         return self.devices.delete_user_device(device_id, user_id=user_id)
+
+    def delete_demo_devices(self, user_id: Optional[int] = None) -> int:
+        return self.devices.delete_demo_devices(user_id=user_id)
 
     def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
         return self.devices.update_device_sync_status(device_id, sync_status, user_id=user_id)
@@ -655,23 +670,25 @@ class Database:
     # Sauvegarde, Export & Données Démo
     # -------------------------------------------------------------------------
 
-    def purge_demo_data(self):
-        """Supprime toutes les données de démonstration résiduelles de la base."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute("DELETE FROM weights WHERE source IN ('demo', 'simulation') OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%'")
-                cursor.execute("DELETE FROM activities WHERE source IN ('demo', 'simulation')")
-                cursor.execute(
-                    "DELETE FROM meals WHERE total_calories_kcal IN (430.0, 685.0, 195.0, 560.0) "
-                    "AND (items_json LIKE '%Flocons d%' OR items_json LIKE '%Blanc de poulet rôti%' "
-                    "OR items_json LIKE '%Pavé de saumon%' OR items_json LIKE '%Myrtilles fraîches%')"
-                )
-                cursor.execute("DELETE FROM users WHERE email IN ('sebastien.test@vitaltrack.io', 'test_err_diag@vitaltrack.io')")
-                cursor.execute("DELETE FROM user_devices WHERE name = 'RingConn Gen 3 Sébastien'")
-                conn.commit()
-            except Exception:
-                pass
+    def purge_demo_data(self, user_id: Optional[int] = None) -> Dict[str, int]:
+        """Supprime toutes les données de démonstration résiduelles via les repositories typés."""
+        try:
+            return {
+                "weights": self.weights.delete_demo_weights(user_id=user_id),
+                "activities": self.weights.delete_demo_activities(user_id=user_id),
+                "meals": self.meals.delete_demo_meals(user_id=user_id),
+                "users": self.users.delete_demo_users(),
+                "devices": self.devices.delete_demo_devices(user_id=user_id)
+            }
+        except Exception as e:
+            print(f"[VitalTrack DB Warning] purge_demo_data error: {e}")
+            return {
+                "weights": 0,
+                "activities": 0,
+                "meals": 0,
+                "users": 0,
+                "devices": 0
+            }
 
     def _seed_demo_data_if_empty(self, user_id: int = 1):
         """Charge le jeu de démonstration 30 jours via scripts/seed_demo.py."""

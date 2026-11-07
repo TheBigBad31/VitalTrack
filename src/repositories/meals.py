@@ -1420,3 +1420,38 @@ class MealsRepository(BaseRepository):
             cursor.execute("SELECT * FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
             row = cursor.fetchone()
         return self._build_meal_log(dict(row), user_id=user_id)
+
+    def delete_demo_meals(self, user_id: Optional[int] = None) -> int:
+        """Supprime les repas de démonstration insérés par seed_demo."""
+        demo_calories = (430.0, 685.0, 195.0, 560.0)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute("""
+                    DELETE FROM meals
+                    WHERE user_id = ?
+                      AND total_calories_kcal IN (?, ?, ?, ?)
+                      AND (
+                          items_json LIKE '%Flocons d%'
+                          OR items_json LIKE '%Blanc de poulet rôti%'
+                          OR items_json LIKE '%Pavé de saumon%'
+                          OR items_json LIKE '%Myrtilles fraîches%'
+                          OR items_json LIKE '%Pomme%'
+                      )
+                """, (user_id, *demo_calories))
+            else:
+                cursor.execute("""
+                    DELETE FROM meals
+                    WHERE total_calories_kcal IN (?, ?, ?, ?)
+                      AND (
+                          items_json LIKE '%Flocons d%'
+                          OR items_json LIKE '%Blanc de poulet rôti%'
+                          OR items_json LIKE '%Pavé de saumon%'
+                          OR items_json LIKE '%Myrtilles fraîches%'
+                          OR items_json LIKE '%Pomme%'
+                      )
+                """, demo_calories)
+            count = cursor.rowcount if cursor.rowcount != -1 else 0
+            conn.commit()
+            return count
+
