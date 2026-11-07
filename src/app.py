@@ -53,11 +53,7 @@ from src.analytics import BiometricsAnalyticsService
 from src.biometrics_math import DailyBiometrics
 import yaml
 from src.vision_nutrition import PhotoCalorieEstimator
-from src.connectors.registry import DeviceConnectorRegistry, get_connector
-from src.connectors.withings import WithingsScaleConnector
-from src.connectors.oura import OuraRingConnector
-from src.connectors.ringconn import RingConnConnector
-from src.connectors.webhook import MobileHealthWebhookConnector
+from src.connectors.registry import DeviceConnectorRegistry, create_device_registry, get_connector
 from src.auth import (
     AuthUser,
     GoogleAuthPayload,
@@ -237,13 +233,8 @@ except Exception as db_err:
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
 
-# Initialisation du registre IoT
-device_registry = DeviceConnectorRegistry()
-device_registry.register(RingConnConnector(), device_id="ringconn", name="RingConn Smart Ring (Gen 1 / Gen 2 / Gen 3)", device_type="ring")
-device_registry.register(MobileHealthWebhookConnector(), device_id="health_connect", name="Google Health Connect (Google Health / Android)", device_type="mobile_aggregator")
-device_registry.register(WithingsScaleConnector(), device_id="withings", name="Withings Body Scan & Scales", device_type="scale")
-device_registry.register(OuraRingConnector(), device_id="oura", name="Oura Ring Gen3", device_type="ring")
-device_registry.register(MobileHealthWebhookConnector(), device_id="apple_health", name="Apple Santé (HealthKit)", device_type="mobile_aggregator")
+# Initialisation du registre IoT via factory DI (VTR-001)
+device_registry = create_device_registry()
 
 
 # =====================================================================
