@@ -474,17 +474,14 @@ def health_check():
 # Endpoints Dashboard & Données Agrégées (BALI-106 : parallélisé via asyncio.gather)
 # =====================================================================
 
-DASHBOARD_CACHE: Dict[Tuple[int, bool], Tuple[float, Any]] = {}
-DASHBOARD_CACHE_TTL_SECONDS = 45.0
+from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
+
+DASHBOARD_CACHE = dashboard_cache
+DASHBOARD_CACHE_TTL_SECONDS = DEFAULT_TTL_SECONDS
 
 def invalidate_dashboard_cache(user_id: Optional[int] = None):
-    """Invalide le cache en mémoire du dashboard (global ou par utilisateur)."""
-    if user_id is None:
-        DASHBOARD_CACHE.clear()
-    else:
-        for k in list(DASHBOARD_CACHE.keys()):
-            if k[0] == user_id:
-                DASHBOARD_CACHE.pop(k, None)
+    """Invalide le cache du dashboard (global ou par utilisateur via DashboardCache TTLCache/Redis)."""
+    dashboard_cache.invalidate(user_id)
 
 @app.get("/api/dashboard")
 async def get_dashboard_data(
@@ -498,11 +495,9 @@ async def get_dashboard_data(
     user_id = target_uid
 
     cache_key = (user_id, include_simulation)
-    now_ts = time.time()
-    if cache_key in DASHBOARD_CACHE:
-        cached_ts, cached_data = DASHBOARD_CACHE[cache_key]
-        if now_ts - cached_ts < DASHBOARD_CACHE_TTL_SECONDS:
-            return cached_data
+    cached_data = dashboard_cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
 
     # Vague 1 : appels DB indépendants (profil, repas, métriques quotidiennes, appareils)
     profile, meals, daily_metrics_rows, saved_devices_raw = await asyncio.gather(
@@ -622,7 +617,7 @@ async def get_dashboard_data(
         "devices": device_statuses,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    DASHBOARD_CACHE[cache_key] = (now_ts, dashboard_res)
+    dashboard_cache.set(cache_key, dashboard_res)
     return dashboard_res
 
 
