@@ -26,6 +26,10 @@ class TemplateHealthConnector(BaseHealthConnector):
     4. Enregistrer la classe dans `src/connectors/registry.py` et dans `config/devices.yaml`.
     """
 
+    device_id: str = "template"
+    name: str = "Template Health Connector"
+    device_type: str = "custom"
+
     def _check_configuration(self) -> bool:
         """Exemple : vérifier la présence d'une clé API constructeur."""
         api_key = self.config.get("api_key")

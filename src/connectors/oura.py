@@ -23,6 +23,10 @@ from src.models import ActivityEntry, WeightEntry
 class OuraRingConnector(BaseHealthConnector):
     """Connecteur Oura Ring API v2."""
 
+    device_id: str = "oura"
+    name: str = "Oura Ring Gen3"
+    device_type: str = "ring"
+
     BASE_URL = "https://api.ouraring.com/v2/usercollection"
 
     def _check_configuration(self) -> bool:

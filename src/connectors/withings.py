@@ -44,6 +44,10 @@ class WithingsAPIError(RuntimeError):
 class WithingsScaleConnector(BaseHealthConnector):
     """Connecteur officiel Withings pour balance impédancemètre via API OAuth2 Measure."""
 
+    device_id: str = "withings"
+    name: str = "Withings Body Scan & Scales"
+    device_type: str = "scale"
+
     # Endpoints officiels Withings
     AUTHORIZE_URL = "https://account.withings.com/oauth2_user/authorize2"
     TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
@@ -106,6 +110,15 @@ class WithingsScaleConnector(BaseHealthConnector):
             "scope": scope,
         }
         return f"{cls.AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+
+    def get_auth_url(self, redirect_uri: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
+        """Retourne l'URL d'autorisation OAuth2 Withings pour le client courant."""
+        c_id = self.config.get("client_id")
+        if not c_id:
+            return None
+        r_uri = redirect_uri or self.config.get("redirect_uri") or "http://localhost:8000/api/webhooks/withings/callback"
+        st = state or "withings_auth_state"
+        return self.build_authorization_url(client_id=c_id, redirect_uri=r_uri, state=st)
 
     def exchange_authorization_code(
         self,

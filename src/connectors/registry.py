@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import yaml
 
-from src.connectors.base import BaseHealthConnector
+from src.connectors.base import BaseHealthConnector, DeviceConnector, SyncResult
 from src.connectors.withings import WithingsScaleConnector
 from src.connectors.oura import OuraRingConnector
 from src.connectors.webhook import MobileHealthWebhookConnector
@@ -65,25 +65,52 @@ class DeviceConnectorRegistry:
         for dev_id, dev_info in devices_dict.items():
             conn_cls = CONNECTOR_REGISTRY.get(dev_id, TemplateHealthConnector)
             inst = conn_cls(dev_info.get("config", {}))
+            is_c = inst.is_configured
+            if callable(is_c):
+                is_c = is_c()
             self._devices[dev_id] = {
                 "id": dev_id,
+                "device_id": dev_id,
                 "name": dev_info.get("name", dev_id.capitalize()),
                 "device_type": dev_info.get("type", "unknown"),
                 "connector": inst,
                 "enabled": dev_info.get("enabled", True),
-                "is_configured": inst.is_configured
+                "is_configured": bool(is_c)
             }
 
-    def register(self, connector: Any, device_id: Optional[str] = None, name: Optional[str] = None, device_type: str = "custom"):
-        dev_id = device_id or getattr(connector, "id", None) or connector.__class__.__name__.lower()
+    def register(self, connector: Any, device_id: Optional[str] = None, name: Optional[str] = None, device_type: Optional[str] = None):
+        dev_id = device_id or getattr(connector, "device_id", None) or getattr(connector, "id", None) or connector.__class__.__name__.lower()
         dev_name = name or getattr(connector, "name", None) or dev_id.capitalize()
+        dev_type = device_type or getattr(connector, "device_type", None) or "custom"
+        # Garantir que connector expose device_id, name, device_type
+        if not hasattr(connector, "device_id"):
+            try:
+                connector.device_id = dev_id
+            except Exception:
+                pass
+        if not hasattr(connector, "name"):
+            try:
+                connector.name = dev_name
+            except Exception:
+                pass
+        if not hasattr(connector, "device_type"):
+            try:
+                connector.device_type = dev_type
+            except Exception:
+                pass
+
+        is_c = getattr(connector, "is_configured", False)
+        if callable(is_c):
+            is_c = is_c()
+
         self._devices[dev_id] = {
             "id": dev_id,
+            "device_id": dev_id,
             "name": dev_name,
-            "device_type": device_type,
+            "device_type": dev_type,
             "connector": connector,
             "enabled": True,
-            "is_configured": getattr(connector, "is_configured", False)
+            "is_configured": bool(is_c)
         }
 
     def get(self, device_id: str) -> Optional[Any]:
@@ -94,11 +121,13 @@ class DeviceConnectorRegistry:
         res = []
         for d in self._devices.values():
             inst = d["connector"]
-            # Exposer un objet ou proxy avec id, name, device_type, is_configured, sync
+            # Exposer un objet ou proxy avec id, device_id, name, device_type, is_configured, sync
             res.append(type("DeviceProxy", (), {
                 "id": d["id"],
+                "device_id": d["device_id"],
                 "name": d["name"],
                 "device_type": d["device_type"],
+                "connector": inst,
                 "is_configured": lambda self=None, is_c=d["is_configured"]: is_c,
                 "sync": lambda days=1, c=inst: c.sync_weights(date.today() - timedelta(days=days), date.today()) if hasattr(c, "sync_weights") else []
             })())

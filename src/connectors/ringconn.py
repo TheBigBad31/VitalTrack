@@ -20,6 +20,10 @@ from src.models import ActivityEntry, WeightEntry
 class RingConnConnector(BaseHealthConnector):
     """Connecteur pour bague de santé RingConn (notamment Gen 3)."""
 
+    device_id: str = "ringconn"
+    name: str = "RingConn Smart Ring (Gen 1 / Gen 2 / Gen 3)"
+    device_type: str = "ring"
+
     BASE_URL = "https://api.ringconn.com/v1"
 
     def _check_configuration(self) -> bool:
