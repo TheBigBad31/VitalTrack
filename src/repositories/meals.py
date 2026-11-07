@@ -13,7 +13,19 @@ from src.seeds.ciqual import PUBLIC_BASE_ITEMS
 
 
 class MealsRepository(BaseRepository):
-    """Gestion des repas, plats sauvegardés, catalogue d'aliments, abonnements et journalisation (meal logs)."""
+    """Gestion des repas, plats sauvegardés, catalogue d'aliments, abonnements et journalisation (meal logs).
+
+    Architecture Nutrition (VTR-106) :
+    - Domaine Repas Rapides & Historique Global (`meals` / `MealEntry`) :
+      Enregistrement de repas complets (photo, description IA, estimation globale), consultation d'historique
+      récent, et calculs d'agrégation calorique/macronutritionnelle pour le bilan métabolique journalier.
+    - Domaine Journal Quotidien Interactif (`meal_logs` & `meal_log_items` / `MealLog` & `MealLogItem`) :
+      Gestion granulaire des 4 créneaux de repas quotidiens (petit-déjeuner, déjeuner, dîner, collation),
+      avec ajout/retrait d'aliments du catalogue au prorata des portions.
+    - Synchronisation automatique & transactionnelle :
+      Toute mutation sur `meal_logs` recalcule les totaux et synchronise l'agrégat dans la table `meals`
+      afin de préserver l'intégrité du moteur métabolique sans rupture de compatibilité.
+    """
 
     def insert_meal(self, entry: MealEntry, user_id: int = 1) -> MealEntry:
         """Insère un repas pour user_id avec ses aliments décomposés."""
