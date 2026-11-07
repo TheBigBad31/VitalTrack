@@ -11,12 +11,22 @@ Couvre :
 import os
 import tempfile
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from src.app import app
 import src.app as app_module
 from src.db import Database
-from src.rate_limit import limiter, parse_rate_limit
+from src.rate_limit import (
+    RateLimiter,
+    RateLimitExceeded,
+    InMemoryBackend,
+    UpstashRedisBackend,
+    get_upstash_redis_credentials,
+    limiter,
+    parse_rate_limit,
+)
+import httpx
 
 
 @pytest.fixture
@@ -150,3 +160,185 @@ def test_rate_limit_on_photo_analysis_returns_429(rate_client, monkeypatch):
     # Le GET d'information /api/meals/analyze-photo reste accessible
     r_info = rate_client.get("/api/meals/analyze-photo", headers=headers)
     assert r_info.status_code == 200
+
+
+def test_get_upstash_redis_credentials(monkeypatch):
+    """Vérifie l'extraction des identifiants Upstash et Vercel KV."""
+    monkeypatch.delenv("UPSTASH_REDIS_REST_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_TOKEN", raising=False)
+    monkeypatch.delenv("KV_REST_API_URL", raising=False)
+    monkeypatch.delenv("KV_REST_API_TOKEN", raising=False)
+    assert get_upstash_redis_credentials() == (None, None)
+
+    # Via UPSTASH_REDIS_REST_*
+    monkeypatch.setenv("UPSTASH_REDIS_REST_URL", "https://my-upstash.upstash.io/")
+    monkeypatch.setenv("UPSTASH_REDIS_REST_TOKEN", "my-secret-token")
+    assert get_upstash_redis_credentials() == ("https://my-upstash.upstash.io", "my-secret-token")
+
+    # Via KV_REST_API_* (Vercel KV)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_TOKEN", raising=False)
+    monkeypatch.setenv("KV_REST_API_URL", "https://kv.vercel-storage.com/")
+    monkeypatch.setenv("KV_REST_API_TOKEN", "vercel-kv-token")
+    assert get_upstash_redis_credentials() == ("https://kv.vercel-storage.com", "vercel-kv-token")
+
+
+def test_upstash_redis_backend_eval_allowed(monkeypatch):
+    """Vérifie le comportement de UpstashRedisBackend quand le quota n'est pas dépassé."""
+    backend = UpstashRedisBackend(url="https://mock-redis.upstash.io", token="tok123")
+
+    def mock_post(url, json=None, **kwargs):
+        assert json[0] == "EVAL"
+        return httpx.Response(200, json={"result": [1, 4, 0]}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(backend._get_client(), "post", mock_post)
+
+    allowed, remaining, retry_after = backend.check("ratelimit:test:ip1", max_requests=5, window_seconds=60)
+    assert allowed is True
+    assert remaining == 4
+    assert retry_after == 0
+
+
+def test_upstash_redis_backend_eval_exceeded(monkeypatch):
+    """Vérifie le comportement de UpstashRedisBackend quand la limite est dépassée."""
+    backend = UpstashRedisBackend(url="https://mock-redis.upstash.io", token="tok123")
+
+    def mock_post(url, json=None, **kwargs):
+        assert json[0] == "EVAL"
+        return httpx.Response(200, json={"result": [0, 5, 23]}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(backend._get_client(), "post", mock_post)
+
+    allowed, remaining, retry_after = backend.check("ratelimit:test:ip1", max_requests=5, window_seconds=60)
+    assert allowed is False
+    assert remaining == 5
+    assert retry_after == 23
+
+
+def test_upstash_redis_backend_pipeline_fallback(monkeypatch):
+    """Vérifie le repli sur le pipeline REST standard si EVAL retourne une erreur."""
+    backend = UpstashRedisBackend(url="https://mock-redis.upstash.io", token="tok123")
+
+    calls = []
+
+    def mock_post(url, json=None, **kwargs):
+        calls.append((url, json))
+        # Premier appel EVAL -> Erreur
+        if json and json[0] == "EVAL":
+            return httpx.Response(200, json={"error": "ERR EVAL not allowed"}, request=httpx.Request("POST", url))
+        # Pipeline check
+        if "/pipeline" in str(url) and len(json) == 3:
+            return httpx.Response(
+                200,
+                json=[
+                    {"result": 0},
+                    {"result": 2},
+                    {"result": ["hit1", "1700000000.0"]},
+                ],
+                request=httpx.Request("POST", url),
+            )
+        # Pipeline add
+        if "/pipeline" in str(url) and len(json) == 2:
+            return httpx.Response(
+                200,
+                json=[{"result": 1}, {"result": 1}],
+                request=httpx.Request("POST", url),
+            )
+        return httpx.Response(500, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(backend._get_client(), "post", mock_post)
+
+    allowed, remaining, retry_after = backend.check("ratelimit:test:ip1", max_requests=5, window_seconds=60)
+    assert allowed is True
+    assert remaining == 2  # 5 - 2 - 1 = 2
+    assert retry_after == 0
+    assert len(calls) == 3
+
+
+def test_upstash_redis_backend_network_error_fallback_to_memory(monkeypatch):
+    """Vérifie qu'en cas de panne réseau avec Upstash, le backend bascule gracieusement en mémoire."""
+    backend = UpstashRedisBackend(url="https://mock-redis.upstash.io", token="tok123")
+
+    def mock_post_fail(url, **kwargs):
+        raise httpx.ConnectError("Network unreachable")
+
+    monkeypatch.setattr(backend._get_client(), "post", mock_post_fail)
+
+    # Le fallback in-memory prend le relais sans faire planter la requête
+    allowed, remaining, retry_after = backend.check("ratelimit:test:ip1", max_requests=2, window_seconds=60)
+    assert allowed is True
+
+    allowed2, remaining2, retry_after2 = backend.check("ratelimit:test:ip1", max_requests=2, window_seconds=60)
+    assert allowed2 is True
+
+    # 3e requête dépasse le quota dans le fallback mémoire
+    allowed3, remaining3, retry_after3 = backend.check("ratelimit:test:ip1", max_requests=2, window_seconds=60)
+    assert allowed3 is False
+    assert retry_after3 > 0
+
+
+def test_upstash_redis_backend_reset(monkeypatch):
+    """Vérifie que reset() supprime les clés touchées via pipeline DEL."""
+    backend = UpstashRedisBackend(url="https://mock-redis.upstash.io", token="tok123")
+    backend._touched_keys.add("ratelimit:bucket1:ip1")
+    backend._touched_keys.add("ratelimit:bucket2:ip2")
+
+    posted_pipeline = []
+
+    def mock_post(url, json=None, **kwargs):
+        posted_pipeline.append(json)
+        return httpx.Response(200, json=[{"result": 1}, {"result": 1}], request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(backend._get_client(), "post", mock_post)
+
+    backend.reset()
+    assert len(backend._touched_keys) == 0
+    assert len(posted_pipeline) == 1
+    del_commands = posted_pipeline[0]
+    assert len(del_commands) == 2
+    for cmd in del_commands:
+        assert cmd[0] == "DEL"
+
+
+def test_rate_limiter_switches_backend_on_env(monkeypatch):
+    """Vérifie que RateLimiter adapte dynamiquement son backend selon les variables d'environnement."""
+    test_limiter = RateLimiter()
+
+    # Sans identifiants -> InMemoryBackend
+    monkeypatch.delenv("UPSTASH_REDIS_REST_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_TOKEN", raising=False)
+    monkeypatch.delenv("KV_REST_API_URL", raising=False)
+    monkeypatch.delenv("KV_REST_API_TOKEN", raising=False)
+    assert isinstance(test_limiter.backend, InMemoryBackend)
+
+    # Avec identifiants -> UpstashRedisBackend
+    monkeypatch.setenv("UPSTASH_REDIS_REST_URL", "https://upstash.io")
+    monkeypatch.setenv("UPSTASH_REDIS_REST_TOKEN", "token123")
+    assert isinstance(test_limiter.backend, UpstashRedisBackend)
+    assert test_limiter.backend.url == "https://upstash.io"
+
+
+def test_rate_limiter_with_upstash_raises_429(monkeypatch):
+    """Vérifie que check_request lève RateLimitExceeded (HTTP 429) lorsque Upstash signale un dépassement."""
+    monkeypatch.setenv("UPSTASH_REDIS_REST_URL", "https://upstash.io")
+    monkeypatch.setenv("UPSTASH_REDIS_REST_TOKEN", "token123")
+
+    test_limiter = RateLimiter()
+    assert isinstance(test_limiter.backend, UpstashRedisBackend)
+
+    def mock_post(url, json=None, **kwargs):
+        return httpx.Response(200, json={"result": [0, 10, 42]}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(test_limiter.backend._get_client(), "post", mock_post)
+
+    scope = {"type": "http", "headers": [(b"x-forwarded-for", b"203.0.113.199")]}
+    request = Request(scope=scope)
+
+    with pytest.raises(RateLimitExceeded) as exc_info:
+        test_limiter.check_request(request, bucket="test_bucket", rate_str="5/minute")
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after == 42
+    assert "Retry-After" in exc_info.value.headers
+    assert exc_info.value.headers["Retry-After"] == "42"
+
