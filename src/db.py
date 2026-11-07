@@ -214,6 +214,7 @@ class Database:
 
     def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls)
+        instance.pool = None
         instance.weights = WeightsRepository(instance)
         instance.meals = MealsRepository(instance)
         instance.devices = DevicesRepository(instance)
@@ -225,11 +226,13 @@ class Database:
         self,
         db_path: Optional[str] = None,
         database_url: Optional[str] = None,
-        auto_migrate: bool = True
+        auto_migrate: bool = True,
+        pool: Optional[Any] = None,
     ):
         self.database_url = database_url or get_database_url()
         self.is_postgres = bool(self.database_url and HAS_PSYCOPG)
         self.db_path = db_path or get_db_path()
+        self.pool = pool
 
         if auto_migrate:
             try:
@@ -239,27 +242,59 @@ class Database:
             except Exception as mig_err:
                 print(f"[VitalTrack DB Warning] Migrations ignorées au démarrage: {mig_err}")
 
-    def _get_pool(self) -> Optional[Any]:
-        """Initialise ou réutilise le pool de connexions psycopg_pool pour Neon Serverless."""
-        global _POSTGRES_POOL
+    def create_pool(
+        self,
+        min_size: int = 0,
+        max_size: int = 10,
+        timeout: float = 10.0,
+        max_idle: float = 300.0,
+        max_lifetime: float = 1800.0,
+    ) -> Optional[Any]:
+        """Crée et initialise un ConnectionPool psycopg_pool pour cette instance Database."""
         if not self.is_postgres or not HAS_PSYCOPG_POOL:
             return None
-        if _POSTGRES_POOL is None or getattr(_POSTGRES_POOL, "closed", False):
+        try:
+            self.pool = ConnectionPool(
+                self.database_url,
+                min_size=min_size,
+                max_size=max_size,
+                timeout=timeout,
+                max_idle=max_idle,
+                max_lifetime=max_lifetime,
+                open=True,
+                kwargs={"autocommit": False},
+            )
+            return self.pool
+        except Exception as e:
+            print(f"[VitalTrack DB Warning] Impossible d'initialiser ConnectionPool Neon: {e}")
+            self.pool = None
+            return None
+
+    def close_pool(self):
+        """Ferme proprement le pool de connexions associé à cette instance."""
+        if self.pool is not None and not getattr(self.pool, "closed", False):
             try:
-                _POSTGRES_POOL = ConnectionPool(
-                    self.database_url,
-                    min_size=0,
-                    max_size=10,
-                    timeout=10.0,
-                    max_idle=300.0,
-                    max_lifetime=1800.0,
-                    open=True,
-                    kwargs={"autocommit": False}
-                )
+                self.pool.close()
             except Exception as e:
-                print(f"[VitalTrack DB Warning] Impossible d'initialiser ConnectionPool Neon: {e}")
-                _POSTGRES_POOL = None
-        return _POSTGRES_POOL
+                print(f"[VitalTrack DB Warning] Erreur lors de la fermeture du pool Neon: {e}")
+        self.pool = None
+
+    def _get_pool(self) -> Optional[Any]:
+        """Retourne le pool d'instance s'il existe, sinon l'initialise si configuré."""
+        if not self.is_postgres or not HAS_PSYCOPG_POOL:
+            return None
+        if self.pool is not None and not getattr(self.pool, "closed", False):
+            return self.pool
+
+        global _POSTGRES_POOL
+        if self.pool is None:
+            if _POSTGRES_POOL is not None and not getattr(_POSTGRES_POOL, "closed", False):
+                self.pool = _POSTGRES_POOL
+                return self.pool
+            pool = self.create_pool()
+            _POSTGRES_POOL = pool
+            return pool
+        return self.pool
 
     def get_connection(self, user_id: Optional[int] = None) -> DatabaseConnectionWrapper:
         """Fournit une connexion unifiée (PostgreSQL avec ConnectionPool ou SQLite).

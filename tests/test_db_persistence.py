@@ -158,3 +158,47 @@ def test_neon_connection_pool_integration():
 
     # Réinitialiser le singleton de pool global
     db_mod._POSTGRES_POOL = None
+
+
+def test_fastapi_lifespan_pool_lifecycle():
+    """Vérifie que le lifespan FastAPI gère correctement le cycle de vie du ConnectionPool."""
+    from fastapi.testclient import TestClient
+    from src.app import app
+    import src.app as app_mod
+    from src.db import Database
+
+    # 1. Tester le comportement par défaut (SQLite, pas de pool PostgreSQL)
+    with TestClient(app) as client:
+        res = client.get("/api/health")
+        assert res.status_code == 200
+        assert client.app.state.db_pool is None
+
+    # 2. Tester avec une instance Database mockée / configurée avec PostgreSQL et ConnectionPool
+    fake_neon_url = "postgresql://user:pass@ep-cool-sample.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+    original_db = app_mod.db
+
+    mock_db = Database.__new__(Database)
+    mock_db.database_url = fake_neon_url
+    mock_db.is_postgres = True
+    mock_db.db_path = ":memory:"
+    mock_db.pool = None
+
+    class MockPool:
+        def __init__(self):
+            self.closed = False
+        def close(self):
+            self.closed = True
+
+    mock_pool_instance = MockPool()
+    mock_db.create_pool = lambda: mock_pool_instance
+    mock_db.close_pool = lambda: mock_pool_instance.close()
+
+    try:
+        app_mod.db = mock_db
+        with TestClient(app) as client:
+            assert client.app.state.db_pool is mock_pool_instance
+            assert not mock_pool_instance.closed
+        assert mock_pool_instance.closed
+        assert app.state.db_pool is None
+    finally:
+        app_mod.db = original_db
