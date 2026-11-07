@@ -2,23 +2,49 @@
 
 Fournit :
 - Gestion et persistance des repas (breakfast, lunch, dinner, snack)
-- Agrégation nutritionnelle par jour (calories, macros en g et en %)
-- Calcul du métabolisme de base (BMR Mifflin-St Jeor)
-- Calcul de la dépense énergétique totale (TDEE = BMR + Pas + Exercice)
-- Bilan énergétique net et projection de perte/gain de poids hebdomadaire
+- Orchestration de l'agrégation nutritionnelle quotidienne via domain.nutrition
+- Calculs métaboliques (BMR, TDEE, bilan net) délégués au domaine pur
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from typing import Any, Dict, List, Literal, Optional
 from src.db import Database
+from src.domain import nutrition as nutrition_domain
 from src.models import FoodItem, MealEntry, MealType
+from src.repositories.meals import MealsRepository
+from src.repositories.weights import WeightsRepository
 
 
 class NutritionEngine:
-    """Moteur central pour le journal alimentaire et l'analyse métabolique."""
+    """Moteur applicatif/orchestrateur pour le journal alimentaire et l'analyse métabolique."""
 
-    def __init__(self, db: Optional[Database] = None):
-        self.db = db or Database()
+    def __init__(
+        self,
+        db: Optional[Database] = None,
+        meals_repo: Optional[MealsRepository] = None,
+        weights_repo: Optional[WeightsRepository] = None,
+    ):
+        self.db = db if (db is not None or (meals_repo is None and weights_repo is None)) else None
+        self._meals_repo = meals_repo
+        self._weights_repo = weights_repo
+
+    @property
+    def meals_repo(self) -> MealsRepository:
+        if self._meals_repo is not None:
+            return self._meals_repo
+        if self.db is not None:
+            return self.db.meals
+        self.db = Database()
+        return self.db.meals
+
+    @property
+    def weights_repo(self) -> WeightsRepository:
+        if self._weights_repo is not None:
+            return self._weights_repo
+        if self.db is not None:
+            return self.db.weights
+        self.db = Database()
+        return self.db.weights
 
     # ---------------------------------------------------------
     # 1. Gestion du Journal des Repas
@@ -33,88 +59,35 @@ class NutritionEngine:
         user_id: int = 1
     ) -> MealEntry:
         """Enregistre un repas complet calculé à partir d'une liste d'aliments."""
-        total_cal = round(sum(i.calories_kcal for i in items), 1)
-        total_prot = round(sum(i.protein_g for i in items), 1)
-        total_carbs = round(sum(i.carbs_g for i in items), 1)
-        total_fat = round(sum(i.fat_g for i in items), 1)
-        total_fiber = round(sum(i.fiber_g or 0.0 for i in items), 1)
+        totals = nutrition_domain.calculate_meal_totals(items)
 
         entry = MealEntry(
             date=date_val,
             meal_type=meal_type,
-            total_calories_kcal=total_cal,
-            protein_g=total_prot,
-            carbs_g=total_carbs,
-            fat_g=total_fat,
-            fiber_g=total_fiber,
+            total_calories_kcal=totals["calories_kcal"],
+            protein_g=totals["protein_g"],
+            carbs_g=totals["carbs_g"],
+            fat_g=totals["fat_g"],
+            fiber_g=totals["fiber_g"],
             photo_data_url=photo_data_url,
             items=items
         )
-        return self.db.insert_meal(entry, user_id=user_id)
+        return self.meals_repo.insert_meal(entry, user_id=user_id)
 
     def get_meals_by_date(self, target_date: date, user_id: int = 1) -> List[MealEntry]:
         """Récupère tous les repas enregistrés pour une date donnée."""
-        return self.db.get_meals_for_date(target_date, user_id=user_id)
+        return self.meals_repo.get_meals_for_date(target_date, user_id=user_id)
 
     def get_daily_nutrition_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
         """Agrège tous les repas du jour en totaux et pourcentages de macros."""
         meals = self.get_meals_by_date(target_date, user_id=user_id)
-
-        total_calories = round(sum(m.total_calories_kcal for m in meals), 1)
-        total_protein = round(sum(m.protein_g for m in meals), 1)
-        total_carbs = round(sum(m.carbs_g for m in meals), 1)
-        total_fat = round(sum(m.fat_g for m in meals), 1)
-        total_fiber = round(sum(m.fiber_g or 0.0 for m in meals), 1)
-
-        cal_prot = total_protein * 4.0
-        cal_carbs = total_carbs * 4.0
-        cal_fat = total_fat * 9.0
-        macro_sum = cal_prot + cal_carbs + cal_fat
-
-        if macro_sum > 0:
-            pct_prot = round((cal_prot / macro_sum) * 100.0, 1)
-            pct_carbs = round((cal_carbs / macro_sum) * 100.0, 1)
-            pct_fat = round((cal_fat / macro_sum) * 100.0, 1)
-        else:
-            pct_prot, pct_carbs, pct_fat = 0.0, 0.0, 0.0
-
-        # Regroupement par type de repas
-        by_meal: Dict[str, Optional[Dict[str, Any]]] = {
-            "breakfast": None,
-            "lunch": None,
-            "dinner": None,
-            "snack": None,
-        }
-        for m in meals:
-            by_meal[m.meal_type] = {
-                "id": m.id,
-                "total_calories_kcal": m.total_calories_kcal,
-                "protein_g": m.protein_g,
-                "carbs_g": m.carbs_g,
-                "fat_g": m.fat_g,
-                "fiber_g": m.fiber_g,
-                "items_count": len(m.items),
-                "items": [item.model_dump() for item in m.items],
-            }
-
-        return {
-            "date": target_date.isoformat(),
-            "meals_count": len(meals),
-            "total_calories_kcal": total_calories,
-            "macros": {
-                "protein_g": total_protein,
-                "protein_pct": pct_prot,
-                "carbs_g": total_carbs,
-                "carbs_pct": pct_carbs,
-                "fat_g": total_fat,
-                "fat_pct": pct_fat,
-                "fiber_g": total_fiber,
-            },
-            "by_meal": by_meal,
-        }
+        return nutrition_domain.compute_daily_nutrition_summary(
+            date_iso=target_date.isoformat(),
+            meals=meals
+        )
 
     # ---------------------------------------------------------
-    # 2. Algorithmes Métaboliques & Bilan Énergétique
+    # 2. Algorithmes Métaboliques & Bilan Énergétique (Délégation domain)
     # ---------------------------------------------------------
 
     @staticmethod
@@ -124,17 +97,13 @@ class NutritionEngine:
         age: int,
         gender: Literal["male", "female"] = "male"
     ) -> float:
-        """Calcule le Métabolisme de Base (BMR) selon la formule de Mifflin-St Jeor.
-        
-        Hommes : BMR = (10 x poids) + (6.25 x taille) - (5 x âge) + 5
-        Femmes : BMR = (10 x poids) + (6.25 x taille) - (5 x âge) - 161
-        """
-        base = (10.0 * weight_kg) + (6.25 * height_cm) - (5.0 * age)
-        if gender == "male":
-            bmr = base + 5.0
-        else:
-            bmr = base - 161.0
-        return round(max(bmr, 800.0), 1)
+        """Délégation vers domain.nutrition.calculate_bmr_mifflin_st_jeor."""
+        return nutrition_domain.calculate_bmr_mifflin_st_jeor(
+            weight_kg=weight_kg,
+            height_cm=height_cm,
+            age=age,
+            gender=gender
+        )
 
     @staticmethod
     def calculate_tdee(
@@ -142,16 +111,12 @@ class NutritionEngine:
         steps: int = 0,
         active_calories_kcal: float = 0.0
     ) -> float:
-        """Calcule la Dépense Énergétique Totale (TDEE).
-        
-        TDEE = BMR + Calories des pas + Calories d'exercice actif.
-        Si active_calories_kcal inclut déjà les pas, on évite le double comptage.
-        """
-        # Estimation calories pas si non incluses dans active_calories : ~0.04 kcal par pas
-        step_calories = steps * 0.04
-        # Si des calories actives d'entraînement sont présentes, on additionne
-        extra_burn = max(active_calories_kcal, step_calories)
-        return round(bmr_kcal + extra_burn, 1)
+        """Délégation vers domain.nutrition.calculate_tdee."""
+        return nutrition_domain.calculate_tdee(
+            bmr_kcal=bmr_kcal,
+            steps=steps,
+            active_calories_kcal=active_calories_kcal
+        )
 
     def calculate_daily_energy_balance(
         self,
@@ -162,13 +127,13 @@ class NutritionEngine:
         gender: Literal["male", "female"] = "male",
         user_id: int = 1
     ) -> Dict[str, Any]:
-        """Calcule le bilan énergétique net et la trajectoire de poids."""
+        """Calcule le bilan énergétique net et la trajectoire de poids via le domaine."""
         # 1. Calories ingérées (journal des repas)
         nutri_summary = self.get_daily_nutrition_summary(target_date, user_id=user_id)
         intake_kcal = nutri_summary["total_calories_kcal"]
 
-        # 2. Dépense (table activities ou calcul BMR)
-        activities = self.db.get_activities(limit=60, user_id=user_id)
+        # 2. Dépense (table activities via weights_repo ou calcul BMR)
+        activities = self.weights_repo.get_activities(limit=60, user_id=user_id)
         day_activity = next((a for a in activities if a.date == target_date), None)
 
         if day_activity and day_activity.total_burned_kcal > 0:
@@ -177,36 +142,18 @@ class NutritionEngine:
             steps = day_activity.steps
             active_cal = day_activity.active_calories_kcal
         else:
-            bmr = self.calculate_bmr_mifflin_st_jeor(user_weight_kg, user_height_cm, user_age, gender)
+            bmr = nutrition_domain.calculate_bmr_mifflin_st_jeor(user_weight_kg, user_height_cm, user_age, gender)
             steps = day_activity.steps if day_activity else 0
             active_cal = day_activity.active_calories_kcal if day_activity else 0.0
-            burned_kcal = self.calculate_tdee(bmr, steps, active_cal)
+            burned_kcal = nutrition_domain.calculate_tdee(bmr, steps, active_cal)
 
-        # 3. Solde net et impact poids
-        # 1 kg de graisse corporelle correspond approximativement à 7700 kcal
-        net_balance_kcal = round(intake_kcal - burned_kcal, 1)
-        weekly_projected_weight_change_kg = round((net_balance_kcal * 7.0) / 7700.0, 3)
-
-        if net_balance_kcal <= -250:
-            status = "deficit"
-            recommendation = "Déficit calorique optimal pour une perte de masse grasse progressive et durable."
-        elif net_balance_kcal >= 250:
-            status = "surplus"
-            recommendation = "Surplus calorique propice à la prise de masse musculaire ou récupération."
-        else:
-            status = "maintenance"
-            recommendation = "Équilibre énergétique stable, idéal pour le maintien du poids."
-
-        return {
-            "date": target_date.isoformat(),
-            "calories_intake_kcal": intake_kcal,
-            "calories_burned_kcal": burned_kcal,
-            "bmr_kcal": bmr,
-            "steps": steps,
-            "active_calories_kcal": active_cal,
-            "net_energy_balance_kcal": net_balance_kcal,
-            "status": status,
-            "weekly_projected_weight_change_kg": weekly_projected_weight_change_kg,
-            "recommendation": recommendation,
-            "macros": nutri_summary["macros"],
-        }
+        # 3. Solde net et impact poids calculés par le domaine pur
+        return nutrition_domain.compute_energy_balance(
+            date_iso=target_date.isoformat(),
+            intake_kcal=intake_kcal,
+            burned_kcal=burned_kcal,
+            bmr_kcal=bmr,
+            steps=steps,
+            active_calories_kcal=active_cal,
+            macros=nutri_summary["macros"],
+        )
