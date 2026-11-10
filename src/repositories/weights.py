@@ -519,3 +519,41 @@ class WeightsRepository(BaseRepository):
             cursor.executemany(sql, params_list)
             conn.commit()
             return len(params_list)
+
+    def delete_demo_weights(self, user_id: Optional[int] = None) -> int:
+        """Supprime les pesées de démonstration ou simulation."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute("""
+                    DELETE FROM weights
+                    WHERE user_id = ?
+                      AND (source IN ('demo', 'simulation') OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%')
+                """, (user_id,))
+            else:
+                cursor.execute("""
+                    DELETE FROM weights
+                    WHERE source IN ('demo', 'simulation') OR notes LIKE '%Démo%' OR notes LIKE '%Balance Démo%'
+                """)
+            count = cursor.rowcount if cursor.rowcount != -1 else 0
+            conn.commit()
+            return count
+
+    def delete_demo_activities(self, user_id: Optional[int] = None) -> int:
+        """Supprime les activités physiques de démonstration ou simulation."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute("""
+                    DELETE FROM activities
+                    WHERE user_id = ? AND source IN ('demo', 'simulation')
+                """, (user_id,))
+            else:
+                cursor.execute("""
+                    DELETE FROM activities
+                    WHERE source IN ('demo', 'simulation')
+                """)
+            count = cursor.rowcount if cursor.rowcount != -1 else 0
+            conn.commit()
+            return count
+
