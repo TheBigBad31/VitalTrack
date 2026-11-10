@@ -69,6 +69,9 @@ VitalTrack est optimisé pour un déploiement Vercel Serverless sans configurati
   - `GEMINI_API_KEY` : Clé API Google Gemini Vision pour l'analyse photo multimodale temps réel.
   - `WITHINGS_CLIENT_ID` & `WITHINGS_ACCESS_TOKEN` : Identifiants API OAuth Withings.
   - `OURA_PERSONAL_ACCESS_TOKEN` : Token personnel Oura Ring Cloud API v2.
+  - `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN` (ou `KV_REST_API_URL` & `KV_REST_API_TOKEN`) : Identifiants de connexion REST pour le Rate Limiter distribué Upstash Redis / Vercel KV (sliding window multi-instances). Bascule automatique en mémoire si non configurés en développement local.
+  - `RATE_LIMIT_LOGIN` (défaut `10/minute`), `RATE_LIMIT_REGISTER` (défaut `15/minute`), `RATE_LIMIT_PHOTO_ANALYSIS` (défaut `15/minute`), `RATE_LIMIT_WEBHOOK` (défaut `60/minute`) : Seuils configurables de limitation de débit.
+  - `RATE_LIMIT_ENABLED` : Permet de désactiver le rate limiting ("0" ou "false").
 
 ## Démarrage Local
 
