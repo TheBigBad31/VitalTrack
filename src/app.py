@@ -13,6 +13,7 @@ Endpoints conservés directement dans app.py :
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -41,12 +42,40 @@ from src.rate_limit import (
 
 
 # Initialisation de FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gère le cycle de vie de l'application FastAPI (démarrage et extinction propres).
+
+    Initialise le ConnectionPool PostgreSQL Neon lors du démarrage et assure la fermeture
+    propre de toutes les connexions au shutdown pour éviter les fuites de ressources.
+    """
+    if getattr(db, "is_postgres", False):
+        try:
+            pool = db.create_pool()
+            app.state.db_pool = pool
+        except Exception as e:
+            logger.warning(f"Impossible d'initialiser le pool PostgreSQL dans le lifespan: {e}")
+            app.state.db_pool = None
+    else:
+        app.state.db_pool = None
+
+    yield
+
+    # Arrêt propre / Shutdown : fermeture du pool de connexions
+    try:
+        db.close_pool()
+    except Exception as e:
+        logger.warning(f"Erreur lors de la fermeture du pool PostgreSQL au shutdown: {e}")
+    app.state.db_pool = None
+
+
 app = FastAPI(
     title="VitalTrack API",
     description="API REST pour VitalTrack : PWA Mobile-First, Nutrition Photo IA et Objets Connectés",
     version="1.1.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
