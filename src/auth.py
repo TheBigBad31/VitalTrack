@@ -43,20 +43,13 @@ def _resolve_jwt_secret() -> str:
         return secret
     if _is_production():
         raise MissingJWTSecretError(
-            "[VitalTrack Security Error] JWT_SECRET doit obligatoirement être configurée en production (VERCEL/ENV=production). "
-            "Aucune clé par défaut n'est autorisée."
+            "[VitalTrack Security Error] JWT_SECRET obligatoire en production (VERCEL/ENV=production). "
+            "Configurez-la dans Vercel Environment Variables. Aucune clé par défaut n'est autorisée."
         )
     return secrets.token_urlsafe(32)
 
 
-try:
-    JWT_SECRET = _resolve_jwt_secret()
-except MissingJWTSecretError as _e:
-    logger.warning(
-        "[VitalTrack Security Warning] JWT_SECRET non configurée au démarrage. "
-        "Génération d'un secret JWT de session éphémère pour éviter FUNCTION_INVOCATION_FAILED (BALI-185/BALI-97)."
-    )
-    JWT_SECRET = secrets.token_urlsafe(32)
+JWT_SECRET = _resolve_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(30 * 24 * 3600)))  # 30 jours par défaut
 
