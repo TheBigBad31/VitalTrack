@@ -520,6 +520,15 @@ class WeightsRepository(BaseRepository):
             conn.commit()
             return len(params_list)
 
+    def delete_activity(self, activity_id: int, user_id: int = 1) -> bool:
+        """Supprime une activité physique spécifique par son identifiant pour user_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM activities WHERE id = ? AND user_id = ?", (activity_id, user_id))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
+
     def delete_demo_weights(self, user_id: Optional[int] = None) -> int:
         """Supprime les pesées de démonstration ou simulation."""
         with self.get_connection() as conn:

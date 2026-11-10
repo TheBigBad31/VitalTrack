@@ -5836,106 +5836,70 @@
 
 
     async function testHealthConnectIngestion() {
-
       const todayStr = new Date().toISOString().split('T')[0];
-
       let token = currentDeviceTokens['health_connect'];
-
       if (!token) {
-
         token = await fetchOrInitDeviceToken('health_connect');
-
       }
 
-
-
-      const headers = { 'Content-Type': 'application/json' };
-
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Dry-Run': 'true'
+      };
       if (token) {
-
         headers['X-Webhook-Token'] = token;
-
       }
-
-
 
       const payload = {
-
         date: todayStr,
-
         source: "health_connect",
-
         steps: 12100,
-
         active_calories_kcal: 530.0,
-
         resting_hr_bpm: 57,
-
         hrv_ms: 59.0,
-
         sleep_score: 85,
-
         token: token || undefined
-
       };
 
-
-
       try {
-
-        if (typeof showToast === 'function') showToast("Envoi du test webhook avec X-Webhook-Token...", "info");
-
-        const res = await fetch('/api/webhooks/health-connect', {
-
+        if (typeof showToast === 'function') showToast("Test webhook en cours (simulation dry-run)...", "info");
+        const res = await fetch('/api/webhooks/health-connect?dry_run=true', {
           method: 'POST',
-
           headers: headers,
-
           body: JSON.stringify(payload)
-
         });
+        const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
+          const popupMsg = "\u2713 Test Passerelle Health Connect (Simulation R\u00e9ussie)\n\n" +
+            "\u2022 Statut : Authentifi\u00e9 & Valid\u00e9 (HTTP 200)\n" +
+            "\u2022 Utilisateur : #" + (data.user_id || '1') + "\n" +
+            "\u2022 Appareil : " + (data.device_id || 'health_connect') + "\n" +
+            "\u2022 Jeton webhook : " + (token ? token.substring(0, 10) + '...' : '(aucun)') + "\n\n" +
+            "M\u00e9triques v\u00e9rifi\u00e9es :\n" +
+            "\u2022 Date : " + payload.date + "\n" +
+            "\u2022 Pas : " + payload.steps + "\n" +
+            "\u2022 Calories actives : " + payload.active_calories_kcal + " kcal\n" +
+            "\u2022 Fr\u00e9quence card. repos : " + payload.resting_hr_bpm + " bpm\n" +
+            "\u2022 HRV : " + payload.hrv_ms + " ms\n" +
+            "\u2022 Score sommeil : " + payload.sleep_score + "/100\n\n" +
+            "Note : Mode dry-run actif, aucune donn\u00e9e n'a \u00e9t\u00e9 ins\u00e9r\u00e9e en base de donn\u00e9es.";
 
+          alert(popupMsg);
           if (typeof showToast === 'function') {
-
-            showToast("✓ Succès ! Payload ingéré et authentifié avec votre X-Webhook-Token.", "success");
-
-          } else {
-
-            alert("✓ Succès ! Passerelle Google Health Connect testée et validée avec votre X-Webhook-Token.");
-
+            showToast("\u2713 Test valid\u00e9 avec succ\u00e8s (dry-run, base inchang\u00e9e).", "success");
           }
-
-          await loadDashboardData();
-
-          // Mettre à jour l'affichage du wizard
-
           await fetchOrInitDeviceToken('health_connect');
-
         } else {
-
-          const errData = await res.json().catch(() => ({}));
-
-          const msg = "Échec du test webhook : " + (errData.detail || res.statusText);
-
+          const msg = "\u00c9chec du test webhook : " + (data.detail || res.statusText);
           if (typeof showToast === 'function') showToast(msg, "error");
-
           else alert(msg);
-
         }
-
       } catch (e) {
-
         if (typeof showToast === 'function') showToast("Erreur de communication lors du test webhook Google Health", "error");
-
         else alert("Erreur lors du test webhook Google Health");
-
       }
-
     }
-
-
 
     async function testScaleIngestion(sourceName) {
 

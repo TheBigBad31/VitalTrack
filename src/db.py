@@ -560,6 +560,9 @@ class Database:
     def batch_insert_activities(self, entries: List[ActivityEntry], user_id: int = 1) -> int:
         return self.weights.batch_insert_activities(entries, user_id=user_id)
 
+    def delete_activity(self, activity_id: int, user_id: int = 1) -> bool:
+        return self.weights.delete_activity(activity_id, user_id=user_id)
+
     def delete_demo_weights(self, user_id: Optional[int] = None) -> int:
         return self.weights.delete_demo_weights(user_id=user_id)
 

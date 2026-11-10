@@ -477,7 +477,8 @@ def ingest_health_webhook(
     request: Request,
     payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Body(None),
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    dry_run: bool = Query(False, description="Mode simulation : valide la signature, le token et le payload sans écrire en base")
 ):
     """Point d'entrée universel et durci pour les webhooks mobiles ou passerelles (Health Connect, RingConn, Xiaomi).
     
@@ -542,6 +543,18 @@ def ingest_health_webhook(
     for single_item in items_to_process:
         if isinstance(single_item, dict):
             validate_physiological_ranges(single_item)
+
+    if dry_run or request.headers.get("X-Dry-Run", "").lower() in ("true", "1", "yes"):
+        primary_device_id = matched_device.get("device_id") if matched_device else "health_connect"
+        return {
+            "status": "dry_run",
+            "message": f"[Simulation / Test] Payload validé avec succès ({len(items_to_process)} item(s)). Aucune donnée enregistrée en base.",
+            "user_id": resolved_user_id,
+            "device_id": primary_device_id,
+            "dry_run": True,
+            "items_count": len(items_to_process),
+            "preview": items_to_process[0] if items_to_process else {}
+        }
 
     user_consents = get_db().get_user_consents(user_id=resolved_user_id)
 

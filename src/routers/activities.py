@@ -82,3 +82,14 @@ def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(app_
     saved = db.insert_activity(entry, user_id=current_user.id)
     app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
+
+
+@router.delete("/api/activities/{activity_id}")
+def delete_activity(activity_id: int, current_user: AuthUser = Depends(app_module.get_current_user)):
+    """Supprime une entrée d'activité physique pour l'utilisateur connecté."""
+    db = get_db()
+    deleted = db.delete_activity(activity_id, user_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Activité introuvable")
+    app_module.invalidate_dashboard_cache(current_user.id)
+    return {"status": "success", "message": f"Activité #{activity_id} supprimée avec succès"}
