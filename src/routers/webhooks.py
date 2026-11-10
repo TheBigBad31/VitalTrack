@@ -14,11 +14,15 @@ Prend en charge :
 
 from datetime import date, datetime, timezone
 import hmac
+import logging
 import os
+import traceback
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("vitaltrack.webhooks")
 
 from src.connectors.webhook import MobileHealthWebhookConnector
 from src.db import Database
@@ -551,17 +555,27 @@ def ingest_health_webhook(
     user_consents = get_db().get_user_consents(user_id=resolved_user_id)
 
     results = []
-    for single_item in items_to_process:
-        if isinstance(single_item, dict):
-            res = process_single_item(
-                item=single_item,
-                resolved_user_id=resolved_user_id,
-                matched_device=matched_device,
-                user_consents=user_consents,
-                endpoint_path="/api/webhook/health",
-                database=get_db()
-            )
-            results.append(res)
+    try:
+        for single_item in items_to_process:
+            if isinstance(single_item, dict):
+                res = process_single_item(
+                    item=single_item,
+                    resolved_user_id=resolved_user_id,
+                    matched_device=matched_device,
+                    user_consents=user_consents,
+                    endpoint_path="/api/webhook/health",
+                    database=get_db()
+                )
+                results.append(res)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        tb_str = traceback.format_exc()
+        logger.error("Erreur inattendue ingestion webhook: %s\n%s", exc, tb_str)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur interne d'ingestion ({type(exc).__name__}): {str(exc)}"
+        )
 
     is_batch = len(items_to_process) > 1 or isinstance(payload, list) or (isinstance(payload, dict) and any(k in payload for k in ("items", "batch", "records")))
 

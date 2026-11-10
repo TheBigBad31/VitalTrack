@@ -203,6 +203,24 @@ async def database_service_unavailable_handler(request: Request, exc: DatabaseSe
     )
 
 
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Capture toutes les exceptions non gérées pour exposer le diagnostic en JSON plutôt qu'un 500 muet."""
+    import traceback
+    tb = traceback.format_exc()
+    print(f"[VitalTrack Unhandled Exception] {request.method} {request.url.path}: {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error": "Internal Server Error",
+            "type": type(exc).__name__,
+            "detail": str(exc),
+            "path": request.url.path,
+        },
+    )
+
+
 # Instances partagées
 try:
     db = Database()
