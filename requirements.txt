@@ -5,6 +5,10 @@
 #   bandit: security scanning
 #   pip-audit: dependency vulnerability scanning
 #   mypy: type checking
+cachetools>=5.3.0
+    # via vitaltrack
+redis>=5.0.0
+    # via vitaltrack
 alembic==1.20.1
 pytest-cov>=4.0.0
 bandit>=1.7.0
