@@ -254,6 +254,13 @@ class Database:
             except Exception as mig_err:
                 print(f"[VitalTrack DB Warning] Migrations ignorées au démarrage: {mig_err}")
 
+        # Auto-rattrapage DDL idempotent pour Neon PostgreSQL (garantie contraintes ON CONFLICT)
+        if self.is_postgres:
+            try:
+                self._ensure_pg_schema_constraints()
+            except Exception as ddl_err:
+                print(f"[VitalTrack DB Warning] Erreur vérification contraintes Neon: {ddl_err}")
+
     @property
     def container(self):
         """Fournit le conteneur DI associé à cette base (initialisé à la demande si non fourni)."""
@@ -404,6 +411,34 @@ class Database:
     def _init_db(self):
         """Alias pour rétrocompatibilité : exécute run_migrations."""
         self.run_migrations()
+
+    def _ensure_pg_schema_constraints(self):
+        """Vérifie et applique les contraintes d'unicité composites requises sur PostgreSQL Neon."""
+        if not self.is_postgres:
+            return
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DO $$
+                BEGIN
+                    -- 1. Table weights : assurer la contrainte composite (user_id, date, source)
+                    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_weights_user_date') THEN
+                        ALTER TABLE weights DROP CONSTRAINT uq_weights_user_date;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_weights_user_date_source') THEN
+                        ALTER TABLE weights ADD CONSTRAINT uq_weights_user_date_source UNIQUE (user_id, date, source);
+                    END IF;
+
+                    -- 2. Table activities : assurer la contrainte composite (user_id, date, source)
+                    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_activities_user_date') THEN
+                        ALTER TABLE activities DROP CONSTRAINT uq_activities_user_date;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_activities_user_date_source') THEN
+                        ALTER TABLE activities ADD CONSTRAINT uq_activities_user_date_source UNIQUE (user_id, date, source);
+                    END IF;
+                END $$;
+            """)
+            conn.commit()
 
     def _pg_bool_true(self):
         """Valeur littérale de `true` adaptée au moteur (BOOLEAN sous PostgreSQL, INTEGER 1 sous SQLite)."""
