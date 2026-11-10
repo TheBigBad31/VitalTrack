@@ -174,16 +174,26 @@ try:
     db = Database()
 except DatabaseServiceUnavailableError as db_err:
     print(f"[VitalTrack Startup Warning] Base Neon Postgres inaccessible au demarrage: {db_err}")
-    db = Database.__new__(Database)
-    db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("NEON_DATABASE_URL")
+try:
+    db = Database()
+except DatabaseServiceUnavailableError as db_err:
+    print(f"[VitalTrack Startup Warning] Base Neon Postgres inaccessible au demarrage: {db_err}")
+    # En environnement de production, créer l'instance sans exécuter de requêtes SQLite fallback
+    db = Database(
+        database_url=os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("NEON_DATABASE_URL"),
+        db_path=get_db_path(),
+        auto_migrate=False,
+    )
     db.is_postgres = True
-    db.db_path = get_db_path()
 except Exception as db_err:
     print(f"[VitalTrack Startup Warning] Erreur inattendue lors de l'initialisation DB: {db_err}")
-    db = Database.__new__(Database)
-    db.database_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("NEON_DATABASE_URL")
-    db.is_postgres = bool(db.database_url)
-    db.db_path = get_db_path()
+    db_url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_URL_NON_POOLING") or os.getenv("NEON_DATABASE_URL")
+    db = Database(
+        database_url=db_url,
+        db_path=get_db_path(),
+        auto_migrate=False,
+    )
+    db.is_postgres = bool(db_url)
 
 set_db(db)
 
