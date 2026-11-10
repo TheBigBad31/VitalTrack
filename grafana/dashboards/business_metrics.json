@@ -1,0 +1,114 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Business KPIs — Pesées & Nutrition IA",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(increase(vitaltrack_weight_logs_total{service=\"vitaltrack\"}[1d]))",
+          "legendFormat": "Pesées aujourd'hui"
+        }
+      ],
+      "title": "Pesées Enregistrées / Jour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "sum(increase(vitaltrack_photo_analyses_total{service=\"vitaltrack\"}[1d]))",
+          "legendFormat": "Photos IA aujourd'hui"
+        }
+      ],
+      "title": "Analyses Photos IA / Jour",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" } },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(increase(vitaltrack_weight_logs_total{service=\"vitaltrack\"}[1h])) by (source)",
+          "legendFormat": "Source: {{source}}"
+        }
+      ],
+      "title": "Pesées par Source (Withings, Garmin, Manuel, Simulation)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth" },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 7 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(rate(vitaltrack_photo_analyses_total{service=\"vitaltrack\"}[5m])) by (engine)",
+          "legendFormat": "Moteur: {{engine}}"
+        }
+      ],
+      "title": "Débit d'Analyses Repas IA par Moteur (Gemini vs Fallback)",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vitaltrack", "business", "metrics", "bali-222"],
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "VitalTrack — Business Metrics (Pesées & Photos IA / Jour)",
+  "uid": "vitaltrack-business-metrics"
+}
