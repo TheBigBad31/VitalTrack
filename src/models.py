@@ -178,7 +178,20 @@ class FoodItem(BaseModel):
 
 
 class MealEntry(BaseModel):
-    """EntrǸe de repas (prǸparǸe pour Stage 2 - Photo IA & OpenFoodFacts)."""
+    """Entree de repas unifiee / historique agrege de repas.
+
+    Represente un repas consomme a une date et un creneau (breakfast, lunch, snack, dinner)
+    avec ses calories globales, macronutriments agreges, photo optionnelle et liste
+    d'aliments (FoodItem) ou decomposition d'estimation IA / journal.
+
+    Notes d'architecture (VTR-106) :
+    - Sert de modele pivot pour le moteur de nutrition (NutritionEngine), le bilan energetique
+      quotidien et les endpoints d'historique (/api/meals).
+    - Pour la journalisation detaillee interactive (ajout item par item depuis le catalogue,
+      suppression d'item, prorata), voir MealLog et MealLogItem.
+    - Des convertisseurs bidirectionnels from_meal_log et to_meal_log facilitent
+      le pontage explicite entre les deux domaines.
+    """
     id: Optional[int] = None
     date: DateType
     meal_type: MealType
@@ -190,6 +203,66 @@ class MealEntry(BaseModel):
     photo_data_url: Optional[str] = None
     items: List[FoodItem] = Field(default_factory=list)
     created_at: Optional[datetime] = None
+
+    @classmethod
+    def from_meal_log(cls, meal_log: "MealLog") -> "MealEntry":
+        """Convertit un MealLog (journal structure) en MealEntry (repas unifie)."""
+        food_items = [
+            FoodItem(
+                name=it.name,
+                portion_g=it.quantity if it.unit == "g" else 100.0,
+                calories_kcal=it.calories,
+                protein_g=it.protein_g,
+                carbs_g=it.carbs_g,
+                fat_g=it.fat_g,
+                fiber_g=it.fiber_g or 0.0,
+                confidence_score=1.0,
+            )
+            for it in meal_log.items
+        ]
+        return cls(
+            id=meal_log.id,
+            date=meal_log.date,
+            meal_type=meal_log.meal_type,
+            total_calories_kcal=meal_log.total_calories,
+            protein_g=meal_log.total_protein_g,
+            carbs_g=meal_log.total_carbs_g,
+            fat_g=meal_log.total_fat_g,
+            fiber_g=meal_log.total_fiber_g,
+            photo_data_url=meal_log.photo_url,
+            items=food_items,
+            created_at=meal_log.created_at,
+        )
+
+    def to_meal_log(self, user_id: int = 1) -> "MealLog":
+        """Projette un MealEntry vers un MealLog avec ses MealLogItem associes."""
+        log_items = [
+            MealLogItem(
+                name=it.name,
+                quantity=it.portion_g or 100.0,
+                unit="g",
+                calories=it.calories_kcal,
+                protein_g=it.protein_g,
+                carbs_g=it.carbs_g,
+                fat_g=it.fat_g,
+                fiber_g=it.fiber_g or 0.0,
+            )
+            for it in self.items
+        ]
+        return MealLog(
+            id=self.id,
+            user_id=user_id,
+            date=self.date,
+            meal_type=self.meal_type,
+            photo_url=self.photo_data_url,
+            total_calories=self.total_calories_kcal,
+            total_protein_g=self.protein_g,
+            total_carbs_g=self.carbs_g,
+            fat_g=self.fat_g,
+            total_fiber_g=self.fiber_g,
+            items=log_items,
+            created_at=self.created_at,
+        )
 
 
 class SavedMeal(BaseModel):
@@ -284,14 +357,14 @@ class CatalogSubscription(BaseModel):
 
 
 class MealLogItem(BaseModel):
-    """Ligne d'aliment ou de plat consommǸ au sein d'un repas donnǸ."""
+    """Ligne d'aliment ou de plat consommee au sein d'un repas donne (journal interactif)."""
     id: Optional[int] = None
     meal_log_id: Optional[int] = None
     food_item_id: Optional[int] = None
-    name: str = Field(..., min_length=1, description="Nom de l'aliment/plat consommǸ")
-    quantity: float = Field(..., gt=0, description="QuantitǸ consommǸ")
-    unit: str = Field("g", description="UnitǸ consommǸ")
-    calories: float = Field(..., ge=0.0, description="Calories calculǸes au prorata")
+    name: str = Field(..., min_length=1, description="Nom de l'aliment/plat consomme")
+    quantity: float = Field(..., gt=0, description="Quantite consommee")
+    unit: str = Field("g", description="Unite consommee")
+    calories: float = Field(..., ge=0.0, description="Calories calculees au prorata")
     protein_g: float = 0.0
     carbs_g: float = 0.0
     fat_g: float = 0.0
@@ -300,7 +373,14 @@ class MealLogItem(BaseModel):
 
 
 class MealLog(BaseModel):
-    """Instance d'un des 4 repas quotidiens (breakfast, lunch, snack, dinner)."""
+    """Instance d'un des 4 creneaux quotidiens du journal alimentaire (breakfast, lunch, snack, dinner).
+
+    Represente le conteneur editable pour la saisie pas-a-pas d'aliments du catalogue,
+    avec calcul dynamique des totaux et synchronisation transactionnelle avec la table `meals`
+    (MealEntry) pour le suivi metabolique.
+
+    Pour convertir vers un MealEntry agrege : meal_log.to_meal_entry() ou MealEntry.from_meal_log(meal_log).
+    """
     id: Optional[int] = None
     user_id: Optional[int] = 1
     date: DateType
@@ -314,3 +394,7 @@ class MealLog(BaseModel):
     items: List[MealLogItem] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    def to_meal_entry(self) -> "MealEntry":
+        """Convertit ce MealLog en MealEntry agrege."""
+        return MealEntry.from_meal_log(self)
