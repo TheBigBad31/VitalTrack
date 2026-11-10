@@ -154,6 +154,19 @@ class DatabaseConnectionWrapper:
         self.is_postgres = is_postgres
         self.pool_conn_cm = pool_conn_cm
 
+    def set_user_context(self, user_id: Optional[int]) -> None:
+        """Définit le contexte utilisateur multi-tenant pour les policies RLS PostgreSQL."""
+        if not self.is_postgres:
+            return
+        cur = self.conn.cursor()
+        try:
+            if user_id is not None:
+                cur.execute(f"SET LOCAL app.current_user_id = '{int(user_id)}';")
+            else:
+                cur.execute("RESET app.current_user_id;")
+        finally:
+            cur.close()
+
     def cursor(self) -> DatabaseCursorWrapper:
         if self.is_postgres:
             return DatabaseCursorWrapper(self.conn.cursor(row_factory=dict_row), is_postgres=True)
@@ -309,20 +322,28 @@ class Database:
             return pool
         return self.pool
 
-    def get_connection(self) -> DatabaseConnectionWrapper:
-        """Fournit une connexion unifiée (PostgreSQL avec ConnectionPool ou SQLite)."""
+    def get_connection(self, user_id: Optional[int] = None) -> DatabaseConnectionWrapper:
+        """Fournit une connexion unifiée (PostgreSQL avec ConnectionPool ou SQLite).
+        Si user_id est fourni, configure le contexte local pour RLS PostgreSQL.
+        """
         if self.is_postgres:
             pool = self._get_pool()
             if pool is not None:
                 try:
                     pool_cm = pool.connection(timeout=10.0)
                     conn = pool_cm.__enter__()
-                    return DatabaseConnectionWrapper(conn, is_postgres=True, pool_conn_cm=pool_cm)
+                    wrapper = DatabaseConnectionWrapper(conn, is_postgres=True, pool_conn_cm=pool_cm)
+                    if user_id is not None:
+                        wrapper.set_user_context(user_id)
+                    return wrapper
                 except Exception as e:
                     print(f"[VitalTrack DB Warning] Échec obtention connexion depuis pool Neon: {e}. Essai connexion directe.")
             try:
                 conn = psycopg.connect(self.database_url, connect_timeout=10)
-                return DatabaseConnectionWrapper(conn, is_postgres=True)
+                wrapper = DatabaseConnectionWrapper(conn, is_postgres=True)
+                if user_id is not None:
+                    wrapper.set_user_context(user_id)
+                return wrapper
             except Exception as e:
                 if is_production_environment() or self.database_url:
                     err_msg = (
