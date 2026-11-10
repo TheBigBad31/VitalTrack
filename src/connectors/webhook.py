@@ -19,6 +19,10 @@ from src.models import ActivityEntry, WeightEntry
 class MobileHealthWebhookConnector(BaseHealthConnector):
     """Adaptateur universel pour Webhooks de santé mobile."""
 
+    device_id: str = "mobile_webhook"
+    name: str = "Mobile Health Webhook"
+    device_type: str = "mobile_aggregator"
+
     def _check_configuration(self) -> bool:
         """Vérifie si un token secret de webhook est configuré (optionnel mais recommandé)."""
         return True

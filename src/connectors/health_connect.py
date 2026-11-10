@@ -26,6 +26,10 @@ from src.models import ActivityEntry, WeightEntry
 class GoogleHealthConnectConnector(BaseHealthConnector):
     """Connecteur sécurisé pour Google Health Connect et Google Fitness API."""
 
+    device_id: str = "health_connect"
+    name: str = "Google Health Connect (Google Health / Android)"
+    device_type: str = "mobile_aggregator"
+
     OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
     FITNESS_API_BASE = "https://www.googleapis.com/fitness/v1/users/me"
 
@@ -80,6 +84,22 @@ class GoogleHealthConnectConnector(BaseHealthConnector):
             except Exception:
                 return False
         return False
+
+    def get_auth_url(self, redirect_uri: Optional[str] = None, state: Optional[str] = None) -> Optional[str]:
+        """Retourne l'URL d'autorisation OAuth2 Google pour Google Health Connect / Fit."""
+        if not self.client_id:
+            return None
+        import urllib.parse
+        params = {
+            "response_type": "code",
+            "client_id": self.client_id,
+            "redirect_uri": redirect_uri or "http://localhost:8000/api/webhooks/health-connect/callback",
+            "scope": " ".join(self.REQUIRED_SCOPES),
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state or "google_fit_state"
+        }
+        return f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
 
     def refresh_access_token_if_needed(self, http_client: Optional[httpx.Client] = None) -> Optional[str]:
         """Rafraîchit l'access_token Google via le refresh_token si expiré ou manquant.
