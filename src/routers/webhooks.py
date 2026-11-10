@@ -188,26 +188,17 @@ def resolve_webhook_user_and_device(
         return int(user_match["user_id"]), user_match.get("device")
 
     # Fallback d'administration via WEBHOOK_SECRET global si configuré
-    is_production = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production"
     global_secret = os.getenv("WEBHOOK_SECRET")
-
-    if not global_secret:
-        if is_production:
-            raise HTTPException(
-                status_code=503,
-                detail="Service Webhook non configuré en production (secret absent)"
-            )
-    else:
-        if hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
-            # Sécurité P0 : L'IDOR est neutralisé. Le webhook secret système n'accepte
-            # jamais de user_id arbitraire non authentifié dans le payload JSON.
-            default_user = db_inst.get_user_by_id(1)
-            if default_user:
-                return 1, None
+    if global_secret and hmac.compare_digest(str(auth_token).strip(), str(global_secret).strip()):
+        # Sécurité P0 : L'IDOR est neutralisé. Le webhook secret système n'accepte
+        # jamais de user_id arbitraire non authentifié dans le payload JSON.
+        default_user = db_inst.get_user_by_id(1)
+        if default_user:
+            return 1, None
 
     raise HTTPException(
         status_code=401,
-        detail="Token webhook invalide ou non autorisé : aucun compte utilisateur ou appareil associé"
+        detail="Token webhook invalide ou non autorisé : aucun compte utilisateur ou appareil associé. Veuillez vérifier le jeton dans VitalTrack."
     )
 
 
