@@ -1,7 +1,7 @@
 """Tests unitaires et d'intégration pour le endpoint GET /api/devices/data-map (BALI-197)."""
 
 import pytest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from src.app import app
@@ -56,28 +56,30 @@ def test_devices_data_map_with_multi_source_fixtures(client):
     db = app.state.db_instance
 
     # 1. Ajouter deux pesées récentes de sources différentes (Withings & Santé Connect)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
     w1 = WeightEntry(
-        date=date(2026, 11, 2),
+        date=yesterday,
         weight_kg=79.2,
         body_fat_pct=18.5,
         muscle_mass_kg=39.0,
         source="withings",
-        measured_at="2026-11-02T07:15:00Z"
+        measured_at=f"{yesterday.isoformat()}T07:15:00Z"
     )
     w2 = WeightEntry(
-        date=date(2026, 11, 3),
+        date=today,
         weight_kg=78.7,
         body_fat_pct=18.1,
         muscle_mass_kg=39.3,
         source="health_connect",
-        measured_at="2026-11-03T08:30:00Z"
+        measured_at=f"{today.isoformat()}T08:30:00Z"
     )
     db.insert_weight(w1, user_id=1)
     db.insert_weight(w2, user_id=1)
 
     # 2. Ajouter métriques journalières (incluant métriques non affichées dans l'UI)
     dm = DailyMetricsEntry(
-        date=date(2026, 11, 3),
+        date=today,
         source="health_connect",
         steps=9200,
         active_calories_kcal=410.0,
@@ -91,8 +93,8 @@ def test_devices_data_map_with_multi_source_fixtures(client):
 
     # 3. Ajouter hydratation (non affichée dans l'UI)
     hy = HydrationLogEntry(
-        date=date(2026, 11, 3),
-        timestamp="2026-11-03T14:00:00Z",
+        date=today,
+        timestamp=f"{today.isoformat()}T14:00:00Z",
         volume_ml=1750.0,
         source="health_connect"
     )
@@ -100,10 +102,10 @@ def test_devices_data_map_with_multi_source_fixtures(client):
 
     # 4. Ajouter séance de sport et sommeil
     sl = SleepSessionEntry(
-        date=date(2026, 11, 3),
+        date=today,
         source="health_connect",
-        start_time="2026-11-02T23:15:00Z",
-        end_time="2026-11-03T07:00:00Z",
+        start_time=f"{yesterday.isoformat()}T23:15:00Z",
+        end_time=f"{today.isoformat()}T07:00:00Z",
         duration_minutes=465,
         sleep_score=86
     )
