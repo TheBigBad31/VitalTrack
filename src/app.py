@@ -532,6 +532,35 @@ if os.path.isdir(STATIC_DIR):
     app.mount("/static", CachedStaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.get("/sw.js")
+def serve_service_worker():
+    """Sert le service worker PWA à la racine pour un scope / complet."""
+    sw_file = os.path.join(STATIC_DIR, "sw.js")
+    if os.path.isfile(sw_file):
+        return FileResponse(
+            sw_file,
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+    raise HTTPException(status_code=404, detail="Service worker non trouvé")
+
+
+@app.get("/offline.html")
+def serve_offline():
+    """Sert la page de fallback hors-ligne."""
+    offline_file = os.path.join(STATIC_DIR, "offline.html")
+    if os.path.isfile(offline_file):
+        return FileResponse(
+            offline_file,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(status_code=404, detail="Page hors-ligne non trouvée")
+
+
 @app.get("/")
 def serve_index():
     """Point d'entrée principal servant la PWA VitalTrack."""
