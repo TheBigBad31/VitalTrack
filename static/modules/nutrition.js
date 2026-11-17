@@ -2227,6 +2227,43 @@ function renderMealsJournal() {
   renderJournalDayBenefitsSummary(meals);
 }
 
+function aggregateDayBenefits(meals) {
+  const byId = new Map();
+  const catalogById = new Map(
+    (Array.isArray(currentCatalogItems) ? currentCatalogItems : []).map(it => [String(it.id), it])
+  );
+
+  (Array.isArray(meals) ? meals : []).forEach(meal => {
+    (Array.isArray(meal && meal.items) ? meal.items : []).forEach(it => {
+      const catItem = it.food_item_id != null ? catalogById.get(String(it.food_item_id)) : null;
+      const benefits = Array.isArray(it.benefits) && it.benefits.length > 0
+        ? it.benefits
+        : (catItem && Array.isArray(catItem.benefits) ? catItem.benefits : []);
+
+      benefits.forEach(b => {
+        const key = String(b.benefit_id || b.id || b.title || '');
+        if (!key) return;
+        let entry = byId.get(key);
+        if (!entry) {
+          entry = {
+            benefit_id: b.benefit_id || b.id || key,
+            title: b.title || key,
+            explanation: b.explanation || '',
+            icon: b.icon || '🛡️',
+            foodNames: []
+          };
+          byId.set(key, entry);
+        }
+        if (it.name && !entry.foodNames.includes(it.name)) {
+          entry.foodNames.push(it.name);
+        }
+      });
+    });
+  });
+
+  return Array.from(byId.values());
+}
+
 function renderJournalDayBenefitsSummary(meals) {
   const container = document.getElementById('journal-day-benefits-summary');
   const countBadge = document.getElementById('journal-day-benefits-count');
