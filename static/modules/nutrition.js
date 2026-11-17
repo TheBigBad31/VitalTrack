@@ -6,6 +6,8 @@ let currentCatalogItems = [];
 let currentCatalogFilter = 'all'; // 'all', 'food', 'dish'
 let currentCatalogSourceFilter = 'all'; // 'all', 'mine', 'public', 'friends' (Stage 15 / BALI-85)
 let currentCatalogBenefitFilter = ''; // Filtre par bienfait (Stage 13)
+let currentCatalogCategoryFilter = ''; // Filtre par catégorie alimentaire (BALI-273)
+let currentCatalogSort = 'name_asc'; // Tri du catalogue (BALI-273)
 let currentFriendSubscriptions = []; // Liste des abonnements aux catalogues d'amis
 let currentExplorerFriend = null; // Ami en cours d'exploration
 let currentExplorerFriendItems = []; // Aliments de l'ami
@@ -366,20 +368,72 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+const CATALOG_CATEGORIES = [
+  { id: 'viandes', label: 'Viandes & Volailles', shortLabel: 'Viandes', emoji: '🥩', order: 1, badgeClass: 'bg-rose-500/15 text-rose-300 border-rose-500/30' },
+  { id: 'poissons_oeufs', label: 'Poissons & Œufs', shortLabel: 'Poissons & Œufs', emoji: '🐟', order: 2, badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
+  { id: 'legumes', label: 'Légumes & Crudités', shortLabel: 'Légumes', emoji: '🥦', order: 3, badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
+  { id: 'fruits', label: 'Fruits', shortLabel: 'Fruits', emoji: '🍎', order: 4, badgeClass: 'bg-orange-500/15 text-orange-300 border-orange-500/30' },
+  { id: 'feculents', label: 'Féculents, Céréales & Pain', shortLabel: 'Féculents', emoji: '🍚', order: 5, badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  { id: 'laitages', label: 'Laitages & Fromages', shortLabel: 'Laitages', emoji: '🥛', order: 6, badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
+  { id: 'legumineuses_oleagineux', label: 'Légumineuses & Oléagineux', shortLabel: 'Oléagineux', emoji: '🥜', order: 7, badgeClass: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' },
+  { id: 'matieres_grasses', label: 'Matières grasses & Huiles', shortLabel: 'Lipides', emoji: '🫒', order: 8, badgeClass: 'bg-lime-500/15 text-lime-300 border-lime-500/30' },
+  { id: 'plats_composes', label: 'Plats cuisinés & Salades', shortLabel: 'Plats', emoji: '🍲', order: 9, badgeClass: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' },
+  { id: 'boissons', label: 'Boissons', shortLabel: 'Boissons', emoji: '🥤', order: 10, badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30' },
+  { id: 'sucre_snacks', label: 'Produits sucrés & Collations', shortLabel: 'Snacks', emoji: '🍫', order: 11, badgeClass: 'bg-pink-500/15 text-pink-300 border-pink-500/30' },
+  { id: 'autre', label: 'Autre', shortLabel: 'Autre', emoji: '🍽️', order: 12, badgeClass: 'bg-slate-500/15 text-slate-300 border-slate-500/30' }
+];
+
+const CATALOG_CATEGORY_BY_ID = Object.fromEntries(CATALOG_CATEGORIES.map(c => [c.id, c]));
+
+const CATALOG_CATEGORY_KEYWORDS = [
+  ['matieres_grasses', ['huile', 'beurre', 'margarine', 'creme fraiche', 'mayonnaise', 'vinaigrette', 'saindoux']],
+  ['boissons', ["lait d'amande", "lait d'avoine", 'lait de soja', ' eau ', 'eau minerale', 'eau plate', 'eau gazeuse', 'cafe', ' the ', 'the vert', 'the noir', 'tisane', 'infusion', ' jus ', 'jus d', 'soda', 'smoothie', 'biere', ' vin ', 'boisson', 'kombucha', 'limonade']],
+  ['sucre_snacks', ['chocolat', 'sucre', 'miel', 'confiture', 'biscuit', 'gateau', 'patisserie', 'bonbon', 'glace', 'chips', 'brioche', 'croissant', 'viennoiserie', 'compote']],
+  ['viandes', ['poulet', 'dinde', 'boeuf', 'steak', 'veau', 'porc', 'jambon', 'agneau', 'canard', 'lardon', 'saucisse', 'viande', 'bacon', 'escalope', 'magret', 'bavette', 'entrecote']],
+  ['poissons_oeufs', ['saumon', 'thon', 'cabillaud', 'truite', 'maquereau', 'sardine', 'crevette', 'moule', 'poisson', 'colin', 'merlu', 'dorade', 'oeuf', 'omelette']],
+  ['laitages', ['yaourt', 'yogourt', 'fromage', ' lait ', 'skyr', 'petit suisse', 'mozzarella', 'emmental', ' comte ', 'parmesan', 'ricotta', 'cottage', 'kefir', 'faisselle']],
+  ['legumineuses_oleagineux', ['amande', 'noix', 'noisette', 'cajou', 'pistache', 'cacahuete', 'lentille', 'pois chiche', 'haricot rouge', 'haricot blanc', 'soja', 'tofu', 'tempeh', 'edamame', 'graine', 'chia', ' lin ']],
+  ['feculents', ['avoine', ' riz ', 'riz ', 'pates', 'spaghetti', 'tagliatelle', ' pain', 'baguette', 'tartine', 'quinoa', 'semoule', 'boulgour', 'patate', 'pomme de terre', 'farine', ' ble ', 'sarrasin', ' mais ', 'muesli', 'granola', 'biscotte', 'gnocchi']],
+  ['fruits', ['banane', ' pomme ', 'pommes', ' poire ', 'poires', 'fraise', 'framboise', 'myrtille', 'orange', 'clementine', 'mandarine', 'kiwi', 'mangue', 'ananas', 'raisin', 'peche', 'abricot', 'melon', 'pasteque', 'cerise', 'citron', 'figue', ' datte', 'prune', 'fruit']],
+  ['legumes', ['avocat', 'tomate', 'carotte', 'brocoli', 'haricot vert', 'courgette', 'aubergine', 'poivron', 'concombre', 'salade', 'laitue', 'epinard', 'chou', 'oignon', ' ail ', 'champignon', 'poireau', 'radis', 'betterave', 'celeri', 'asperge', 'petit pois', 'legume']],
+  ['plats_composes', ['bowl', 'pizza', 'burger', 'sandwich', 'quiche', 'gratin', 'curry', 'wok', 'soupe', 'potage', 'lasagne', 'couscous', 'paella', 'wrap', 'poke']]
+];
+
+function resolveCatalogItemCategory(item) {
+  if (!item) return 'autre';
+  const raw = String(item.category || '').trim().toLowerCase();
+  if (raw && CATALOG_CATEGORY_BY_ID[raw]) return raw;
+  if (item.item_type === 'dish') return 'plats_composes';
+  const normName = ` ${normalizeSearchText(item.name || '')} `;
+  for (const [slug, keywords] of CATALOG_CATEGORY_KEYWORDS) {
+    if (keywords.some(kw => normName.includes(kw))) {
+      return slug;
+    }
+  }
+  return 'autre';
+}
+
+function getCatalogCategoryMeta(categoryId) {
+  return CATALOG_CATEGORY_BY_ID[categoryId] || CATALOG_CATEGORY_BY_ID.autre;
+}
+
 /** Vrai si l'élément correspond à la recherche libre (tous les mots saisis doivent être présents). */
 function catalogItemMatchesSearch(item, normalizedQuery) {
   if (!normalizedQuery) return true;
   // L'index de recherche est calculé une seule fois par élément (et non à chaque frappe).
   if (item.__searchHaystack === undefined) {
-    item.__searchHaystack = normalizeSearchText(`${item.name || ''} ${item.description || ''}`);
+    const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(item));
+    item.__searchHaystack = normalizeSearchText(`${item.name || ''} ${item.description || ''} ${catMeta.label} ${catMeta.shortLabel}`);
   }
   return normalizedQuery.split(/\s+/).filter(Boolean).every(token => item.__searchHaystack.includes(token));
 }
 
-/** Réinitialise recherche, type et bienfait du catalogue (état vide sans résultat). */
+/** Réinitialise recherche, type, catégorie, tri et bienfait du catalogue. */
 function resetCatalogFilters() {
   currentCatalogSearch = '';
   currentCatalogBenefitFilter = '';
+  currentCatalogCategoryFilter = '';
+  currentCatalogSort = 'name_asc';
   currentCatalogFilter = 'all';
 
   const searchInput = document.getElementById('catalog-search-input');
@@ -388,12 +442,18 @@ function resetCatalogFilters() {
   const benefitSelect = document.getElementById('cat-filter-benefit');
   if (benefitSelect) benefitSelect.value = '';
 
+  const categorySelect = document.getElementById('cat-filter-category');
+  if (categorySelect) categorySelect.value = '';
+
+  const sortSelect = document.getElementById('cat-sort-select');
+  if (sortSelect) sortSelect.value = 'name_asc';
+
   ['all', 'food', 'dish'].forEach(t => {
     const btn = document.getElementById(`cat-filter-${t}`);
     if (!btn) return;
     btn.className = t === 'all'
-      ? 'flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors'
-      : 'flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors';
+      ? 'flex-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors'
+      : 'flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors';
   });
 
   renderCatalogItems();
@@ -401,6 +461,16 @@ function resetCatalogFilters() {
 
 function handleBenefitFilterChange(event) {
   currentCatalogBenefitFilter = event.target.value;
+  renderCatalogItems();
+}
+
+function handleCategoryFilterChange(event) {
+  currentCatalogCategoryFilter = event.target.value;
+  renderCatalogItems();
+}
+
+function handleCatalogSortChange(event) {
+  currentCatalogSort = event.target.value || 'name_asc';
   renderCatalogItems();
 }
 
@@ -438,6 +508,9 @@ function buildCatalogItemCardHtml(item) {
   const itemName = escapeHtml(item.name || '');
   const itemId = escapeHtml(String(item.id));
   const photoUrl = sanitizeUrl(item.photo_url);
+  const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(item));
+  const categoryBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${catMeta.badgeClass} shrink-0" title="Catégorie : ${escapeHtml(catMeta.label)}"><span>${catMeta.emoji}</span><span>${escapeHtml(catMeta.shortLabel)}</span></span>`;
+  const cardSig = escapeHtml(`${item.updated_at || ''}|${item.name || ''}|${catMeta.id}|${cal}|${p}|${g}|${l}`);
 
   const mealQuickButtonsHtml = CATALOG_MEAL_SLOT_ACTIONS.map(m => `
     <button
@@ -482,6 +555,7 @@ function buildCatalogItemCardHtml(item) {
       ondragstart="handleCatalogDragStart(event, '${itemId}')"
       ondragend="handleCatalogDragEnd(event)"
       data-item-id="${itemId}"
+      data-item-sig="${cardSig}"
       title="Cliquer sur un repas ci-dessous ou glisser vers un repas"
       ondblclick="promptAddToMeal('${itemId}')"
     >
@@ -503,8 +577,9 @@ function buildCatalogItemCardHtml(item) {
       ` : ''}
 
       <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 font-mono px-2 py-1 bg-[#151D2A] rounded-lg">
-        <div class="flex items-center gap-1.5 min-w-0">
+        <div class="flex flex-wrap items-center gap-1.5 min-w-0">
           ${sourceBadge}
+          ${categoryBadge}
           <span class="text-slate-300 font-semibold">Réf: ${unitLabel}</span>
         </div>
         <span class="shrink-0 space-x-1.5">
@@ -568,6 +643,31 @@ function renderCatalogItems() {
     });
   }
 
+  // 4. Filtre par catégorie alimentaire (BALI-273)
+  if (currentCatalogCategoryFilter) {
+    itemsToRender = itemsToRender.filter(it => resolveCatalogItemCategory(it) === currentCatalogCategoryFilter);
+  }
+
+  // 5. Tri du catalogue (BALI-273)
+  itemsToRender = itemsToRender.slice().sort((a, b) => {
+    if (currentCatalogSort === 'category') {
+      const ca = getCatalogCategoryMeta(resolveCatalogItemCategory(a));
+      const cb = getCatalogCategoryMeta(resolveCatalogItemCategory(b));
+      if (ca.order !== cb.order) return ca.order - cb.order;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+    }
+    if (currentCatalogSort === 'calories_asc') {
+      return (Number(a.calories_per_unit) || 0) - (Number(b.calories_per_unit) || 0);
+    }
+    if (currentCatalogSort === 'calories_desc') {
+      return (Number(b.calories_per_unit) || 0) - (Number(a.calories_per_unit) || 0);
+    }
+    if (currentCatalogSort === 'protein_desc') {
+      return (Number(b.protein_per_unit_g) || 0) - (Number(a.protein_per_unit_g) || 0);
+    }
+    return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+  });
+
   if (countBadge) {
     countBadge.textContent = `${itemsToRender.length} élément${itemsToRender.length > 1 ? 's' : ''}`;
   }
@@ -575,18 +675,18 @@ function renderCatalogItems() {
   if (!container) return;
 
   if (itemsToRender.length === 0) {
-    const hasFilter = Boolean(normalizedQuery || currentCatalogBenefitFilter || (currentCatalogFilter && currentCatalogFilter !== 'all'));
+    const hasFilter = Boolean(normalizedQuery || currentCatalogBenefitFilter || currentCatalogCategoryFilter || (currentCatalogFilter && currentCatalogFilter !== 'all'));
     const safeSearch = escapeHtml((currentCatalogSearch || '').trim());
     container.innerHTML = `
       <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
         <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
         <p class="text-xs text-slate-400 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${safeSearch} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
-        ${hasFilter ? `
-          <div class="flex items-center justify-center pt-2">
-            <button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>
-          </div>
-        ` : ''}
+        <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
+          ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">+ Nouvel aliment</button>
+          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">+ Nouveau plat</button>
+        </div>
       </div>
     `;
     refreshIcons(container);
@@ -623,14 +723,20 @@ function renderCatalogItems() {
     const itemIdStr = String(item.id);
     let card = existingMap.get(itemIdStr);
 
-    if (card) {
+    const expectedSig = `${item.updated_at || ''}|${item.name || ''}|${resolveCatalogItemCategory(item)}|${Math.round(item.calories_per_unit)}|${Math.round((item.protein_per_unit_g || 0) * 10) / 10}|${Math.round((item.carbs_per_unit_g || 0) * 10) / 10}|${Math.round((item.fat_per_unit_g || 0) * 10) / 10}`;
+    if (card && card.getAttribute('data-item-sig') === expectedSig) {
       if (container.children[i] !== card) {
         container.insertBefore(card, container.children[i] || null);
       }
     } else {
       template.innerHTML = buildCatalogItemCardHtml(item).trim();
-      card = template.content.firstElementChild;
-      container.insertBefore(card, container.children[i] || null);
+      const newCard = template.content.firstElementChild;
+      if (card) {
+        container.replaceChild(newCard, card);
+      } else {
+        container.insertBefore(newCard, container.children[i] || null);
+      }
+      card = newCard;
       existingMap.set(itemIdStr, card);
       newlyCreatedCards.push(card);
     }
@@ -922,12 +1028,15 @@ function handleCatItemTypeChange(event) {
   toggleDishCompositionSection(isDish);
   const unitSelect = document.getElementById('cat-item-unit');
   const qtyInput = document.getElementById('cat-item-qty');
+  const catSelect = document.getElementById('cat-item-category');
   if (isDish) {
     if (unitSelect) unitSelect.value = 'portion';
     if (qtyInput) qtyInput.value = '1';
+    if (catSelect && catSelect.value === 'autre') catSelect.value = 'plats_composes';
   } else {
     if (unitSelect) unitSelect.value = 'g';
     if (qtyInput) qtyInput.value = '100';
+    if (catSelect && catSelect.value === 'plats_composes') catSelect.value = 'autre';
   }
 }
 
@@ -1225,12 +1334,15 @@ function openCreateCatalogItemModal(type = 'food') {
   document.getElementById('cat-item-type').value = type;
   document.getElementById('cat-modal-title').textContent = type === 'dish' ? 'Créer un nouveau Plat / Recette' : 'Créer un nouvel Aliment';
   
+  const catSelect = document.getElementById('cat-item-category');
   if (type === 'dish') {
     document.getElementById('cat-item-unit').value = 'portion';
     document.getElementById('cat-item-qty').value = '1';
+    if (catSelect) catSelect.value = 'plats_composes';
   } else {
     document.getElementById('cat-item-unit').value = 'g';
     document.getElementById('cat-item-qty').value = '100';
+    if (catSelect) catSelect.value = 'autre';
   }
 
   toggleDishCompositionSection(type === 'dish');
@@ -1258,6 +1370,8 @@ function openEditCatalogItemModal(itemId) {
   document.getElementById('cat-item-id').value = item.id;
   document.getElementById('cat-item-name').value = item.name;
   document.getElementById('cat-item-type').value = item.item_type;
+  const catSelect = document.getElementById('cat-item-category');
+  if (catSelect) catSelect.value = resolveCatalogItemCategory(item);
   document.getElementById('cat-item-unit').value = item.default_unit || 'g';
   document.getElementById('cat-item-qty').value = item.default_quantity || 100;
   document.getElementById('cat-item-cals').value = item.calories_per_unit;
@@ -1458,9 +1572,11 @@ async function handleCatalogItemFormSubmit(event) {
   const photoInput = document.getElementById('cat-item-photo-url').value;
   const photoUrl = catalogItemPhotoBase64 || (photoInput.startsWith('data:') || photoInput.startsWith('http') ? photoInput : null);
 
+  const catSelect = document.getElementById('cat-item-category');
   const payload = {
     name: document.getElementById('cat-item-name').value.trim(),
     item_type: document.getElementById('cat-item-type').value,
+    category: catSelect ? catSelect.value : null,
     default_unit: document.getElementById('cat-item-unit').value.trim(),
     default_quantity: parseFloat(document.getElementById('cat-item-qty').value) || 100.0,
     calories_per_unit: parseFloat(document.getElementById('cat-item-cals').value) || 0.0,
@@ -2242,12 +2358,15 @@ function renderModalCatalogList(searchQuery = '') {
     const itId = escapeHtml(String(it.id));
     const itName = escapeHtml(it.name || '');
     const itRef = escapeHtml(`${it.default_quantity} ${it.default_unit || 'g'}`);
+    const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(it));
+    const catBadge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full border ${catMeta.badgeClass}">${catMeta.emoji} ${escapeHtml(catMeta.shortLabel)}</span>`;
     return `
       <div onclick="selectCatalogItemForPortion('${itId}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
         <div class="flex-1 pr-2">
-          <div class="flex items-center space-x-1.5">
+          <div class="flex flex-wrap items-center gap-1.5">
             <span class="text-xs font-bold text-white">${itName}</span>
             ${badge}
+            ${catBadge}
           </div>
           <div class="text-[11px] text-slate-400">Réf: ${itRef} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
         </div>
@@ -2741,6 +2860,7 @@ async function copyFriendItemToMyCatalog(itemId) {
   const payload = {
     name: item.name,
     item_type: item.item_type || 'food',
+    category: item.category || null,
     default_unit: item.default_unit || 'g',
     default_quantity: item.default_quantity || 100.0,
     calories_per_unit: item.calories_per_unit,
@@ -2801,5 +2921,8 @@ window.prefetchAdjacentJournalDates = prefetchAdjacentJournalDates;
 window.invalidateJournalCache = invalidateJournalCache;
 window.invalidateCatalogCache = invalidateCatalogCache;
 window.resetCatalogFilters = resetCatalogFilters;
+window.handleCategoryFilterChange = handleCategoryFilterChange;
+window.handleCatalogSortChange = handleCatalogSortChange;
+window.resolveCatalogItemCategory = resolveCatalogItemCategory;
 window.loadCatalogItems = loadCatalogItems;
 window.renderCatalogItems = renderCatalogItems;

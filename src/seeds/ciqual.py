@@ -4,6 +4,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Flocons d'avoine complets",
         "item_type": "food",
+        "category": "feculents",
         "default_unit": "g",
         "default_quantity": 100.0,
         "calories_per_unit": 368.0,
@@ -16,6 +17,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Blanc de poulet rôti",
         "item_type": "food",
+        "category": "viandes",
         "default_unit": "g",
         "default_quantity": 100.0,
         "calories_per_unit": 165.0,
@@ -28,6 +30,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Oeuf entier plein air",
         "item_type": "food",
+        "category": "poissons_oeufs",
         "default_unit": "pièce",
         "default_quantity": 1.0,
         "calories_per_unit": 70.0,
@@ -40,6 +43,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Riz basmati cuit",
         "item_type": "food",
+        "category": "feculents",
         "default_unit": "g",
         "default_quantity": 100.0,
         "calories_per_unit": 130.0,
@@ -52,6 +56,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Huile d'olive extra vierge",
         "item_type": "food",
+        "category": "matieres_grasses",
         "default_unit": "cuillère à soupe",
         "default_quantity": 1.0,
         "calories_per_unit": 119.0,
@@ -64,6 +69,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Saumon atlantique cuit au four",
         "item_type": "food",
+        "category": "poissons_oeufs",
         "default_unit": "g",
         "default_quantity": 100.0,
         "calories_per_unit": 208.0,
@@ -76,6 +82,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Avocat mûr",
         "item_type": "food",
+        "category": "legumes",
         "default_unit": "g",
         "default_quantity": 100.0,
         "calories_per_unit": 160.0,
@@ -88,6 +95,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Banane fraîche",
         "item_type": "food",
+        "category": "fruits",
         "default_unit": "pièce",
         "default_quantity": 1.0,
         "calories_per_unit": 105.0,
@@ -100,6 +108,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Amandes entières naturelles",
         "item_type": "food",
+        "category": "legumineuses_oleagineux",
         "default_unit": "g",
         "default_quantity": 30.0,
         "calories_per_unit": 174.0,
@@ -112,6 +121,7 @@ PUBLIC_BASE_ITEMS = [
     {
         "name": "Yaourt grec nature 0%",
         "item_type": "food",
+        "category": "laitages",
         "default_unit": "pot",
         "default_quantity": 1.0,
         "calories_per_unit": 73.0,

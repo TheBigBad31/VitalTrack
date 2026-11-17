@@ -332,6 +332,7 @@ class CatalogItem(BaseModel):
     user_id: Optional[int] = 1
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
     item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
+    category: Optional[str] = Field(None, description="Catégorie alimentaire (viandes, poissons_oeufs, legumes, fruits, feculents, laitages, legumineuses_oleagineux, matieres_grasses, plats_composes, boissons, sucre_snacks, autre)")
     default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
     default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
     calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")

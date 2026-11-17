@@ -260,6 +260,11 @@ class Database:
                 self._ensure_pg_schema_constraints()
             except Exception as ddl_err:
                 print(f"[VitalTrack DB Warning] Erreur vérification contraintes Neon: {ddl_err}")
+        else:
+            try:
+                self._ensure_food_items_category_column()
+            except Exception as ddl_err:
+                print(f"[VitalTrack DB Warning] Erreur vérification colonne category SQLite: {ddl_err}")
 
     @property
     def container(self):
@@ -436,9 +441,32 @@ class Database:
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_activities_user_date_source') THEN
                         ALTER TABLE activities ADD CONSTRAINT uq_activities_user_date_source UNIQUE (user_id, date, source);
                     END IF;
+
+                    -- 3. Table food_items : assurer la présence de la colonne category (BALI-273)
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.tables WHERE table_name = 'food_items'
+                    ) THEN
+                        ALTER TABLE food_items ADD COLUMN IF NOT EXISTS category TEXT;
+                    END IF;
                 END $$;
             """)
             conn.commit()
+
+    def _ensure_food_items_category_column(self):
+        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`."""
+        if self.is_postgres:
+            return
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='food_items'")
+            if not cursor.fetchone():
+                return
+            cursor.execute("PRAGMA table_info(food_items)")
+            columns = {row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()}
+            if "category" not in columns:
+                cursor.execute("ALTER TABLE food_items ADD COLUMN category TEXT")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_category ON food_items(category)")
+                conn.commit()
 
     def _pg_bool_true(self):
         """Valeur littérale de `true` adaptée au moteur (BOOLEAN sous PostgreSQL, INTEGER 1 sous SQLite)."""
@@ -612,9 +640,11 @@ class Database:
 
     def get_food_items(self, item_type: Optional[str] = None, query: Optional[str] = None,
                        user_id: int = 1, source: str = "mine", friend_id: Optional[int] = None,
-                       limit: Optional[int] = None, offset: int = 0) -> List[CatalogItem]:
+                       limit: Optional[int] = None, offset: int = 0,
+                       category: Optional[str] = None, sort: Optional[str] = None) -> List[CatalogItem]:
         return self.meals.get_food_items(item_type=item_type, query=query, user_id=user_id,
-                                         source=source, friend_id=friend_id, limit=limit, offset=offset)
+                                         source=source, friend_id=friend_id, limit=limit, offset=offset,
+                                         category=category, sort=sort)
 
     def get_food_item_by_id(self, item_id: int, user_id: Optional[int] = None) -> Optional[CatalogItem]:
         return self.meals.get_food_item_by_id(item_id, user_id=user_id)

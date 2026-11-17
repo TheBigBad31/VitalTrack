@@ -1,6 +1,7 @@
 """Repository pour la gestion des repas, catalogue alimentaire, bienfaits et meal logs."""
 
 import json
+import unicodedata
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -10,6 +11,102 @@ from src.models import (
 )
 from src.repositories.base import BaseRepository
 from src.seeds.ciqual import PUBLIC_BASE_ITEMS
+
+
+FOOD_CATEGORY_ORDER: Dict[str, int] = {
+    "viandes": 1,
+    "poissons_oeufs": 2,
+    "legumes": 3,
+    "fruits": 4,
+    "feculents": 5,
+    "laitages": 6,
+    "legumineuses_oleagineux": 7,
+    "matieres_grasses": 8,
+    "plats_composes": 9,
+    "boissons": 10,
+    "sucre_snacks": 11,
+    "autre": 12,
+}
+
+VALID_FOOD_CATEGORIES = set(FOOD_CATEGORY_ORDER.keys())
+
+_CATEGORY_ALIASES: Dict[str, str] = {
+    "viande": "viandes",
+    "viandes": "viandes",
+    "poisson": "poissons_oeufs",
+    "poissons": "poissons_oeufs",
+    "oeuf": "poissons_oeufs",
+    "oeufs": "poissons_oeufs",
+    "legume": "legumes",
+    "legumes": "legumes",
+    "fruit": "fruits",
+    "fruits": "fruits",
+    "feculent": "feculents",
+    "feculents": "feculents",
+    "cereales": "feculents",
+    "laitage": "laitages",
+    "laitages": "laitages",
+    "produits_laitiers": "laitages",
+    "oleagineux": "legumineuses_oleagineux",
+    "legumineuses": "legumineuses_oleagineux",
+    "matiere_grasse": "matieres_grasses",
+    "matieres_grasses": "matieres_grasses",
+    "plat": "plats_composes",
+    "plats": "plats_composes",
+    "plats_composes": "plats_composes",
+    "boisson": "boissons",
+    "boissons": "boissons",
+    "snack": "sucre_snacks",
+    "snacks": "sucre_snacks",
+    "sucre": "sucre_snacks",
+    "autres": "autre",
+    "autre": "autre",
+}
+
+_CATEGORY_KEYWORDS: List[tuple] = [
+    ("matieres_grasses", ("huile", "beurre", "margarine", "creme fraiche", "mayonnaise", "vinaigrette", "saindoux")),
+    ("boissons", ("lait d'amande", "lait d'avoine", "lait de soja", " eau ", "eau minerale", "eau plate", "eau gazeuse", "cafe", " the ", "the vert", "the noir", "tisane", "infusion", " jus ", "jus d", "soda", "smoothie", "biere", " vin ", "boisson", "kombucha", "limonade")),
+    ("sucre_snacks", ("chocolat", "sucre", "miel", "confiture", "biscuit", "gateau", "patisserie", "bonbon", "glace", "chips", "brioche", "croissant", "viennoiserie", "compote")),
+    ("viandes", ("poulet", "dinde", "boeuf", "steak", "veau", "porc", "jambon", "agneau", "canard", "lardon", "saucisse", "viande", "bacon", "escalope", "magret", "bavette", "entrecote")),
+    ("poissons_oeufs", ("saumon", "thon", "cabillaud", "truite", "maquereau", "sardine", "crevette", "moule", "poisson", "colin", "merlu", "dorade", "oeuf", "omelette")),
+    ("laitages", ("yaourt", "yogourt", "fromage", " lait ", "skyr", "petit suisse", "mozzarella", "emmental", " comte ", "parmesan", "ricotta", "cottage", "kefir", "faisselle")),
+    ("legumineuses_oleagineux", ("amande", "noix", "noisette", "cajou", "pistache", "cacahuete", "lentille", "pois chiche", "haricot rouge", "haricot blanc", "soja", "tofu", "tempeh", "edamame", "graine", "chia", " lin ")),
+    ("feculents", ("avoine", " riz ", "riz ", "pates", "spaghetti", "tagliatelle", " pain", "baguette", "tartine", "quinoa", "semoule", "boulgour", "patate", "pomme de terre", "farine", " ble ", "sarrasin", " mais ", "muesli", "granola", "biscotte", "gnocchi")),
+    ("fruits", ("banane", " pomme ", "pommes", " poire ", "poires", "fraise", "framboise", "myrtille", "orange", "clementine", "mandarine", "kiwi", "mangue", "ananas", "raisin", "peche", "abricot", "melon", "pasteque", "cerise", "citron", "figue", " datte", "prune", "fruit")),
+    ("legumes", ("avocat", "tomate", "carotte", "brocoli", "haricot vert", "courgette", "aubergine", "poivron", "concombre", "salade", "laitue", "epinard", "chou", "oignon", " ail ", "champignon", "poireau", "radis", "betterave", "celeri", "asperge", "petit pois", "legume")),
+    ("plats_composes", ("bowl", "pizza", "burger", "sandwich", "quiche", "gratin", "curry", "wok", "soupe", "potage", "lasagne", "couscous", "paella", "wrap", "poke")),
+]
+
+
+def _normalize_text_for_category(value: Optional[str]) -> str:
+    raw = str(value or "").strip().lower()
+    normalized = unicodedata.normalize("NFD", raw)
+    stripped = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    return stripped.replace("œ", "oe").replace("æ", "ae")
+
+
+def infer_food_category(
+    name: Optional[str],
+    item_type: Optional[str] = "food",
+    explicit_category: Optional[str] = None,
+) -> str:
+    """Normalise la catégorie explicite ou l'infère depuis le nom et le type d'élément."""
+    if explicit_category:
+        slug = _normalize_text_for_category(explicit_category).replace(" ", "_")
+        if slug in VALID_FOOD_CATEGORIES:
+            return slug
+        if slug in _CATEGORY_ALIASES:
+            return _CATEGORY_ALIASES[slug]
+
+    if item_type == "dish":
+        return "plats_composes"
+
+    norm_name = f" {_normalize_text_for_category(name)} "
+    for category_slug, keywords in _CATEGORY_KEYWORDS:
+        if any(kw in norm_name for kw in keywords):
+            return category_slug
+
+    return "autre"
 
 
 class MealsRepository(BaseRepository):
@@ -369,20 +466,21 @@ class MealsRepository(BaseRepository):
         """Crée un aliment ou un plat dans le catalogue de l'utilisateur."""
         now_str = datetime.now(timezone.utc).isoformat()
         is_pub = item.is_public if self.is_postgres else (1 if item.is_public else 0)
+        category = infer_food_category(item.name, item.item_type, item.category)
         with self.get_connection() as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
                     INSERT INTO food_items (
-                        user_id, name, item_type, default_unit, default_quantity,
+                        user_id, name, item_type, category, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                         fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
                         is_public, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     RETURNING id, created_at, updated_at;
                 """, (
-                    user_id, item.name, item.item_type, item.default_unit or "g",
+                    user_id, item.name, item.item_type, category, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
@@ -396,14 +494,14 @@ class MealsRepository(BaseRepository):
             else:
                 cursor.execute("""
                     INSERT INTO food_items (
-                        user_id, name, item_type, default_unit, default_quantity,
+                        user_id, name, item_type, category, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                         fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
                         is_public, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    user_id, item.name, item.item_type, item.default_unit or "g",
+                    user_id, item.name, item.item_type, category, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
@@ -418,6 +516,7 @@ class MealsRepository(BaseRepository):
         res = item.model_copy()
         res.id = item_id
         res.user_id = user_id
+        res.category = category
         res.created_at = datetime.fromisoformat(created_at) if isinstance(created_at, str) else created_at
         res.updated_at = datetime.fromisoformat(updated_at) if isinstance(updated_at, str) else updated_at
         if item.benefits:
@@ -435,9 +534,11 @@ class MealsRepository(BaseRepository):
         source: str = "mine",
         friend_id: Optional[int] = None,
         limit: Optional[int] = None,
-        offset: int = 0
+        offset: int = 0,
+        category: Optional[str] = None,
+        sort: Optional[str] = None,
     ) -> List[CatalogItem]:
-        """Récupère les éléments du catalogue selon la source demandée ('mine', 'public', 'friends', 'all', ou friend_id), avec support optionnel de pagination (limit, offset)."""
+        """Récupère les éléments du catalogue selon la source, le type, la catégorie et le tri demandés."""
         params: List[Any] = []
         where_clauses: List[str] = []
 
@@ -469,7 +570,7 @@ class MealsRepository(BaseRepository):
             params.append(f"%{query.strip().lower()}%")
 
         sql = f"SELECT * FROM food_items WHERE {' AND '.join(where_clauses)} ORDER BY is_public DESC, name ASC"
-        if limit is not None:
+        if limit is not None and not category and not sort:
             sql += f" LIMIT {int(limit)} OFFSET {int(offset)}"
 
         with self.get_connection() as conn:
@@ -507,11 +608,13 @@ class MealsRepository(BaseRepository):
 
         items = []
         for r in rows:
+            resolved_cat = infer_food_category(r["name"], r["item_type"], r.get("category"))
             it = CatalogItem(
                 id=r["id"],
                 user_id=r["user_id"],
                 name=r["name"],
                 item_type=r["item_type"],
+                category=resolved_cat,
                 default_unit=r["default_unit"],
                 default_quantity=float(r["default_quantity"]),
                 calories_per_unit=float(r["calories_per_unit"]),
@@ -527,6 +630,25 @@ class MealsRepository(BaseRepository):
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
             items.append(it)
+
+        if category:
+            norm_cat = infer_food_category(None, "food", category)
+            items = [it for it in items if it.category == norm_cat]
+
+        if sort == "category":
+            items.sort(key=lambda it: (FOOD_CATEGORY_ORDER.get(it.category or "autre", 99), (it.name or "").lower()))
+        elif sort in ("name", "name_asc"):
+            items.sort(key=lambda it: (it.name or "").lower())
+        elif sort == "calories_asc":
+            items.sort(key=lambda it: (it.calories_per_unit or 0.0, (it.name or "").lower()))
+        elif sort == "calories_desc":
+            items.sort(key=lambda it: (-(it.calories_per_unit or 0.0), (it.name or "").lower()))
+        elif sort == "protein_desc":
+            items.sort(key=lambda it: (-(it.protein_per_unit_g or 0.0), (it.name or "").lower()))
+
+        if limit is not None and (category or sort):
+            items = items[int(offset):int(offset) + int(limit)]
+
         return items
 
     def get_food_item_by_id(self, item_id: int, user_id: Optional[int] = None) -> Optional[CatalogItem]:
@@ -551,6 +673,7 @@ class MealsRepository(BaseRepository):
                 user_id=r["user_id"],
                 name=r["name"],
                 item_type=r["item_type"],
+                category=infer_food_category(r["name"], r["item_type"], r.get("category")),
                 default_unit=r["default_unit"],
                 default_quantity=float(r["default_quantity"]),
                 calories_per_unit=float(r["calories_per_unit"]),
@@ -575,6 +698,7 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         name = data.get("name", existing.name)
         item_type = data.get("item_type", existing.item_type)
+        category = infer_food_category(name, item_type, data.get("category", existing.category))
         default_unit = data.get("default_unit", existing.default_unit)
         default_quantity = data.get("default_quantity", existing.default_quantity)
         calories_per_unit = data.get("calories_per_unit", existing.calories_per_unit)
@@ -592,13 +716,13 @@ class MealsRepository(BaseRepository):
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE food_items
-                SET name = ?, item_type = ?, default_unit = ?, default_quantity = ?,
+                SET name = ?, item_type = ?, category = ?, default_unit = ?, default_quantity = ?,
                     calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
                     fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?,
                     is_public = ?, updated_at = ?
                 WHERE id = ? AND user_id = ?
             """, (
-                name, item_type, default_unit, default_quantity,
+                name, item_type, category, default_unit, default_quantity,
                 calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                 fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
                 is_pub, now_str, item_id, user_id
@@ -608,6 +732,7 @@ class MealsRepository(BaseRepository):
         updated = existing.model_copy()
         updated.name = name
         updated.item_type = item_type
+        updated.category = category
         updated.recipe_items = recipe_items or []
         updated.default_unit = default_unit
         updated.default_quantity = default_quantity
@@ -702,22 +827,29 @@ class MealsRepository(BaseRepository):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             for it in PUBLIC_BASE_ITEMS:
-                cursor.execute("SELECT id FROM food_items WHERE name = ? AND is_public = ?", (it["name"], self._pg_bool_true()))
-                if not cursor.fetchone():
+                cat = infer_food_category(it["name"], it["item_type"], it.get("category"))
+                cursor.execute("SELECT id, category FROM food_items WHERE name = ? AND is_public = ?", (it["name"], self._pg_bool_true()))
+                existing = cursor.fetchone()
+                if not existing:
                     is_pub_val = True if self.is_postgres else 1
                     cursor.execute("""
                         INSERT INTO food_items (
-                            user_id, name, item_type, default_unit, default_quantity,
+                            user_id, name, item_type, category, default_unit, default_quantity,
                             calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                             fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
                             is_public, created_at, updated_at
                         )
-                        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
                     """, (
-                        it["name"], it["item_type"], it["default_unit"], it["default_quantity"],
+                        it["name"], it["item_type"], cat, it["default_unit"], it["default_quantity"],
                         it["calories_per_unit"], it["protein_per_unit_g"], it["carbs_per_unit_g"],
                         it["fat_per_unit_g"], it["fiber_per_unit_g"], is_pub_val, now_str, now_str
                     ))
+                elif not existing.get("category"):
+                    cursor.execute(
+                        "UPDATE food_items SET category = ? WHERE id = ?",
+                        (cat, existing["id"])
+                    )
             conn.commit()
 
     def _seed_nutrition_benefits(self):

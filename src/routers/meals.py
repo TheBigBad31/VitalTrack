@@ -156,6 +156,7 @@ class NutritionEvaluateRequest(BaseModel):
 class CatalogItemCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Nom de l'aliment ou du plat")
     item_type: CatalogItemType = Field("food", description="'food' pour aliment simple, 'dish' pour plat/recette")
+    category: Optional[str] = Field(None, description="Catégorie alimentaire")
     default_unit: str = Field("g", description="Unité de référence (g, portion, ml, pièce)")
     default_quantity: float = Field(100.0, gt=0, description="Quantité de référence")
     calories_per_unit: float = Field(..., ge=0.0, description="Calories (kcal) pour la quantité de référence")
@@ -172,6 +173,7 @@ class CatalogItemCreateRequest(BaseModel):
 class CatalogItemUpdateRequest(BaseModel):
     name: Optional[str] = None
     item_type: Optional[CatalogItemType] = None
+    category: Optional[str] = Field(None, description="Catégorie alimentaire")
     default_unit: Optional[str] = None
     default_quantity: Optional[float] = None
     calories_per_unit: Optional[float] = None
@@ -212,6 +214,7 @@ class SaveAsDishRequest(BaseModel):
     name: str = Field(..., min_length=1, description="Nom du plat à créer dans le catalogue")
     date: Optional[dt_module.date] = None
     photo_url: Optional[str] = None
+    category: Optional[str] = Field(None, description="Catégorie alimentaire")
 
 
 def get_db() -> Database:
@@ -645,6 +648,8 @@ def log_saved_meal_to_journal(
 @router.get("/api/catalog/items")
 def get_catalog_items(
     type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
+    category: Optional[str] = Query(None, description="Filtre par catégorie alimentaire"),
+    sort: Optional[str] = Query(None, description="Tri du catalogue (category, name_asc, calories_asc, calories_desc, protein_desc)"),
     q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un ami pour consultation en lecture seule"),
     source: Optional[str] = Query(None, description="Source des aliments ('all', 'mine', 'public', 'friends')"),
@@ -663,7 +668,9 @@ def get_catalog_items(
         query=q,
         user_id=target_uid,
         source=effective_source,
-        friend_id=friend_id
+        friend_id=friend_id,
+        category=category,
+        sort=sort,
     )
     return [it.model_dump() for it in items]
 
@@ -679,6 +686,7 @@ def create_catalog_item(
         user_id=current_user.id,
         name=req.name.strip(),
         item_type=req.item_type,
+        category=req.category,
         default_unit=req.default_unit or "g",
         default_quantity=req.default_quantity or 100.0,
         calories_per_unit=req.calories_per_unit,
@@ -1035,6 +1043,7 @@ def save_meal_as_dish(
         user_id=current_user.id,
         name=req.name.strip(),
         item_type="dish",
+        category=req.category or "plats_composes",
         default_unit="portion",
         default_quantity=1.0,
         calories_per_unit=meal_log.total_calories,

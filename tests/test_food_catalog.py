@@ -432,3 +432,88 @@ def test_get_food_items_eliminates_n_plus_1(catalog_setup, monkeypatch):
         assert hasattr(it, "benefits")
         assert isinstance(it.benefits, list)
 
+
+def test_catalog_categories_filter_and_sort(catalog_setup):
+    """Teste la persistance, l'inférence, le filtrage et le tri par catégorie alimentaire (BALI-273)."""
+    client = catalog_setup["client"]
+    token1 = catalog_setup["token1"]
+    headers1 = {"Authorization": f"Bearer {token1}"}
+
+    # 1. Les aliments publics seedés disposent bien d'une catégorie cohérente
+    pub_items = client.get("/api/catalog/items?source=public", headers=headers1).json()
+    by_name = {it["name"]: it for it in pub_items}
+    assert by_name["Blanc de poulet rôti"]["category"] == "viandes"
+    assert by_name["Banane fraîche"]["category"] == "fruits"
+    assert by_name["Yaourt grec nature 0%"]["category"] == "laitages"
+    assert by_name["Riz basmati cuit"]["category"] == "feculents"
+
+    # 2. Création avec catégorie explicite + création sans catégorie (inférence auto)
+    res_veg = client.post("/api/catalog/items", json={
+        "name": "Courgette vapeur",
+        "item_type": "food",
+        "category": "legumes",
+        "default_unit": "g",
+        "default_quantity": 100.0,
+        "calories_per_unit": 20.0,
+        "protein_per_unit_g": 1.2
+    }, headers=headers1)
+    assert res_veg.status_code == 200
+    assert res_veg.json()["category"] == "legumes"
+
+    res_meat = client.post("/api/catalog/items", json={
+        "name": "Bavette grillée",
+        "item_type": "food",
+        "category": "viandes",
+        "default_unit": "g",
+        "default_quantity": 100.0,
+        "calories_per_unit": 195.0,
+        "protein_per_unit_g": 28.0
+    }, headers=headers1)
+    assert res_meat.status_code == 200
+    meat_id = res_meat.json()["id"]
+    assert res_meat.json()["category"] == "viandes"
+
+    res_fruit_inferred = client.post("/api/catalog/items", json={
+        "name": "Pomme Golden",
+        "item_type": "food",
+        "default_unit": "pièce",
+        "default_quantity": 1.0,
+        "calories_per_unit": 75.0,
+        "protein_per_unit_g": 0.4
+    }, headers=headers1)
+    assert res_fruit_inferred.status_code == 200
+    assert res_fruit_inferred.json()["category"] == "fruits"
+
+    res_dish_inferred = client.post("/api/catalog/items", json={
+        "name": "Gratin maison",
+        "item_type": "dish",
+        "default_unit": "portion",
+        "default_quantity": 1.0,
+        "calories_per_unit": 420.0,
+        "protein_per_unit_g": 22.0
+    }, headers=headers1)
+    assert res_dish_inferred.status_code == 200
+    assert res_dish_inferred.json()["category"] == "plats_composes"
+
+    # 3. Filtrage par catégorie via l'API
+    legumes_list = client.get("/api/catalog/items?source=mine&category=legumes", headers=headers1).json()
+    assert [it["name"] for it in legumes_list] == ["Courgette vapeur"]
+
+    viandes_list = client.get("/api/catalog/items?source=mine&category=viandes", headers=headers1).json()
+    assert [it["name"] for it in viandes_list] == ["Bavette grillée"]
+
+    # 4. Tri par catégorie et par calories croissantes
+    sorted_cat = client.get("/api/catalog/items?source=mine&sort=category", headers=headers1).json()
+    assert [it["category"] for it in sorted_cat] == ["viandes", "legumes", "fruits", "plats_composes"]
+
+    sorted_cals = client.get("/api/catalog/items?source=mine&sort=calories_asc", headers=headers1).json()
+    assert [it["name"] for it in sorted_cals] == ["Courgette vapeur", "Pomme Golden", "Bavette grillée", "Gratin maison"]
+
+    # 5. Mise à jour de la catégorie via PUT
+    res_put = client.put(f"/api/catalog/items/{meat_id}", json={"category": "plats_composes"}, headers=headers1)
+    assert res_put.status_code == 200
+    assert res_put.json()["category"] == "plats_composes"
+
+    plats_after = client.get("/api/catalog/items?source=mine&category=plats_composes", headers=headers1).json()
+    assert {it["name"] for it in plats_after} == {"Bavette grillée", "Gratin maison"}
+

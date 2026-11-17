@@ -601,17 +601,27 @@
         <!-- Volet Gauche : Mon Catalogue (Aliments & Plats) -->
         <div id="nutrition-sec-catalog" class="xl:col-span-5 space-y-4">
           <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
-            <div class="flex items-center justify-between gap-3">
-              <div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
                 <h3 class="font-bold text-white text-base flex items-center space-x-2">
                   <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
                   <span>Catalogue de Référence</span>
                 </h3>
                 <p class="text-xs text-slate-400">Cliquez sur l'icône d'un repas (🥐 🥗 🍎 🍲) pour ajouter directement</p>
               </div>
-              <span id="catalog-items-count" class="text-xs px-2.5 py-1 bg-[#0B0F17] border border-[#1F2A3C] text-slate-300 rounded-xl font-medium shrink-0">
-                0 éléments
-              </span>
+              <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                <button type="button" onclick="openCreateCatalogItemModal('food')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouvel aliment au catalogue" aria-label="Ajouter un aliment">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>Aliment</span>
+                </button>
+                <button type="button" onclick="openCreateCatalogItemModal('dish')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouveau plat ou recette au catalogue" aria-label="Ajouter un plat">
+                  <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                  <span>Plat</span>
+                </button>
+                <span id="catalog-items-count" class="text-xs px-2.5 py-1.5 bg-[#0B0F17] border border-[#1F2A3C] text-slate-300 rounded-xl font-medium">
+                  0 éléments
+                </span>
+              </div>
             </div>
 
             <!-- Filtres et Recherche rapide -->
@@ -676,6 +686,32 @@
                   <option value="muscle_function">💪 Récupération musculaire</option>
                   <option value="cellular_hydration">💧 Hydratation cellulaire</option>
                   <option value="antioxidant">🫐 Protection antioxydante</option>
+                </select>
+              </div>
+
+              <!-- Filtre par Catégorie & Tri du Catalogue (BALI-273) -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                <select id="cat-filter-category" onchange="handleCategoryFilterChange(event)" aria-label="Filtrer par catégorie alimentaire" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                  <option value="">🏷️ Toutes les catégories</option>
+                  <option value="viandes">🥩 Viandes &amp; Volailles</option>
+                  <option value="poissons_oeufs">🐟 Poissons &amp; Œufs</option>
+                  <option value="legumes">🥦 Légumes &amp; Crudités</option>
+                  <option value="fruits">🍎 Fruits</option>
+                  <option value="feculents">🍚 Féculents, Céréales &amp; Pain</option>
+                  <option value="laitages">🥛 Laitages &amp; Fromages</option>
+                  <option value="legumineuses_oleagineux">🥜 Légumineuses &amp; Oléagineux</option>
+                  <option value="matieres_grasses">🫒 Matières grasses &amp; Huiles</option>
+                  <option value="plats_composes">🍲 Plats cuisinés &amp; Salades</option>
+                  <option value="boissons">🥤 Boissons</option>
+                  <option value="sucre_snacks">🍫 Produits sucrés &amp; Collations</option>
+                  <option value="autre">🍽️ Autre</option>
+                </select>
+                <select id="cat-sort-select" onchange="handleCatalogSortChange(event)" aria-label="Trier le catalogue" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                  <option value="name_asc">🔤 Tri : Nom (A → Z)</option>
+                  <option value="category">🗂️ Tri : Par catégorie</option>
+                  <option value="calories_asc">🔥 Tri : Calories (croissant)</option>
+                  <option value="calories_desc">🔥 Tri : Calories (décroissant)</option>
+                  <option value="protein_desc">💪 Tri : Protéines (décroissant)</option>
                 </select>
               </div>
             </div>
@@ -1389,12 +1425,29 @@
           <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
-        <div class="grid grid-cols-3 gap-2">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Type *</label>
             <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="food">Aliment simple</option>
               <option value="dish">Plat / Recette</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-300 mb-1">Catégorie *</label>
+            <select id="cat-item-category" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+              <option value="viandes">🥩 Viandes &amp; Volailles</option>
+              <option value="poissons_oeufs">🐟 Poissons &amp; Œufs</option>
+              <option value="legumes">🥦 Légumes &amp; Crudités</option>
+              <option value="fruits">🍎 Fruits</option>
+              <option value="feculents">🍚 Féculents &amp; Céréales</option>
+              <option value="laitages">🥛 Laitages &amp; Fromages</option>
+              <option value="legumineuses_oleagineux">🥜 Légumineuses &amp; Oléagineux</option>
+              <option value="matieres_grasses">🫒 Matières grasses</option>
+              <option value="plats_composes">🍲 Plats cuisinés</option>
+              <option value="boissons">🥤 Boissons</option>
+              <option value="sucre_snacks">🍫 Sucré &amp; Snacks</option>
+              <option value="autre" selected>🍽️ Autre</option>
             </select>
           </div>
           <div>
