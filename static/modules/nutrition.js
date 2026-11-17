@@ -483,21 +483,24 @@ const CATALOG_MEAL_SLOT_ACTIONS = [
 
 function buildCatalogItemCardHtml(item) {
   const isDish = item.item_type === 'dish';
-  const typeBadge = isDish
-    ? `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs shadow-sm shrink-0" title="Plat composé / Recette">🍽️</span>`
-    : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs shadow-sm shrink-0" title="Aliment simple / Ingrédient brut">🍎</span>`;
+  const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(item));
+  const categoryIconBox = `<span class="inline-flex items-center justify-center w-8 h-8 rounded-xl border ${catMeta.badgeClass} text-base shadow-sm shrink-0" title="Catégorie : ${escapeHtml(catMeta.label)}">${catMeta.emoji}</span>`;
+
+  const natureBadge = isDish
+    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shrink-0" title="Plat composé / Recette">🍲 Plat composé</span>`
+    : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0" title="Ingrédient brut">Ingrédient</span>`;
 
   let sourceBadge = '';
   const isPublic = Boolean(item.is_public || item.user_id === 0 || item.user_id === null || item.source === 'public');
   const isFriend = Boolean(item.owner_name || item.friend_name || (item.source === 'friend' || item.source === 'friends'));
   if (isPublic) {
-    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Aliment du socle public"><i data-lucide="globe" class="w-2.5 h-2.5"></i><span>Public</span></span>`;
+    sourceBadge = `<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0" title="Catalogue public" aria-label="Catalogue public"><i data-lucide="globe" class="w-3 h-3"></i></span>`;
   } else if (isFriend) {
     const rawFriendLabel = item.owner_name || item.friend_name || "Ami";
     const friendLabel = escapeHtml(rawFriendLabel);
-    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Catalogue partagé par ${friendLabel}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i><span>${friendLabel}</span></span>`;
+    sourceBadge = `<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" title="Partagé par ${friendLabel}" aria-label="Partagé par ${friendLabel}"><i data-lucide="user-check" class="w-3 h-3"></i></span>`;
   } else {
-    sourceBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Ma création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i><span>Perso</span></span>`;
+    sourceBadge = `<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 shrink-0" title="Création personnelle" aria-label="Création personnelle"><i data-lucide="user" class="w-3 h-3"></i></span>`;
   }
 
   const unitLabel = escapeHtml(`${item.default_quantity}${item.default_unit || 'g'}`);
@@ -508,9 +511,11 @@ function buildCatalogItemCardHtml(item) {
   const itemName = escapeHtml(item.name || '');
   const itemId = escapeHtml(String(item.id));
   const photoUrl = sanitizeUrl(item.photo_url);
-  const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(item));
-  const categoryBadge = `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${catMeta.badgeClass} shrink-0" title="Catégorie : ${escapeHtml(catMeta.label)}"><span>${catMeta.emoji}</span><span>${escapeHtml(catMeta.shortLabel)}</span></span>`;
-  const cardSig = escapeHtml(`${item.updated_at || ''}|${item.name || ''}|${catMeta.id}|${cal}|${p}|${g}|${l}`);
+  const categoryBadge = `<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${catMeta.badgeClass} shrink-0" title="Catégorie : ${escapeHtml(catMeta.label)}">${escapeHtml(catMeta.shortLabel)}</span>`;
+  const cardSurfaceClass = isDish
+    ? 'bg-gradient-to-br from-[#0B0F17] to-indigo-950/25 border-indigo-500/35 hover:border-indigo-400/70 hover:shadow-indigo-500/10'
+    : 'bg-[#0B0F17] border-[#1F2A3C] hover:border-brand-500/60 hover:shadow-brand-500/10';
+  const cardSig = escapeHtml(`${item.updated_at || ''}|${item.item_type || 'food'}|${item.name || ''}|${catMeta.id}|${cal}|${p}|${g}|${l}`);
 
   const mealQuickButtonsHtml = CATALOG_MEAL_SLOT_ACTIONS.map(m => `
     <button
@@ -550,7 +555,7 @@ function buildCatalogItemCardHtml(item) {
 
   return `
     <div 
-      class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
+      class="catalog-draggable-card ${cardSurfaceClass} border rounded-xl p-2.5 flex flex-col justify-between space-y-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md select-none group"
       draggable="true"
       ondragstart="handleCatalogDragStart(event, '${itemId}')"
       ondragend="handleCatalogDragEnd(event)"
@@ -560,9 +565,16 @@ function buildCatalogItemCardHtml(item) {
       ondblclick="promptAddToMeal('${itemId}')"
     >
       <div class="flex items-start justify-between gap-2">
-        <div class="flex items-start space-x-2 min-w-0 flex-1">
-          ${typeBadge}
-          <h4 class="font-bold text-xs sm:text-sm text-white leading-snug flex-1 min-w-0" style="overflow-wrap:break-word;" title="${itemName}">${itemName}</h4>
+        <div class="flex items-start space-x-2.5 min-w-0 flex-1">
+          ${categoryIconBox}
+          <div class="min-w-0 flex-1 space-y-1">
+            <h4 class="font-bold text-xs sm:text-sm text-white leading-snug" style="overflow-wrap:break-word;" title="${itemName}">${itemName}</h4>
+            <div class="flex flex-wrap items-center gap-1">
+              ${natureBadge}
+              ${categoryBadge}
+              ${sourceBadge}
+            </div>
+          </div>
         </div>
         <div class="text-right shrink-0 pt-0.5">
           <span class="text-xs font-black text-amber-400">${cal}</span>
@@ -576,12 +588,8 @@ function buildCatalogItemCardHtml(item) {
         </div>
       ` : ''}
 
-      <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 font-mono px-2 py-1 bg-[#151D2A] rounded-lg">
-        <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-          ${sourceBadge}
-          ${categoryBadge}
-          <span class="text-slate-300 font-semibold">Réf: ${unitLabel}</span>
-        </div>
+      <div class="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono px-2.5 py-1 bg-[#151D2A] rounded-lg">
+        <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
         <span class="shrink-0 space-x-1.5">
           <span class="text-brand-400 font-semibold">P:${p}g</span>
           <span class="text-sky-400 font-semibold">G:${g}g</span>
@@ -680,11 +688,11 @@ function renderCatalogItems() {
     container.innerHTML = `
       <div class="col-span-full py-10 text-center bg-[#0B0F17] border border-[#1F2A3C] rounded-2xl p-6 space-y-3">
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
-        <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
+        <h4 class="text-sm font-bold text-slate-300">Aucun ingrédient ou plat correspondant</h4>
         <p class="text-xs text-slate-400 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${safeSearch} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
         <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
           ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">+ Nouvel aliment</button>
+          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold">+ Nouvel ingrédient</button>
           <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">+ Nouveau plat</button>
         </div>
       </div>
@@ -723,7 +731,7 @@ function renderCatalogItems() {
     const itemIdStr = String(item.id);
     let card = existingMap.get(itemIdStr);
 
-    const expectedSig = `${item.updated_at || ''}|${item.name || ''}|${resolveCatalogItemCategory(item)}|${Math.round(item.calories_per_unit)}|${Math.round((item.protein_per_unit_g || 0) * 10) / 10}|${Math.round((item.carbs_per_unit_g || 0) * 10) / 10}|${Math.round((item.fat_per_unit_g || 0) * 10) / 10}`;
+    const expectedSig = `${item.updated_at || ''}|${item.item_type || 'food'}|${item.name || ''}|${resolveCatalogItemCategory(item)}|${Math.round(item.calories_per_unit)}|${Math.round((item.protein_per_unit_g || 0) * 10) / 10}|${Math.round((item.carbs_per_unit_g || 0) * 10) / 10}|${Math.round((item.fat_per_unit_g || 0) * 10) / 10}`;
     if (card && card.getAttribute('data-item-sig') === expectedSig) {
       if (container.children[i] !== card) {
         container.insertBefore(card, container.children[i] || null);
@@ -1332,7 +1340,7 @@ function openCreateCatalogItemModal(type = 'food') {
   document.getElementById('form-catalog-item').reset();
   document.getElementById('cat-item-id').value = '';
   document.getElementById('cat-item-type').value = type;
-  document.getElementById('cat-modal-title').textContent = type === 'dish' ? 'Créer un nouveau Plat / Recette' : 'Créer un nouvel Aliment';
+  document.getElementById('cat-modal-title').textContent = type === 'dish' ? 'Créer un nouveau Plat composé' : 'Créer un nouvel Ingrédient';
   
   const catSelect = document.getElementById('cat-item-category');
   if (type === 'dish') {
@@ -1381,7 +1389,7 @@ function openEditCatalogItemModal(itemId) {
   document.getElementById('cat-item-fiber').value = item.fiber_per_unit_g || 0;
   document.getElementById('cat-item-photo-url').value = item.photo_url || '';
 
-  document.getElementById('cat-modal-title').textContent = `Modifier ${item.item_type === 'dish' ? 'le Plat' : "l'Aliment"}`;
+  document.getElementById('cat-modal-title').textContent = `Modifier ${item.item_type === 'dish' ? 'le Plat composé' : "l'Ingrédient"}`;
 
   modalDishIngredients = Array.isArray(item.recipe_items) ? JSON.parse(JSON.stringify(item.recipe_items)) : [];
   toggleDishCompositionSection(item.item_type === 'dish');
@@ -2340,33 +2348,38 @@ function renderModalCatalogList(searchQuery = '') {
   const filtered = currentCatalogItems.filter(it => !q || it.name.toLowerCase().includes(q));
 
   if (filtered.length === 0) {
-    container.innerHTML = '<div class="py-8 text-center text-xs text-slate-500">Aucun aliment correspondant trouvé.</div>';
+    container.innerHTML = '<div class="py-8 text-center text-xs text-slate-500">Aucun ingrédient ou plat correspondant trouvé.</div>';
     return;
   }
 
   container.innerHTML = filtered.map(it => {
+    const isDish = it.item_type === 'dish';
     const isPublic = Boolean(it.is_public || it.user_id === 0 || it.user_id === null || it.source === 'public');
     const isFriend = Boolean(it.owner_name || it.friend_name || (it.source === 'friend' || it.source === 'friends'));
     let badge = '';
     if (isPublic) {
-      badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">Public</span>';
+      badge = '<span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30" title="Catalogue public"><i data-lucide="globe" class="w-2.5 h-2.5"></i></span>';
     } else if (isFriend) {
-      badge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">${escapeHtml(it.owner_name || it.friend_name || 'Ami')}</span>`;
+      badge = `<span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30" title="Partagé par ${escapeHtml(it.owner_name || it.friend_name || 'Ami')}"><i data-lucide="user-check" class="w-2.5 h-2.5"></i></span>`;
     } else {
-      badge = '<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Perso</span>';
+      badge = '<span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Création personnelle"><i data-lucide="user" class="w-2.5 h-2.5"></i></span>';
     }
+    const naturePill = isDish
+      ? '<span class="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/35">🍲 Plat composé</span>'
+      : '<span class="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Ingrédient</span>';
     const itId = escapeHtml(String(it.id));
     const itName = escapeHtml(it.name || '');
     const itRef = escapeHtml(`${it.default_quantity} ${it.default_unit || 'g'}`);
     const catMeta = getCatalogCategoryMeta(resolveCatalogItemCategory(it));
-    const catBadge = `<span class="text-[9px] px-1.5 py-0.2 rounded-full border ${catMeta.badgeClass}">${catMeta.emoji} ${escapeHtml(catMeta.shortLabel)}</span>`;
+    const catBadge = `<span class="text-[9px] px-1.5 py-0.2 rounded-md border ${catMeta.badgeClass}">${catMeta.emoji} ${escapeHtml(catMeta.shortLabel)}</span>`;
     return `
       <div onclick="selectCatalogItemForPortion('${itId}')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] hover:border-brand-500/50 cursor-pointer flex items-center justify-between transition-colors">
         <div class="flex-1 pr-2">
           <div class="flex flex-wrap items-center gap-1.5">
             <span class="text-xs font-bold text-white">${itName}</span>
-            ${badge}
+            ${naturePill}
             ${catBadge}
+            ${badge}
           </div>
           <div class="text-[11px] text-slate-400">Réf: ${itRef} &bull; ${Math.round(it.calories_per_unit)} kcal</div>
         </div>
@@ -2374,6 +2387,7 @@ function renderModalCatalogList(searchQuery = '') {
       </div>
     `;
   }).join('');
+  refreshIcons(container);
 }
 
 function selectCatalogItemForPortion(itemId) {

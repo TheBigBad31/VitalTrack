@@ -590,7 +590,7 @@
           </button>
           <button id="btn-subnav-catalog" onclick="switchNutritionSubSection('catalog')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="book-open" class="w-4 h-4"></i>
-            <span>Catalogue Aliments & Plats</span>
+            <span>Catalogue Ingrédients &amp; Plats</span>
           </button>
         </div>
       </div>
@@ -598,7 +598,7 @@
       <!-- Layout Spacieux Desktop Multi-Colonnes (Catalogue à gauche, Repas à droite sur >=xl) -->
       <div id="nutrition-desktop-layout-container" class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
 
-        <!-- Volet Gauche : Mon Catalogue (Aliments & Plats) -->
+        <!-- Volet Gauche : Mon Catalogue (Ingrédients & Plats composés) -->
         <div id="nutrition-sec-catalog" class="xl:col-span-5 space-y-4">
           <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -607,14 +607,14 @@
                   <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
                   <span>Catalogue de Référence</span>
                 </h3>
-                <p class="text-xs text-slate-400">Cliquez sur l'icône d'un repas (🥐 🥗 🍎 🍲) pour ajouter directement</p>
+                <p class="text-xs text-slate-400">Ingrédients et plats composés — cliquez sur un repas (🥐 🥗 🍎 🍲) pour ajouter</p>
               </div>
               <div class="flex items-center gap-1.5 flex-wrap shrink-0">
-                <button type="button" onclick="openCreateCatalogItemModal('food')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouvel aliment au catalogue" aria-label="Ajouter un aliment">
+                <button type="button" onclick="openCreateCatalogItemModal('food')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouvel ingrédient au catalogue" aria-label="Ajouter un ingrédient">
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-                  <span>Aliment</span>
+                  <span>Ingrédient</span>
                 </button>
-                <button type="button" onclick="openCreateCatalogItemModal('dish')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouveau plat ou recette au catalogue" aria-label="Ajouter un plat">
+                <button type="button" onclick="openCreateCatalogItemModal('dish')" class="write-action-btn px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-sm transition-all" title="Ajouter un nouveau plat composé au catalogue" aria-label="Ajouter un plat composé">
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                   <span>Plat</span>
                 </button>
@@ -628,11 +628,11 @@
             <div class="flex flex-col gap-2.5">
               <div class="relative">
                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un aliment ou un plat..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
+                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un ingrédient ou un plat..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
                 <span class="absolute right-2.5 top-2 text-[10px] text-slate-400 font-mono hidden sm:inline">/</span>
               </div>
 
-              <!-- Filtre par Source (BALI-85) : Tous, Mes Aliments, Catalogue Public, Amis -->
+              <!-- Filtre par Source (BALI-85) : Tous, Perso, Public, Amis -->
               <div class="space-y-1">
                 <div class="flex items-center justify-between text-[11px] px-1 text-slate-400">
                   <span class="font-medium flex items-center gap-1">
@@ -660,33 +660,17 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
-                <div class="flex items-center gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
-                  <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors">
-                    Tous
-                  </button>
-                  <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
-                    Aliments
-                  </button>
-                  <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
-                    Plats
-                  </button>
-                </div>
-
-                <!-- Filtre par Bienfait Santé (Stage 13) -->
-                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
-                  <option value="">🎯 Tous les bienfaits</option>
-                  <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
-                  <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
-                  <option value="blood_pressure">🩺 Contrôle pression artérielle</option>
-                  <option value="glycemic_regulation">📉 Régulation glycémique</option>
-                  <option value="satiety_control">⚡ Satiété & appétit</option>
-                  <option value="gut_transit">🌿 Transit intestinal</option>
-                  <option value="bone_health">🦴 Santé osseuse</option>
-                  <option value="muscle_function">💪 Récupération musculaire</option>
-                  <option value="cellular_hydration">💧 Hydratation cellulaire</option>
-                  <option value="antioxidant">🫐 Protection antioxydante</option>
-                </select>
+              <!-- Filtre par Nature (Tous / Ingrédients / Plats composés) -->
+              <div class="flex items-center gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+                <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors">
+                  Tous
+                </button>
+                <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                  Ingrédients
+                </button>
+                <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors whitespace-nowrap">
+                  Plats composés
+                </button>
               </div>
 
               <!-- Filtre par Catégorie & Tri du Catalogue (BALI-273) -->
@@ -714,7 +698,21 @@
                   <option value="protein_desc">💪 Tri : Protéines (décroissant)</option>
                 </select>
               </div>
-            </div>
+
+              <!-- Filtre par Bienfait Santé (Stage 13) -->
+              <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                <option value="">🎯 Tous les bienfaits santé</option>
+                <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
+                <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
+                <option value="blood_pressure">🩺 Contrôle pression artérielle</option>
+                <option value="glycemic_regulation">📉 Régulation glycémique</option>
+                <option value="satiety_control">⚡ Satiété &amp; appétit</option>
+                <option value="gut_transit">🌿 Transit intestinal</option>
+                <option value="bone_health">🦴 Santé osseuse</option>
+                <option value="muscle_function">💪 Récupération musculaire</option>
+                <option value="cellular_hydration">💧 Hydratation cellulaire</option>
+                <option value="antioxidant">🫐 Protection antioxydante</option>
+              </select>
           </div>
 
           <!-- Grille des cartes du Catalogue (scrollable sur desktop) -->
@@ -1421,7 +1419,7 @@
         <input type="hidden" id="cat-item-id" value="">
 
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'aliment ou du plat *</label>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'ingrédient ou du plat *</label>
           <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
@@ -1429,8 +1427,8 @@
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Type *</label>
             <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
-              <option value="food">Aliment simple</option>
-              <option value="dish">Plat / Recette</option>
+              <option value="food">Ingrédient</option>
+              <option value="dish">Plat composé</option>
             </select>
           </div>
           <div>
