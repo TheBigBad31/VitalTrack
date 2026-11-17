@@ -577,13 +577,12 @@
         <section id="view-nutrition" class="view-content hidden space-y-6">
       <div id="tab-nutrition-skeleton" class="hidden"></div>
 
-      <!-- Barre d'outils Desktop & Navigation des Espaces -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-md">
-        <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
-          <!-- Mode Desktop : vue côte à côte par défaut sur grand écran -->
-          <button id="btn-subnav-desktop-split" onclick="switchNutritionLayout('split')" class="hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-slate-950 shadow-md shadow-brand-500/20 items-center justify-center space-x-2 transition-all">
+      <!-- Barre de Navigation des 3 Vues Nutrition -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-2 shadow-md">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+          <button id="btn-subnav-desktop-split" onclick="switchNutritionLayout('split')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="columns-2" class="w-4 h-4"></i>
-            <span>Vue Bureau Multi-Colonnes</span>
+            <span>Vue Combinée</span>
           </button>
           <button id="btn-subnav-journal" onclick="switchNutritionSubSection('journal')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="calendar" class="w-4 h-4"></i>
@@ -594,31 +593,6 @@
             <span>Catalogue Aliments & Plats</span>
           </button>
         </div>
-
-        <div class="flex items-center gap-2 self-end sm:self-auto">
-          <div class="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 bg-[#0B0F17] px-3 py-1.5 rounded-xl border border-[#1F2A3C]">
-            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-brand-400 font-mono">Glisser-Déposer</kbd>
-            <span>vers un repas ou</span>
-            <kbd class="px-1.5 py-0.5 rounded bg-[#1F2A3C] text-[10px] text-brand-400 font-mono">/</kbd>
-            <span>rechercher</span>
-          </div>
-          <button onclick="openFriendsCatalogModal()" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-colors" title="Gérer les catalogues d'amis partagés">
-            <i data-lucide="users" class="w-3.5 h-3.5"></i>
-            <span>Amis &amp; Partages</span>
-          </button>
-          <button id="btn-quick-add-to-meal" onclick="openSelectFromCatalogModal('lunch')" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition-all">
-            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-            <span>+ Ajouter au Repas</span>
-          </button>
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-brand-400 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
-            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-            <span>+ Aliment</span>
-          </button>
-          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
-            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-            <span>+ Plat</span>
-          </button>
-        </div>
       </div>
 
       <!-- Layout Spacieux Desktop Multi-Colonnes (Catalogue à gauche, Repas à droite sur >=xl) -->
@@ -626,14 +600,14 @@
 
         <!-- Volet Gauche : Mon Catalogue (Aliments & Plats) -->
         <div id="nutrition-sec-catalog" class="xl:col-span-5 space-y-4">
-          <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+          <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h3 class="font-bold text-white text-base flex items-center space-x-2">
                   <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
                   <span>Catalogue de Référence</span>
                 </h3>
-                <p class="text-xs text-slate-400">Glissez-déposez un aliment vers le repas de votre choix</p>
+                <p class="text-xs text-slate-400">Cliquez sur l'icône d'un repas (🥐 🥗 🍎 🍲) pour ajouter directement</p>
               </div>
               <span id="catalog-items-count" class="text-xs px-2.5 py-1 bg-[#0B0F17] border border-[#1F2A3C] text-slate-300 rounded-xl font-medium shrink-0">
                 0 éléments
@@ -644,7 +618,7 @@
             <div class="flex flex-col gap-2.5">
               <div class="relative">
                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher (Touche '/' pour focus)..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
+                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un aliment ou un plat..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
                 <span class="absolute right-2.5 top-2 text-[10px] text-slate-400 font-mono hidden sm:inline">/</span>
               </div>
 
@@ -676,22 +650,22 @@
                 </div>
               </div>
 
-              <div class="flex items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
-                <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-slate-950 transition-colors">
-                  Tous
-                </button>
-                <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
-                  Aliments
-                </button>
-                <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
-                  Plats
-                </button>
-              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                <div class="flex items-center gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+                  <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors">
+                    Tous
+                  </button>
+                  <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                    Aliments
+                  </button>
+                  <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                    Plats
+                  </button>
+                </div>
 
-              <!-- Filtre par Bienfait Santé (Stage 13) -->
-              <div class="flex items-center gap-2">
-                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
-                  <option value="">🎯 Tous les bienfaits santé (EFSA / ANSES)</option>
+                <!-- Filtre par Bienfait Santé (Stage 13) -->
+                <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                  <option value="">🎯 Tous les bienfaits</option>
                   <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
                   <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
                   <option value="blood_pressure">🩺 Contrôle pression artérielle</option>
@@ -708,7 +682,7 @@
           </div>
 
           <!-- Grille des cartes du Catalogue (scrollable sur desktop) -->
-          <div id="catalog-items-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-2 max-h-[750px] overflow-y-auto pr-1">
+          <div id="catalog-items-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[750px] overflow-y-auto pr-1">
             <!-- Dynamique via renderCatalogItems() -->
           </div>
         </div>
@@ -769,198 +743,71 @@
 
       </div>
 
-      
-      <!-- Sélecteur rapide des 4 Repas & Plats Sauvegardés -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 class="font-bold text-white text-base flex items-center space-x-2">
-              <span>🍽️ Les 4 Repas du Quotidien — Bibliothèque & Catalogue</span>
-            </h3>
-            <p class="text-xs text-slate-400">📖 Mes Plats = vos plats types réutilisables  |  🥦 Catalogue = aliments de référence (glisser-déposer)</p>
+      <!-- Blocs analytiques & historique liés au Journal des Repas -->
+      <div id="nutrition-journal-analytics" class="space-y-6">
+        <!-- Tableau Récapitulatif : Calories par Jour & par Repas -->
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-white text-base">Tableau des Calories Journalières & par Repas</h3>
+              <p class="text-xs text-slate-400">Suivi direct des calories consommées par repas vs cible de 2 000 kcal</p>
+            </div>
+            <span id="calories-table-today-badge" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto">
+              Aujourd'hui : 0 kcal
+            </span>
           </div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <button onclick="openSavedMealsLibraryModal()" class="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-all">
-              <i data-lucide="bookmark" class="w-4 h-4 text-indigo-400"></i>
-              <span>📖 Mes Plats Sauvegardés</span>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left">
+              <thead class="text-slate-400 border-b border-[#1F2A3C]">
+                <tr>
+                  <th class="py-2.5 px-3">Date</th>
+                  <th class="py-2.5 px-3">🥐 Petit-déj</th>
+                  <th class="py-2.5 px-3">🥗 Déjeuner</th>
+                  <th class="py-2.5 px-3">🍎 Goûter</th>
+                  <th class="py-2.5 px-3">🍲 Dîner</th>
+                  <th class="py-2.5 px-3 font-bold text-white">Total Calories</th>
+                  <th class="py-2.5 px-3">Cible (kcal)</th>
+                  <th class="py-2.5 px-3">Statut</th>
+                </tr>
+              </thead>
+              <tbody id="table-meals-calories-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
+                <!-- Dynamique via renderNutritionView() -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Graphique en Barres Empilées des Calories par Repas (7 jours) -->
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="font-bold text-white text-base">Calories Réparties par Repas & par Jour</h3>
+              <p class="text-xs text-slate-400">Petit-déjeuner 🥐, Déjeuner 🥗, Goûter 🍎, Dîner 🍲 comparés à la cible calorique (2 000 kcal)</p>
+            </div>
+            <button onclick="openMealModal()" class="write-action-btn px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
+              <i data-lucide="camera" class="w-4 h-4"></i>
+              <span>Ajouter Repas Photo</span>
             </button>
-            <button onclick="switchNutritionSubSection('catalog')" class="px-3 py-1.5 rounded-xl bg-brand-600/20 hover:bg-brand-600/30 text-brand-300 border border-brand-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-all">
-              <i data-lucide="book-open" class="w-4 h-4 text-brand-400"></i>
-              <span>🥦 Catalogue Aliments</span>
-            </button>
-            <button onclick="openCreateSavedMealModal()" class="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-brand-600/20 transition-all">
-              <i data-lucide="plus" class="w-4 h-4"></i>
-              <span>➕ Créer un Plat Type</span>
-            </button>
+          </div>
+          <div class="h-80">
+            <canvas id="chart-meals-stacked"></canvas>
           </div>
         </div>
 
-        <!-- Grille des 4 Repas -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <!-- 1. Petit-déjeuner -->
-          <div class="bg-[#0B0F17] border border-amber-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-amber-500/40 transition-colors">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg">🥐</span>
-                <span class="font-bold text-sm text-white">Petit-déjeuner</span>
-              </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">Matin</span>
+        <!-- Journal Récent des Repas avec Miniatures -->
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="font-bold text-white text-base">Journal des Repas Enregistrés</h3>
+              <p class="text-xs text-slate-400">Photos d'assiettes, aliments décomposés et macronutriments</p>
             </div>
-            <div class="flex items-center gap-1.5 pt-1">
-              <button onclick="openSavedMealsLibraryModal('breakfast')" class="flex-1 py-1.5 px-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Ouvrir vos plats types pour le petit-déjeuner">
-                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-amber-400"></i>
-                <span>📖 Mes Plats</span>
-              </button>
-              <button onclick="openSelectFromCatalogModal('breakfast')" class="flex-1 py-1.5 px-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Choisir un aliment du catalogue pour le petit-déjeuner">
-                <i data-lucide="utensils" class="w-3.5 h-3.5 text-amber-400"></i>
-                <span>🥦 Catalogue</span>
-              </button>
-              <button onclick="openMealModal('breakfast')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
-                <i data-lucide="camera" class="w-3.5 h-3.5"></i>
-                <span>Photo</span>
-              </button>
-            </div>
+            <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-slate-300 rounded-lg" id="meals-count-badge">0 repas</span>
           </div>
-
-          <!-- 2. Déjeuner -->
-          <div class="bg-[#0B0F17] border border-brand-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-brand-500/40 transition-colors">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg">🥗</span>
-                <span class="font-bold text-sm text-white">Déjeuner</span>
-              </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-semibold">Midi</span>
-            </div>
-            <div class="flex items-center gap-1.5 pt-1">
-              <button onclick="openSavedMealsLibraryModal('lunch')" class="flex-1 py-1.5 px-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Ouvrir vos plats types pour le déjeuner">
-                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-brand-400"></i>
-                <span>📖 Mes Plats</span>
-              </button>
-              <button onclick="openSelectFromCatalogModal('lunch')" class="flex-1 py-1.5 px-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-brand-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Choisir un aliment du catalogue pour le déjeuner">
-                <i data-lucide="utensils" class="w-3.5 h-3.5 text-brand-400"></i>
-                <span>🥦 Catalogue</span>
-              </button>
-              <button onclick="openMealModal('lunch')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
-                <i data-lucide="camera" class="w-3.5 h-3.5"></i>
-                <span>Photo</span>
-              </button>
-            </div>
+          
+          <div id="meals-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Dynamique -->
           </div>
-
-          <!-- 3. Goûter -->
-          <div class="bg-[#0B0F17] border border-pink-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-pink-500/40 transition-colors">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg">🍎</span>
-                <span class="font-bold text-sm text-white">Goûter</span>
-              </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 font-semibold">16h</span>
-            </div>
-            <div class="flex items-center gap-1.5 pt-1">
-              <button onclick="openSavedMealsLibraryModal('snack')" class="flex-1 py-1.5 px-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Ouvrir vos plats types pour le goûter">
-                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-pink-400"></i>
-                <span>📖 Mes Plats</span>
-              </button>
-              <button onclick="openSelectFromCatalogModal('snack')" class="flex-1 py-1.5 px-2 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Choisir un aliment du catalogue pour le goûter">
-                <i data-lucide="utensils" class="w-3.5 h-3.5 text-pink-400"></i>
-                <span>🥦 Catalogue</span>
-              </button>
-              <button onclick="openMealModal('snack')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
-                <i data-lucide="camera" class="w-3.5 h-3.5"></i>
-                <span>Photo</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 4. Dîner -->
-          <div class="bg-[#0B0F17] border border-indigo-500/20 rounded-xl p-3 flex flex-col justify-between space-y-2 hover:border-indigo-500/40 transition-colors">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2">
-                <span class="text-lg">🍲</span>
-                <span class="font-bold text-sm text-white">Dîner</span>
-              </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-semibold">Soir</span>
-            </div>
-            <div class="flex items-center gap-1.5 pt-1">
-              <button onclick="openSavedMealsLibraryModal('dinner')" class="flex-1 py-1.5 px-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Ouvrir vos plats types pour le dîner">
-                <i data-lucide="bookmark" class="w-3.5 h-3.5 text-indigo-400"></i>
-                <span>📖 Mes Plats</span>
-              </button>
-              <button onclick="openSelectFromCatalogModal('dinner')" class="flex-1 py-1.5 px-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1 transition-colors" title="Choisir un aliment du catalogue pour le dîner">
-                <i data-lucide="utensils" class="w-3.5 h-3.5 text-indigo-400"></i>
-                <span>🥦 Catalogue</span>
-              </button>
-              <button onclick="openMealModal('dinner')" data-write-action="true" class="py-1.5 px-2.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors">
-                <i data-lucide="camera" class="w-3.5 h-3.5"></i>
-                <span>Photo</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-            <!-- Tableau Récapitulatif : Calories par Jour & par Repas -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h3 class="font-bold text-white text-base">Tableau des Calories Journalières & par Repas</h3>
-            <p class="text-xs text-slate-400">Suivi direct des calories consommées par repas vs cible de 2 000 kcal</p>
-          </div>
-          <span id="calories-table-today-badge" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto">
-            Aujourd'hui : 0 kcal
-          </span>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-xs text-left">
-            <thead class="text-slate-400 border-b border-[#1F2A3C]">
-              <tr>
-                <th class="py-2.5 px-3">Date</th>
-                <th class="py-2.5 px-3">🥐 Petit-déj</th>
-                <th class="py-2.5 px-3">🥗 Déjeuner</th>
-                <th class="py-2.5 px-3">🍎 Goûter</th>
-                <th class="py-2.5 px-3">🍲 Dîner</th>
-                <th class="py-2.5 px-3 font-bold text-white">Total Calories</th>
-                <th class="py-2.5 px-3">Cible (kcal)</th>
-                <th class="py-2.5 px-3">Statut</th>
-              </tr>
-            </thead>
-            <tbody id="table-meals-calories-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
-              <!-- Dynamique via renderNutritionView() -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Graphique en Barres Empilées des Calories par Repas (7 jours) -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <div>
-            <h3 class="font-bold text-white text-base">Calories Réparties par Repas & par Jour</h3>
-            <p class="text-xs text-slate-400">Petit-déjeuner 🥐, Déjeuner 🥗, Goûter 🍎, Dîner 🍲 comparés à la cible calorique (2 000 kcal)</p>
-          </div>
-          <button onclick="openMealModal()" class="write-action-btn px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold self-start sm:self-auto flex items-center space-x-1">
-            <i data-lucide="camera" class="w-4 h-4"></i>
-            <span>Ajouter Repas Photo</span>
-          </button>
-        </div>
-        <div class="h-80">
-          <canvas id="chart-meals-stacked"></canvas>
-        </div>
-      </div>
-
-      <!-- Journal Récent des Repas avec Miniatures -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h3 class="font-bold text-white text-base">Journal des Repas Enregistrés</h3>
-            <p class="text-xs text-slate-400">Photos d'assiettes, aliments décomposés et macronutriments</p>
-          </div>
-          <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-slate-300 rounded-lg" id="meals-count-badge">0 repas</span>
-        </div>
-        
-        <div id="meals-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Dynamique -->
         </div>
       </div>
 

@@ -108,146 +108,95 @@ let pendingDropSlot = null;
 // Initialisation & Bascule de Layout Desktop Multi-Colonnes
 // ============================================================================
 
-function switchNutritionLayout(mode) {
-  currentNutritionLayoutMode = mode;
-  const secJournal = document.getElementById('nutrition-sec-journal');
-  const secCatalog = document.getElementById('nutrition-sec-catalog');
-  const btnDesktopSplit = document.getElementById('btn-subnav-desktop-split');
-  const btnJournal = document.getElementById('btn-subnav-journal');
-  const btnCatalog = document.getElementById('btn-subnav-catalog');
-
-  if (mode === 'split') {
-    if (secJournal) {
-      secJournal.classList.remove('hidden');
-      secJournal.className = 'xl:col-span-7 space-y-4';
-    }
-    if (secCatalog) {
-      secCatalog.classList.remove('hidden');
-      secCatalog.className = 'xl:col-span-5 space-y-4';
-    }
-    if (btnDesktopSplit) {
-      btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 items-center justify-center space-x-2 transition-all';
-    }
-    if (btnJournal) {
-      btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
-    }
-    if (btnCatalog) {
-      btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
-    }
-    loadCatalogItems();
-    loadMealsJournal(currentJournalDate);
-  } else if (mode === 'journal') {
-    if (secJournal) {
-      secJournal.classList.remove('hidden');
-      secJournal.className = 'col-span-12 space-y-4';
-    }
-    if (secCatalog) secCatalog.classList.add('hidden');
-    if (btnDesktopSplit) {
-      btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
-    }
-    if (btnJournal) {
-      btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all';
-    }
-    if (btnCatalog) {
-      btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
-    }
-    loadMealsJournal(currentJournalDate);
-  } else if (mode === 'catalog') {
-    if (secJournal) secJournal.classList.add('hidden');
-    if (secCatalog) {
-      secCatalog.classList.remove('hidden');
-      secCatalog.className = 'col-span-12 space-y-4';
-    }
-    if (btnDesktopSplit) {
-      btnDesktopSplit.className = 'hidden xl:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] items-center justify-center space-x-2 transition-all';
-    }
-    if (btnCatalog) {
-      btnCatalog.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all';
-    }
-    if (btnJournal) {
-      btnJournal.className = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
-    }
-    loadCatalogItems();
-  }
-}
-
-function switchNutritionSubSection(sub) {
-  // 1. S'assurer que l'onglet parent Nutrition & Repas est actif
-  if (typeof switchTab === 'function') {
-    switchTab('nutrition');
-  }
-
-  // 2. Basculer l'affichage vers la vue demandée
-  switchNutritionLayout(sub);
-
-  // 3. Déclenchement visuel immédiat & scroll fluide
-  if (sub === 'journal') {
-    const secJournal = document.getElementById('nutrition-sec-journal');
-    if (secJournal) {
-      secJournal.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    if (typeof showToast === 'function') {
-      showToast("📅 Vue Journal des 4 Repas active", "info");
-    }
-  } else if (sub === 'catalog') {
-    const secCatalog = document.getElementById('nutrition-sec-catalog');
-    if (secCatalog) {
-      secCatalog.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    setTimeout(() => {
-      const searchInput = document.getElementById('catalog-search-input');
-      if (searchInput) {
-        searchInput.focus();
-        searchInput.select();
-      }
-    }, 150);
-    if (typeof showToast === 'function') {
-      showToast("📖 Catalogue d'Aliments & Plats actif (Touche '/' pour chercher)", "info");
-    }
-  }
-}
-
-// Initialisation des écouteurs explicites addEventListener pour la navigation
-function initNutritionNavigation() {
-  const btnJournal = document.getElementById('btn-subnav-journal');
-  if (btnJournal && !btnJournal.dataset.bound) {
-    btnJournal.dataset.bound = "true";
-    btnJournal.addEventListener('click', (e) => {
-      e.preventDefault();
-      switchNutritionSubSection('journal');
-    });
-  }
-
-  const btnCatalog = document.getElementById('btn-subnav-catalog');
-  if (btnCatalog && !btnCatalog.dataset.bound) {
-    btnCatalog.dataset.bound = "true";
-    btnCatalog.addEventListener('click', (e) => {
-      e.preventDefault();
-      switchNutritionSubSection('catalog');
-    });
-  }
-
-  const btnDesktopSplit = document.getElementById('btn-subnav-desktop-split');
-  if (btnDesktopSplit && !btnDesktopSplit.dataset.bound) {
-    btnDesktopSplit.dataset.bound = "true";
-    btnDesktopSplit.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (typeof switchTab === 'function') switchTab('nutrition');
-      switchNutritionLayout('split');
-      if (typeof showToast === 'function') showToast("🖥️ Vue Bureau Multi-Colonnes active", "info");
-    });
-  }
-
-  const btnQuickAdd = document.getElementById('btn-quick-add-to-meal');
-  if (btnQuickAdd && !btnQuickAdd.dataset.bound) {
-    btnQuickAdd.dataset.bound = "true";
-    btnQuickAdd.addEventListener('click', (e) => {
-      if (typeof openSelectFromCatalogModal === 'function') {
-        openSelectFromCatalogModal(currentActiveMealSlot || 'lunch');
-      }
-    });
-    preventDoubleClick(btnQuickAdd);
-  }
+function switchNutritionLayout(mode) {
+  currentNutritionLayoutMode = mode;
+  const layoutContainer = document.getElementById('nutrition-desktop-layout-container');
+  const secJournal = document.getElementById('nutrition-sec-journal');
+  const secCatalog = document.getElementById('nutrition-sec-catalog');
+  const analyticsSec = document.getElementById('nutrition-journal-analytics');
+  const catalogGrid = document.getElementById('catalog-items-grid');
+  const btnMap = {
+    split: document.getElementById('btn-subnav-desktop-split'),
+    journal: document.getElementById('btn-subnav-journal'),
+    catalog: document.getElementById('btn-subnav-catalog')
+  };
+
+  const activeBtnClass = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all';
+  const inactiveBtnClass = 'flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all';
+
+  Object.entries(btnMap).forEach(([key, btn]) => {
+    if (btn) btn.className = key === mode ? activeBtnClass : inactiveBtnClass;
+  });
+
+  if (mode === 'split') {
+    if (layoutContainer) {
+      layoutContainer.className = 'grid grid-cols-1 xl:grid-cols-12 gap-6 items-start';
+    }
+    if (secJournal) {
+      secJournal.className = 'xl:col-span-7 space-y-4';
+    }
+    if (secCatalog) {
+      secCatalog.className = 'xl:col-span-5 space-y-4';
+    }
+    if (catalogGrid) {
+      catalogGrid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[750px] overflow-y-auto pr-1';
+    }
+    if (analyticsSec) {
+      analyticsSec.classList.remove('hidden');
+    }
+    loadCatalogItems();
+    loadMealsJournal(currentJournalDate);
+  } else if (mode === 'journal') {
+    if (layoutContainer) {
+      layoutContainer.className = 'grid grid-cols-1 gap-6 items-start';
+    }
+    if (secJournal) {
+      secJournal.className = 'space-y-4';
+    }
+    if (secCatalog) {
+      secCatalog.classList.add('hidden');
+    }
+    if (analyticsSec) {
+      analyticsSec.classList.remove('hidden');
+    }
+    loadMealsJournal(currentJournalDate);
+  } else if (mode === 'catalog') {
+    if (layoutContainer) {
+      layoutContainer.className = 'grid grid-cols-1 gap-6 items-start';
+    }
+    if (secJournal) {
+      secJournal.classList.add('hidden');
+    }
+    if (secCatalog) {
+      secCatalog.className = 'space-y-4';
+    }
+    if (catalogGrid) {
+      catalogGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3';
+    }
+    if (analyticsSec) {
+      analyticsSec.classList.add('hidden');
+    }
+    loadCatalogItems();
+  }
+}
+
+function switchNutritionSubSection(sub) {
+  if (typeof switchTab === 'function' && (typeof currentActiveTab === 'undefined' || currentActiveTab !== 'nutrition')) {
+    switchTab('nutrition');
+  }
+
+  switchNutritionLayout(sub);
+
+  if (sub === 'catalog') {
+    const searchInput = document.getElementById('catalog-search-input');
+    if (searchInput) {
+      searchInput.focus({ preventScroll: true });
+    }
+  }
+}
+
+function initNutritionNavigation() {
+  switchNutritionLayout(currentNutritionLayoutMode || 'split');
 }
 
 // ============================================================================
@@ -455,6 +404,13 @@ function handleBenefitFilterChange(event) {
   renderCatalogItems();
 }
 
+const CATALOG_MEAL_SLOT_ACTIONS = [
+  { slot: 'breakfast', emoji: '🥐', label: 'Petit-déjeuner', classes: 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30' },
+  { slot: 'lunch', emoji: '🥗', label: 'Déjeuner', classes: 'bg-brand-500/10 hover:bg-brand-500/20 border-brand-500/30' },
+  { slot: 'snack', emoji: '🍎', label: 'Goûter', classes: 'bg-pink-500/10 hover:bg-pink-500/20 border-pink-500/30' },
+  { slot: 'dinner', emoji: '🍲', label: 'Dîner', classes: 'bg-indigo-500/10 hover:bg-indigo-500/20 border-indigo-500/30' }
+];
+
 function buildCatalogItemCardHtml(item) {
   const isDish = item.item_type === 'dish';
   const typeBadge = isDish
@@ -482,6 +438,16 @@ function buildCatalogItemCardHtml(item) {
   const itemName = escapeHtml(item.name || '');
   const itemId = escapeHtml(String(item.id));
   const photoUrl = sanitizeUrl(item.photo_url);
+
+  const mealQuickButtonsHtml = CATALOG_MEAL_SLOT_ACTIONS.map(m => `
+    <button
+      type="button"
+      onclick="promptAddToMeal('${itemId}', '${m.slot}')"
+      title="Ajouter au ${m.label}"
+      aria-label="Ajouter ${itemName} au ${m.label}"
+      class="w-8 h-8 rounded-lg border ${m.classes} text-sm flex items-center justify-center transition-all active:scale-95"
+    >${m.emoji}</button>
+  `).join('');
 
   const benefitsList = item.benefits || [];
   const benefitsHtml = benefitsList.length > 0 ? `
@@ -511,24 +477,20 @@ function buildCatalogItemCardHtml(item) {
 
   return `
     <div 
-      class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-1.5 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
+      class="catalog-draggable-card bg-[#0B0F17] border border-[#1F2A3C] hover:border-brand-500/60 rounded-xl p-2.5 flex flex-col justify-between space-y-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:shadow-brand-500/10 select-none group"
       draggable="true"
       ondragstart="handleCatalogDragStart(event, '${itemId}')"
       ondragend="handleCatalogDragEnd(event)"
       data-item-id="${itemId}"
-      title="Glisser vers un repas ou double-cliquer pour ajouter"
+      title="Cliquer sur un repas ci-dessous ou glisser vers un repas"
       ondblclick="promptAddToMeal('${itemId}')"
     >
-      <div class="flex items-center justify-between gap-1.5">
-        <div class="flex items-center space-x-1.5 min-w-0 flex-1">
-          <div class="text-slate-400 group-hover:text-brand-400 shrink-0 cursor-grab active:cursor-grabbing">
-            <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
-          </div>
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-start space-x-2 min-w-0 flex-1">
           ${typeBadge}
-          <h4 class="font-bold text-xs text-white truncate" title="${itemName}">${itemName}</h4>
-          ${sourceBadge}
+          <h4 class="font-bold text-xs sm:text-sm text-white leading-snug flex-1 min-w-0" style="overflow-wrap:break-word;" title="${itemName}">${itemName}</h4>
         </div>
-        <div class="text-right shrink-0">
+        <div class="text-right shrink-0 pt-0.5">
           <span class="text-xs font-black text-amber-400">${cal}</span>
           <span class="text-[9px] text-slate-400">kcal</span>
         </div>
@@ -540,8 +502,11 @@ function buildCatalogItemCardHtml(item) {
         </div>
       ` : ''}
 
-      <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono px-2 py-0.5 bg-[#151D2A] rounded-lg">
-        <span class="text-slate-300 font-semibold truncate">Réf: ${unitLabel}</span>
+      <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-400 font-mono px-2 py-1 bg-[#151D2A] rounded-lg">
+        <div class="flex items-center gap-1.5 min-w-0">
+          ${sourceBadge}
+          <span class="text-slate-300 font-semibold">Réf: ${unitLabel}</span>
+        </div>
         <span class="shrink-0 space-x-1.5">
           <span class="text-brand-400 font-semibold">P:${p}g</span>
           <span class="text-sky-400 font-semibold">G:${g}g</span>
@@ -553,17 +518,10 @@ function buildCatalogItemCardHtml(item) {
 
       ${benefitsHtml}
 
-      <div class="flex items-center justify-between pt-1 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
-        <button 
-          type="button"
-          onclick="promptAddToMeal('${itemId}')" 
-          title="Ajouter au repas sélectionné"
-          aria-label="Ajouter ${itemName} au repas sélectionné"
-          class="text-[10px] font-bold text-brand-400 hover:text-brand-300 flex items-center space-x-1 py-0.5 px-2 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 transition-colors min-h-[36px]"
-        >
-          <i data-lucide="plus" class="w-3 h-3"></i>
-          <span>Ajouter</span>
-        </button>
+      <div class="flex items-center justify-between gap-1.5 pt-1 border-t border-[#1F2A3C]/70 ${(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) ? 'hidden' : ''}">
+        <div class="flex items-center gap-1" role="group" aria-label="Ajouter directement à un repas">
+          ${mealQuickButtonsHtml}
+        </div>
         
         <div class="flex items-center gap-1">
           ${(!isPublic && !isFriend) ? `
@@ -624,11 +582,11 @@ function renderCatalogItems() {
         <i data-lucide="book-open" class="w-9 h-9 text-slate-600 mx-auto"></i>
         <h4 class="text-sm font-bold text-slate-300">Aucun aliment correspondant</h4>
         <p class="text-xs text-slate-400 max-w-sm mx-auto">${normalizedQuery ? `Aucun résultat pour « ${safeSearch} ».` : 'Aucun élément ne correspond à votre filtre.'}</p>
-        <div class="flex items-center justify-center gap-2 pt-2">
-          ${hasFilter ? `<button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>` : ''}
-          <button onclick="openCreateCatalogItemModal('food')" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">+ Nouvel aliment</button>
-          <button onclick="openCreateCatalogItemModal('dish')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Nouveau plat</button>
-        </div>
+        ${hasFilter ? `
+          <div class="flex items-center justify-center pt-2">
+            <button onclick="resetCatalogFilters()" class="px-3 py-1.5 rounded-xl bg-[#1F2A3C] text-slate-200 text-xs font-semibold hover:bg-[#2A3850] transition-colors">Réinitialiser les filtres</button>
+          </div>
+        ` : ''}
       </div>
     `;
     refreshIcons(container);
@@ -2122,6 +2080,10 @@ function renderMealsJournal() {
           <button onclick="openSelectFromCatalogModal('${slot}')" class="flex-1 py-2 px-3 rounded-xl bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/30 text-brand-300 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>+ Ajouter un aliment</span>
+          </button>
+          <button onclick="openMealModal('${slot}')" title="Analyser ce repas par photo" aria-label="Analyser ce repas par photo" class="py-2 px-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center space-x-1 transition-colors">
+            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+            <span>Photo</span>
           </button>
           ${items.length > 0 ? `
             <button onclick="saveSlotAsDishModal('${slot}')" title="Créer un plat réutilisable à partir de ce repas" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-amber-400 text-xs font-semibold flex items-center space-x-1 transition-colors">
@@ -2246,11 +2208,12 @@ function closeSelectFromCatalogModal() {
   if (modal) modal.classList.add('hidden');
 }
 
-function promptAddToMeal(itemId) {
-  const item = currentCatalogItems.find(it => it.id == itemId);
-  if (!item) return;
-  // Déclenche la pop-in rapide directement sur le slot actif
-  openDropPortionModal(item, currentActiveMealSlot || 'lunch');
+function promptAddToMeal(itemId, slot) {
+  const item = currentCatalogItems.find(it => it.id == itemId);
+  if (!item) return;
+  const targetSlot = slot || currentActiveMealSlot || 'lunch';
+  currentActiveMealSlot = targetSlot;
+  openDropPortionModal(item, targetSlot);
 }
 
 function renderModalCatalogList(searchQuery = '') {
