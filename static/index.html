@@ -831,13 +831,26 @@
         </div>
 
         <!-- Journal Récent des Repas avec Miniatures -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
-          <div class="flex items-center justify-between mb-4">
+        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 class="font-bold text-white text-base">Journal des Repas Enregistrés</h3>
               <p class="text-xs text-slate-400">Photos d'assiettes, aliments décomposés et macronutriments</p>
             </div>
-            <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-slate-300 rounded-lg" id="meals-count-badge">0 repas</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <select id="meals-history-type-filter" onchange="renderNutritionView()" aria-label="Filtrer par type de repas" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                <option value="">🍽️ Tous les repas</option>
+                <option value="breakfast">🥐 Petit-déjeuner</option>
+                <option value="lunch">🥗 Déjeuner</option>
+                <option value="snack">🍎 Goûter</option>
+                <option value="dinner">🍲 Dîner</option>
+              </select>
+              <input type="date" id="meals-history-date-filter" onchange="renderNutritionView()" aria-label="Filtrer par jour" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              <button type="button" onclick="resetMealsHistoryFilters()" title="Réinitialiser les filtres" class="px-2.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-xs text-slate-400 hover:text-white transition-colors">
+                Tout voir
+              </button>
+              <span class="text-xs px-2.5 py-1.5 bg-[#1F2A3C] text-slate-300 rounded-xl" id="meals-count-badge">0 repas</span>
+            </div>
           </div>
           
           <div id="meals-list-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">

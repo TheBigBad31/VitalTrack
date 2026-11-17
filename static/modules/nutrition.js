@@ -1926,9 +1926,45 @@ function consolidateJournalMutationResponse(date, payload, slot) {
   storeJournalForDate(date, journal);
   journalFetchedAtByDate.set(date, Date.now());
 
+  if (typeof currentData !== 'undefined' && currentData && Array.isArray(currentData.recent_meals) && mealLog) {
+    const targetSlot = mealLog.meal_type || slot;
+    const normDate = String(date).slice(0, 10);
+    const idx = currentData.recent_meals.findIndex(m => String(m.date || '').slice(0, 10) === normDate && m.meal_type === targetSlot);
+    const itemsList = Array.isArray(mealLog.items) ? mealLog.items : [];
+    if (itemsList.length === 0) {
+      if (idx >= 0) currentData.recent_meals.splice(idx, 1);
+    } else {
+      const projected = {
+        id: mealLog.id,
+        date: normDate,
+        meal_type: targetSlot,
+        total_calories_kcal: Number(mealLog.total_calories || 0),
+        protein_g: Number(mealLog.total_protein_g || 0),
+        carbs_g: Number(mealLog.total_carbs_g || 0),
+        fat_g: Number(mealLog.total_fat_g || 0),
+        fiber_g: Number(mealLog.total_fiber_g || 0),
+        photo_data_url: mealLog.photo_url || null,
+        items: itemsList.map(it => ({
+          name: it.name,
+          portion_g: it.unit === 'g' ? it.quantity : 100,
+          calories_kcal: it.calories,
+          protein_g: it.protein_g || 0,
+          carbs_g: it.carbs_g || 0,
+          fat_g: it.fat_g || 0,
+          fiber_g: it.fiber_g || 0
+        }))
+      };
+      if (idx >= 0) currentData.recent_meals[idx] = projected;
+      else currentData.recent_meals.push(projected);
+    }
+  }
+
   if (date === currentJournalDate) {
     renderMealsJournal();
     syncDashboardSummary(date, journal);
+  }
+  if (typeof renderNutritionView === 'function') {
+    try { renderNutritionView(); } catch (e) { console.warn('[nutrition] renderNutritionView:', e); }
   }
 }
 

@@ -1607,7 +1607,23 @@
 
 
 
-        container.innerHTML = meals.map(m => {
+        const typeFilterEl = document.getElementById('meals-history-type-filter');
+        const dateFilterEl = document.getElementById('meals-history-date-filter');
+        const filterType = typeFilterEl ? typeFilterEl.value : '';
+        const filterDate = dateFilterEl ? dateFilterEl.value : '';
+
+        const filteredMeals = meals.filter(m => {
+          if (filterType && m.meal_type !== filterType) return false;
+          if (filterDate && String(m.date || '').slice(0, 10) !== filterDate) return false;
+          return true;
+        });
+
+        if (badge) badge.innerText = `${filteredMeals.length} repas${filteredMeals.length !== meals.length ? ' / ' + meals.length : ''}`;
+
+        if (filteredMeals.length === 0) {
+          container.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-slate-400 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl">Aucun repas enregistré pour ces critères.</div>';
+        } else {
+        container.innerHTML = filteredMeals.map(m => {
 
           const typeInfo = mealTypeLabels[m.meal_type] || { label: m.meal_type, color: "text-slate-400" };
 
@@ -1689,9 +1705,13 @@
 
 
 
-              <!-- Action Sauvegarde Plat Type -->
+              <!-- Actions : Copier aujourd'hui & Sauvegarde Plat Type -->
 
-              <div class="pt-1 flex items-center justify-end">
+              <div class="pt-1 flex flex-wrap items-center justify-end gap-2">
+                <button type="button" onclick="copyMealToToday(${mealIdx})" class="write-action-btn text-[11px] font-semibold text-brand-400 hover:text-brand-300 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/25 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition-colors" title="Copier ce repas au même repas d'aujourd'hui">
+                  <i data-lucide="copy" class="w-3 h-3"></i>
+                  <span>Copier aujourd'hui</span>
+                </button>
 
                 <button onclick="saveLoggedMealAsTemplate(${mealIdx})" class="text-[10px] text-amber-400 hover:text-amber-300 flex items-center space-x-1 py-1 px-2 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 transition-colors">
 
@@ -1708,10 +1728,60 @@
           `;
 
         }).join('');
+        }
 
       }
 
     }
+
+    function resetMealsHistoryFilters() {
+      const typeEl = document.getElementById('meals-history-type-filter');
+      const dateEl = document.getElementById('meals-history-date-filter');
+      if (typeEl) typeEl.value = '';
+      if (dateEl) dateEl.value = '';
+      renderNutritionView();
+    }
+    window.resetMealsHistoryFilters = resetMealsHistoryFilters;
+
+    async function copyMealToToday(mealIdx) {
+      const meals = (currentData && currentData.recent_meals) || [];
+      const m = meals[mealIdx];
+      if (!m) return;
+      const todayIso = new Date().toISOString().split('T')[0];
+      const payload = {
+        date: todayIso,
+        meal_type: m.meal_type,
+        photo_data_url: m.photo_data_url || null,
+        portion_scale: 1.0,
+        items: Array.isArray(m.items) ? m.items : [],
+        total_calories_kcal: Number(m.total_calories_kcal || 0),
+        protein_g: Number(m.protein_g || 0),
+        carbs_g: Number(m.carbs_g || 0),
+        fat_g: Number(m.fat_g || 0),
+        fiber_g: Number(m.fiber_g || 0)
+      };
+      try {
+        const res = await apiFetch('/api/meals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const saved = await res.json();
+        currentData.recent_meals = currentData.recent_meals || [];
+        currentData.recent_meals.push(saved);
+        if (typeof invalidateJournalCache === 'function') invalidateJournalCache(todayIso);
+        if (typeof loadMealsJournal === 'function' && typeof getActiveMealDate === 'function' && getActiveMealDate() === todayIso) {
+          loadMealsJournal(todayIso);
+        }
+        renderNutritionView();
+        if (typeof showToast === 'function') showToast("Repas copié pour aujourd'hui !", 'success');
+      } catch (err) {
+        console.error('Erreur copie repas:', err);
+        if (typeof showToast === 'function') showToast('Impossible de copier ce repas.', 'error');
+      }
+    }
+    window.copyMealToToday = copyMealToToday;
 
 
 
