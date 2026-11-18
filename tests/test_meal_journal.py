@@ -152,10 +152,14 @@ def test_meal_journal_workflow_and_scaling(journal_setup):
     assert dish_created["item_type"] == "dish"
     assert dish_created["default_unit"] == "portion"
     assert dish_created["calories_per_unit"] == 339.0
+    assert len(dish_created["recipe_items"]) == 2
+    assert {ri["name"] for ri in dish_created["recipe_items"]} == {"Blanc de poulet", "Riz Basmati cuit"}
 
     # Vérification que le plat apparaît bien dans le catalogue
     res_cat = client.get("/api/catalog/items?type=dish", headers=headers)
-    assert any(d["name"] == "Assiette Poulet & Riz Déjeuner" for d in res_cat.json())
+    matching_dishes = [d for d in res_cat.json() if d["name"] == "Assiette Poulet & Riz Déjeuner"]
+    assert len(matching_dishes) == 1
+    assert len(matching_dishes[0]["recipe_items"]) == 2
 
     # 7. Suppression d'une ligne d'aliment dans le repas (retrait du riz)
     item_riz_id = item_riz["id"]

@@ -1039,6 +1039,21 @@ def save_meal_as_dish(
     if not meal_log.items:
         raise HTTPException(status_code=400, detail="Ce repas ne contient aucun aliment à sauvegarder comme plat")
 
+    recipe_items = [
+        {
+            "food_item_id": item.food_item_id,
+            "name": item.name,
+            "quantity": item.quantity,
+            "unit": item.unit,
+            "calories": item.calories,
+            "protein_g": item.protein_g,
+            "carbs_g": item.carbs_g,
+            "fat_g": item.fat_g,
+            "fiber_g": item.fiber_g or 0.0,
+        }
+        for item in meal_log.items
+    ]
+
     dish_item = CatalogItem(
         user_id=current_user.id,
         name=req.name.strip(),
@@ -1051,7 +1066,8 @@ def save_meal_as_dish(
         carbs_per_unit_g=meal_log.total_carbs_g,
         fat_per_unit_g=meal_log.total_fat_g,
         fiber_per_unit_g=meal_log.total_fiber_g or 0.0,
-        photo_url=req.photo_url or meal_log.photo_url
+        photo_url=req.photo_url or meal_log.photo_url,
+        recipe_items=recipe_items
     )
     created_dish = db.insert_food_item(dish_item, user_id=current_user.id)
     return {
