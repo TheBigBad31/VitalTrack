@@ -1601,11 +1601,20 @@ async function handleCatalogItemFormSubmit(event) {
     const url = isEdit ? `/api/catalog/items/${itemId}` : '/api/catalog/items';
     const method = isEdit ? 'PUT' : 'POST';
 
-    const res = await apiFetch(url, {
+    let res = await apiFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+
+    if (res.status === 500 || res.status === 503) {
+      await new Promise(r => setTimeout(r, 400));
+      res = await apiFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
 
     if (res.ok) {
       const createdOrUpdated = await res.json();
@@ -1632,7 +1641,11 @@ async function handleCatalogItemFormSubmit(event) {
       closeCatalogItemModal();
       loadCatalogItems(true);
     } else {
-      alert("Erreur lors de l'enregistrement dans le catalogue.");
+      const errBody = await res.json().catch(() => ({}));
+      const detail = errBody.detail || errBody.error || `HTTP ${res.status}`;
+      const msg = `Erreur lors de l'enregistrement dans le catalogue (${detail}).`;
+      if (typeof showToast === 'function') showToast(msg, 'error');
+      else alert(msg);
     }
   } catch (err) {
     alert("Erreur réseau lors de l'enregistrement.");
