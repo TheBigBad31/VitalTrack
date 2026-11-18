@@ -2150,6 +2150,30 @@ function refreshNutritionDayViews() {
 }
 window.refreshNutritionDayViews = refreshNutritionDayViews;
 
+function renderMealRecommendationHint(rec) {
+  if (!rec || !rec.calories) return '';
+  const calMin = Math.round(rec.calories.min || 0);
+  const calMax = Math.round(rec.calories.max || 0);
+  const calTarget = Math.round(rec.calories.target || 0);
+  const prot = Math.round(rec.protein_g?.target || 0);
+  const carbs = Math.round(rec.carbs_g?.target || 0);
+  const fat = Math.round(rec.fat_g?.target || 0);
+  const sourceLabel = rec.based_on === 'history' ? 'selon votre historique' : 'répartition conseillée';
+  const calText = calMin !== calMax ? `${calMin}–${calMax} kcal` : `${calTarget} kcal`;
+
+  return `
+    <div class="mt-1.5 px-3 py-2 rounded-xl bg-brand-500/10 border border-brand-500/25 text-left w-full" data-meal-recommendation="${escapeHtml(rec.meal_type || '')}">
+      <div class="flex items-center justify-between gap-2 text-[11px]">
+        <span class="font-bold text-brand-300">Suggestion : ~${calTarget} kcal <span class="font-normal text-slate-400">(${calText})</span></span>
+        <span class="text-[10px] text-slate-400">${sourceLabel}</span>
+      </div>
+      <div class="text-[10px] text-slate-300 mt-0.5">
+        P: ${prot}g &bull; G: ${carbs}g &bull; L: ${fat}g
+      </div>
+    </div>
+  `;
+}
+
 function renderMealsJournal() {
   if (!currentJournalData) return;
 
@@ -2177,7 +2201,8 @@ function renderMealsJournal() {
 
   const meals = currentJournalData.meals || [];
   const mealsByType = {};
-  meals.forEach(m => { mealsByType[m.meal_type] = m; });
+  meals.forEach(m => { mealsByType[m.meal_type] = m; });
+  const guidanceRecs = (currentJournalData.nutrition_guidance && currentJournalData.nutrition_guidance.recommendations) || {};
 
   const container = document.getElementById('journal-slots-container');
   if (!container) return;
@@ -2225,7 +2250,8 @@ function renderMealsJournal() {
           ${items.length === 0 ? `
             <div class="py-4 text-center text-xs text-slate-500 border border-dashed border-[#1F2A3C] rounded-xl flex flex-col items-center justify-center space-y-1">
               <span>Aucun aliment composé pour ce repas.</span>
-              <span class="text-[11px] text-slate-400 font-medium">Glissez un aliment depuis le catalogue de gauche 👈</span>
+              <span class="text-[11px] text-slate-400 font-medium">Glissez un aliment depuis le catalogue de gauche 👈</span>
+              ${renderMealRecommendationHint(guidanceRecs[slot])}
             </div>
           ` : items.map(it => {
             const isPending = it._optimistic === true || String(it.id).startsWith('tmp-');
