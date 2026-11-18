@@ -58,6 +58,7 @@ from src.meal_recommendations import (
     compute_weighted_meal_recommendations,
     get_daily_nutrition_targets,
     get_historical_meal_averages,
+    get_historical_meal_candidates,
 )
 from src.nutrition_rules import evaluate_dish_benefits
 from src.otel import record_photo_analysis_metric
@@ -902,11 +903,13 @@ def get_meals_journal(
     meals_response, day_summary = calculate_day_summary(target_date, user_id=target_uid)
     targets = get_daily_nutrition_targets(db, user_id=target_uid)
     meal_averages = get_historical_meal_averages(db, user_id=target_uid, before_date=target_date)
+    historical_meals = get_historical_meal_candidates(db, user_id=target_uid, before_date=target_date)
     nutrition_guidance = compute_weighted_meal_recommendations(
         meals_response=meals_response,
         day_summary=day_summary,
         targets=targets,
         meal_averages=meal_averages,
+        historical_meals=historical_meals,
     )
 
     return {

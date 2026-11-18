@@ -2160,6 +2160,26 @@ function renderMealRecommendationHint(rec) {
   const fat = Math.round(rec.fat_g?.target || 0);
   const sourceLabel = rec.based_on === 'history' ? 'selon votre historique' : 'répartition conseillée';
   const calText = calMin !== calMax ? `${calMin}–${calMax} kcal` : `${calTarget} kcal`;
+  const suggested = rec.suggested_meal;
+  const suggestedHtml = suggested && Array.isArray(suggested.items) && suggested.items.length > 0
+    ? `
+      <div class="mt-1.5 pt-1.5 border-t border-brand-500/20 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="text-[11px] font-semibold text-emerald-300 truncate" title="${escapeHtml(suggested.title || '')}">
+            Idée : ${escapeHtml(suggested.title || '')}
+          </div>
+          <div class="text-[10px] text-slate-400">
+            ${Math.round(suggested.calories || 0)} kcal &bull; P: ${Math.round(suggested.protein_g || 0)}g &bull; G: ${Math.round(suggested.carbs_g || 0)}g &bull; L: ${Math.round(suggested.fat_g || 0)}g
+          </div>
+        </div>
+        <button type="button"
+          onclick="applySuggestedMeal('${escapeHtml(rec.meal_type || '')}')"
+          class="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold transition-colors">
+          Appliquer
+        </button>
+      </div>
+    `
+    : '';
 
   return `
     <div class="mt-1.5 px-3 py-2 rounded-xl bg-brand-500/10 border border-brand-500/25 text-left w-full" data-meal-recommendation="${escapeHtml(rec.meal_type || '')}">
@@ -2170,9 +2190,45 @@ function renderMealRecommendationHint(rec) {
       <div class="text-[10px] text-slate-300 mt-0.5">
         P: ${prot}g &bull; G: ${carbs}g &bull; L: ${fat}g
       </div>
+      ${suggestedHtml}
     </div>
   `;
 }
+
+async function applySuggestedMeal(mealType) {
+  const rec = currentJournalData?.nutrition_guidance?.recommendations?.[mealType];
+  const suggested = rec?.suggested_meal;
+  if (!suggested || !Array.isArray(suggested.items) || suggested.items.length === 0) return;
+
+  const dateInput = document.getElementById('journal-date-input');
+  const targetDate = dateInput?.value || new Date().toISOString().slice(0, 10);
+  const items = suggested.items.map((it) => ({
+    food_item_id: it.food_item_id || null,
+    name: it.name,
+    quantity: Number(it.quantity) > 0 ? Number(it.quantity) : 1,
+    unit: it.unit || 'g',
+    calories: it.calories ?? null,
+    protein_g: it.protein_g ?? null,
+    carbs_g: it.carbs_g ?? null,
+    fat_g: it.fat_g ?? null,
+    fiber_g: it.fiber_g ?? null,
+  }));
+
+  try {
+    const res = await fetch(`${API_BASE}/api/meals/journal/${encodeURIComponent(mealType)}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: targetDate, items }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (typeof showToast === 'function') showToast('Repas suggéré ajouté au journal', 'success');
+    if (typeof loadMealsJournal === 'function') await loadMealsJournal();
+  } catch (err) {
+    console.error('applySuggestedMeal error:', err);
+    if (typeof showToast === 'function') showToast('Impossible d’ajouter le repas suggéré', 'error');
+  }
+}
+window.applySuggestedMeal = applySuggestedMeal;
 
 function renderMealsJournal() {
   if (!currentJournalData) return;
