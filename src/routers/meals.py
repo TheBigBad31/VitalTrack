@@ -54,6 +54,11 @@ from src.models import (
     SavedMeal,
 )
 from src.nutrition_engine import NutritionEngine
+from src.meal_recommendations import (
+    compute_weighted_meal_recommendations,
+    get_daily_nutrition_targets,
+    get_historical_meal_averages,
+)
 from src.nutrition_rules import evaluate_dish_benefits
 from src.otel import record_photo_analysis_metric
 from src.rate_limit import rate_limit_photo_analysis
@@ -895,11 +900,20 @@ def get_meals_journal(
     verify_view_access(target_uid, current_user, database=db)
     target_date = dt_module.date.fromisoformat(date_param) if date_param else dt_module.date.today()
     meals_response, day_summary = calculate_day_summary(target_date, user_id=target_uid)
+    targets = get_daily_nutrition_targets(db, user_id=target_uid)
+    meal_averages = get_historical_meal_averages(db, user_id=target_uid, before_date=target_date)
+    nutrition_guidance = compute_weighted_meal_recommendations(
+        meals_response=meals_response,
+        day_summary=day_summary,
+        targets=targets,
+        meal_averages=meal_averages,
+    )
 
     return {
         "date": target_date.isoformat(),
         "meals": meals_response,
-        "day_summary": day_summary
+        "day_summary": day_summary,
+        "nutrition_guidance": nutrition_guidance,
     }
 
 
