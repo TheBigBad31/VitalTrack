@@ -759,8 +759,8 @@ class Database:
     def delete_demo_devices(self, user_id: Optional[int] = None) -> int:
         return self.devices.delete_demo_devices(user_id=user_id)
 
-    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
-        return self.devices.update_device_sync_status(device_id, sync_status, user_id=user_id)
+    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1, synced_at: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        return self.devices.update_device_sync_status(device_id, sync_status, user_id=user_id, synced_at=synced_at)
 
     def update_user_device(self, device_id: str, name: str, device_type: str, connected: bool,
                            auth_type: str = "connected", api_key: Optional[str] = None,

@@ -189,9 +189,9 @@ class DevicesRepository(BaseRepository):
             conn.commit()
         return deleted
 
-    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1) -> Optional[Dict[str, Any]]:
+    def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1, synced_at: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Met à jour le statut temps réel et l'horodatage de dernière synchronisation."""
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = synced_at or datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""

@@ -3580,31 +3580,18 @@
 
 
     async function triggerSyncFromBanner(deviceId) {
-
       const syncIcon = document.getElementById('live-hc-sync-icon');
-
       const syncTxt = document.getElementById('live-hc-sync-txt');
-
       if (syncIcon) syncIcon.classList.add('animate-spin');
-
       if (syncTxt) syncTxt.innerText = "Synchronisation...";
 
-
-
       const targetId = deviceId || 'health_connect';
-
       try {
-
-        await triggerDeviceSync(targetId);
-
+        await triggerDeviceSync(targetId, { since_last_sync: true });
       } finally {
-
         if (syncIcon) syncIcon.classList.remove('animate-spin');
-
-        if (syncTxt) syncTxt.innerText = "Synchroniser";
-
+        if (syncTxt) syncTxt.innerText = "Dernière synchro";
       }
-
     }
 
 
@@ -3847,12 +3834,12 @@
 
               </button>
 
-              <button type="button" onclick="triggerDeviceSync('${devId}')" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-
+              <button type="button" onclick="triggerDeviceSync('${devId}', { since_last_sync: true })" title="Synchroniser uniquement les données depuis la dernière synchro" class="flex-1 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
                 <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
-
                 <span>Synchroniser</span>
-
+              </button>
+              <button type="button" onclick="openDateSyncModal('${devId}')" title="Synchroniser depuis une date précise" class="p-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-cyan-400 border border-slate-700/60 transition-colors flex items-center justify-center">
+                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
               </button>
 
               <button type="button" onclick="disconnectDevice('${devId}')" title="Déconnecter et retirer du profil" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors">
@@ -3905,57 +3892,61 @@
 
 
 
-    async function triggerDeviceSync(deviceId) {
-
+    async function triggerDeviceSync(deviceId, options = {}) {
       try {
+        const queryParams = new URLSearchParams();
+        if (options.start_date) queryParams.set('start_date', options.start_date);
+        if (options.since_last_sync) queryParams.set('since_last_sync', 'true');
+        const qs = queryParams.toString() ? '?' + queryParams.toString() : '';
 
-        if (typeof showToast === 'function') showToast(`Synchronisation de ${deviceId} en cours...`, 'info');
+        const syncMsg = options.start_date
+          ? 'Synchronisation de ' + deviceId + ' depuis le ' + options.start_date + '...'
+          : (options.since_last_sync ? 'Synchronisation de ' + deviceId + ' (depuis dernière synchro)...' : 'Synchronisation de ' + deviceId + ' en cours...');
+        if (typeof showToast === 'function') showToast(syncMsg, 'info');
 
-        const res = await apiFetch(`/api/devices/${deviceId}/sync`, {
+        const payloadBody = {
+          device_id: deviceId,
+          start_date: options.start_date || null,
+          since_last_sync: Boolean(options.since_last_sync)
+        };
 
-          method: 'POST'
-
+        const res = await apiFetch('/api/devices/' + deviceId + '/sync' + qs, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadBody)
         });
 
         if (res.ok) {
-
           const data = await res.json();
-
-          if (typeof showToast === 'function') showToast(`Synchronisation de ${data.name || deviceId} réussie ! Données biométriques mises à jour.`, 'success');
-
-          else alert(`Synchronisation de ${data.name || deviceId} réussie ! Données mises à jour.`);
-
+          const periodInfo = data.start_date ? ' (période: ' + data.start_date + ' -> ' + data.end_date + ')' : '';
+          const okMsg = 'Synchronisation de ' + (data.name || deviceId) + ' réussie ! Données biométriques à jour' + periodInfo + '.';
+          if (typeof showToast === 'function') showToast(okMsg, 'success');
+          else alert(okMsg);
           await loadDashboardData();
-
+          return data;
         } else {
-
           // Fallback legacy
-
-          await apiFetch('/api/devices/sync', {
-
+          const legacyRes = await apiFetch('/api/devices/sync', {
             method: 'POST',
-
             headers: { 'Content-Type': 'application/json' },
-
-            body: JSON.stringify({ device_id: deviceId })
-
+            body: JSON.stringify(payloadBody)
           });
-
-          if (typeof showToast === 'function') showToast(`Synchronisation de ${deviceId} effectuée.`, 'info');
-
-          await loadDashboardData();
-
+          if (legacyRes.ok) {
+            const legData = await legacyRes.json();
+            if (typeof showToast === 'function') showToast('Synchronisation de ' + deviceId + ' effectuée.', 'success');
+            await loadDashboardData();
+            return legData;
+          } else {
+            const errJson = await legacyRes.json().catch(() => ({}));
+            const errDetail = errJson.detail || 'Erreur serveur';
+            if (typeof showToast === 'function') showToast('Échec de la synchronisation : ' + errDetail, 'error');
+            else alert('Échec de la synchronisation : ' + errDetail);
+          }
         }
-
       } catch (err) {
-
-        if (typeof showToast === 'function') showToast(`Synchronisation déclenchée.`, 'info');
-
+        if (typeof showToast === 'function') showToast('Erreur lors de la synchronisation : ' + (err.message || err), 'error');
       }
-
     }
-
-
 
     async function disconnectDevice(deviceId) {
 
@@ -7843,3 +7834,63 @@ function renderGoalsView() {
 
 window.renderGoalsView = renderGoalsView;
 
+
+
+// Fonctions de modale de synchronisation par date (BALI-291)
+function openDateSyncModal(deviceId) {
+  const modal = document.getElementById('modal-date-sync');
+  if (!modal) return;
+  const inputDevId = document.getElementById('input-date-sync-device-id');
+  const inputDate = document.getElementById('input-date-sync-start');
+  const lastSyncLabel = document.getElementById('modal-date-sync-last');
+
+  if (inputDevId) inputDevId.value = deviceId || 'health_connect';
+  if (inputDate) {
+    const today = new Date().toISOString().split('T')[0];
+    inputDate.value = today;
+  }
+  if (lastSyncLabel) {
+    const statusEl = document.getElementById('live-health-connect-status');
+    const text = statusEl ? statusEl.innerText : 'Inconnue';
+    lastSyncLabel.innerText = 'Derniere synchronisation enregistree : ' + text;
+  }
+  modal.classList.remove('hidden');
+}
+
+function closeDateSyncModal() {
+  const modal = document.getElementById('modal-date-sync');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function submitDateSync() {
+  const inputDevId = document.getElementById('input-date-sync-device-id');
+  const inputDate = document.getElementById('input-date-sync-start');
+  const deviceId = (inputDevId && inputDevId.value) ? inputDevId.value : 'health_connect';
+  const startDate = inputDate ? inputDate.value : null;
+
+  if (!startDate) {
+    if (typeof showToast === 'function') showToast('Veuillez selectionner une date valide', 'warning');
+    return;
+  }
+
+  closeDateSyncModal();
+  await triggerDeviceSync(deviceId, { start_date: startDate });
+}
+
+function openBridgeFromDateSyncModal() {
+  const inputDate = document.getElementById('input-date-sync-start');
+  const startDate = inputDate ? inputDate.value : '';
+  closeDateSyncModal();
+
+  const url = startDate ? 'vitaltrack://sync?from_date=' + encodeURIComponent(startDate) : 'vitaltrack://sync?since_last=true';
+  window.location.href = url;
+  if (typeof showToast === 'function') {
+    showToast('Ouverture du bridge Android VitalTrack (' + (startDate || 'derniere synchro') + ')...', 'info');
+  }
+}
+
+window.openDateSyncModal = openDateSyncModal;
+window.closeDateSyncModal = closeDateSyncModal;
+window.submitDateSync = submitDateSync;
+window.openBridgeFromDateSyncModal = openBridgeFromDateSyncModal;
+window.triggerDeviceSync = triggerDeviceSync;

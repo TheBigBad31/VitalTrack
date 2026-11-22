@@ -595,6 +595,14 @@ def ingest_health_webhook(
     primary_device_id = results[0]["device_id"] if results else (matched_device.get("device_id") if matched_device else "health_connect")
     single_ingested = results[0]["ingested"] if results else {}
 
+    # Mémoriser la date de dernière synchronisation (last_sync_at) pour l'appareil
+    now_sync_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        db_inst = get_db()
+        db_inst.update_device_sync_status(primary_device_id, sync_status="connected", user_id=resolved_user_id, synced_at=now_sync_iso)
+    except Exception as sync_status_err:
+        logger.warning("Impossible de mettre à jour le statut de synchronisation pour l'appareil '%s': %s", primary_device_id, sync_status_err)
+
     return {
         "status": "success",
         "message": f"{len(results)} enregistrement(s) de santé ingéré(s) avec succès pour l'utilisateur {resolved_user_id}",
@@ -603,7 +611,8 @@ def ingest_health_webhook(
         "is_batch": is_batch,
         "count": len(results),
         "ingested": single_ingested,
-        "results": results if is_batch else single_ingested
+        "results": results if is_batch else single_ingested,
+        "last_sync_at": now_sync_iso
     }
 
 

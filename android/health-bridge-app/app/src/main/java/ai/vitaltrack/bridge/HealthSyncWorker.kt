@@ -74,21 +74,25 @@ class HealthSyncWorker(
             val now = Instant.now()
             val isFirstSync = !prefs.getBoolean("has_completed_first_sync", false)
             val isCatchupRequested = inputData.getBoolean("is_catchup", false)
+            val startDateEpoch = inputData.getLong("start_date_epoch", 0L)
             val isCatchup = isFirstSync || isCatchupRequested
 
-            // 1. Curseur adaptatif & backfill 30 jours (BALI-193)
+            // 1. Curseur adaptatif & synchronisation ciblée par date ou dernière synchro
             val startTime: Instant
-            if (isCatchup) {
-                // Backfill 30 jours au premier lancement ou sur bouton "Synchroniser maintenant"
+            if (startDateEpoch > 0L) {
+                // Synchronisation depuis une date précise fournie en paramètre (UI ou appel web)
+                startTime = Instant.ofEpochMilli(startDateEpoch)
+            } else if (isCatchup) {
+                // Backfill 30 jours au premier lancement ou sur synchronisation de rattrapage
                 startTime = now.minus(30L * 24L, ChronoUnit.HOURS)
             } else {
+                // Synchronisation simple : uniquement depuis la dernière synchro (last_successful_sync_epoch)
                 val lastSyncEpoch = prefs.getLong("last_successful_sync_epoch", 0L)
                 val min24h = now.minus(24L, ChronoUnit.HOURS)
                 val cap30d = now.minus(30L * 24L, ChronoUnit.HOURS)
                 if (lastSyncEpoch > 0) {
                     val lastSyncInstant = Instant.ofEpochMilli(lastSyncEpoch)
-                    val candidate = if (lastSyncInstant.isBefore(min24h)) lastSyncInstant else min24h
-                    startTime = if (candidate.isBefore(cap30d)) cap30d else candidate
+                    startTime = if (lastSyncInstant.isBefore(cap30d)) cap30d else lastSyncInstant
                 } else {
                     startTime = min24h
                 }
@@ -712,5 +716,7 @@ class HealthSyncWorker(
 
     companion object {
         const val TAG = "HealthSyncWorker"
+        const val KEY_IS_CATCHUP = "is_catchup"
+        const val KEY_START_DATE_EPOCH = "start_date_epoch"
     }
 }

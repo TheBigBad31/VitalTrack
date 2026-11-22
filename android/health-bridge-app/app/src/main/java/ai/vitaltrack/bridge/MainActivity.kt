@@ -3,7 +3,9 @@ package ai.vitaltrack.bridge
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.ClipboardManager
+import android.app.DatePickerDialog
 import android.content.Context
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -34,8 +36,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -97,6 +101,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lastSyncTimeText: TextView
     private lateinit var lastSyncCountText: TextView
     private lateinit var syncNowBtn: MaterialButton
+    private lateinit var syncFromDateBtn: MaterialButton
     private lateinit var autoSyncSwitch: SwitchMaterial
 
     private lateinit var photoPreview: ImageView
@@ -133,6 +138,40 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("auto_sync_enabled", true)) {
             scheduleSyncWorker()
+        }
+
+        handleSyncIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSyncIntent(intent)
+    }
+
+    private fun handleSyncIntent(intent: Intent?) {
+        if (intent == null) return
+        val data = intent.data
+        if (data != null && data.scheme == "vitaltrack" && data.host == "sync") {
+            val fromDateStr = data.getQueryParameter("from_date")
+            val sinceLast = data.getBooleanQueryParameter("since_last", false)
+            if (!fromDateStr.isNullOrBlank()) {
+                try {
+                    val localDate = LocalDate.parse(fromDateStr)
+                    val epochMilli = localDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    Toast.makeText(this, "Synchronisation déclenchée depuis le web (dès le $fromDateStr)...", Toast.LENGTH_SHORT).show()
+                    triggerImmediateSync(startDateEpoch = epochMilli)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Date de synchronisation invalide : $fromDateStr", Toast.LENGTH_SHORT).show()
+                    triggerImmediateSync(sinceLastSyncOnly = true)
+                }
+            } else if (sinceLast) {
+                Toast.makeText(this, "Synchronisation déclenchée depuis le web (dernière synchro)...", Toast.LENGTH_SHORT).show()
+                triggerImmediateSync(sinceLastSyncOnly = true)
+            } else {
+                Toast.makeText(this, "Synchronisation déclenchée depuis le web...", Toast.LENGTH_SHORT).show()
+                triggerImmediateSync()
+            }
         }
     }
 
@@ -622,8 +661,8 @@ class MainActivity : AppCompatActivity() {
 
         // Bouton Synchroniser maintenant avec dégradé électrique
         syncNowBtn = MaterialButton(this).apply {
-            text = "Synchroniser maintenant"
-            textSize = 14f
+            text = "Synchroniser (depuis dernière synchro)"
+            textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD))
             icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_sync)
@@ -635,6 +674,34 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(52)
+            ).apply { bottomMargin = dp(8) }
+            setOnClickListener {
+                val url = urlInput.text.toString().trim()
+                val tok = tokenInput.text.toString().trim()
+                if (url.isEmpty() || tok.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Veuillez renseigner l'URL et le Jeton", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                saveConfig(url, tok)
+                triggerImmediateSync(sinceLastSyncOnly = true)
+            }
+        }
+        syncInner.addView(syncNowBtn)
+
+        // Bouton Synchroniser depuis une date choisie (DatePickerDialog)
+        syncFromDateBtn = MaterialButton(this).apply {
+            text = "Synchroniser depuis une date..."
+            textSize = 13f
+            setTextColor(Color.parseColor("#22D3EE"))
+            setTypeface(Typeface.create("sans-serif-bold", Typeface.BOLD))
+            icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_calendar)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            iconPadding = dp(8)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_btn_secondary)
+            cornerRadius = dp(12)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48)
             )
             setOnClickListener {
                 val url = urlInput.text.toString().trim()
@@ -644,10 +711,10 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 saveConfig(url, tok)
-                triggerImmediateSync()
+                showDatePickerAndSync()
             }
         }
-        syncInner.addView(syncNowBtn)
+        syncInner.addView(syncFromDateBtn)
 
         syncCard.addView(syncInner)
         container.addView(syncCard)
@@ -912,13 +979,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun triggerImmediateSync() {
+    private fun showDatePickerAndSync() {
+        val calendar = Calendar.getInstance()
+        val datePicker = DatePickerDialog(
+            this,
+            { _, year, month, dayOfMonth ->
+                val selectedDate = LocalDate.of(year, month + 1, dayOfMonth)
+                val epochMilli = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val dateFmt = selectedDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                Toast.makeText(this, "Synchronisation lancée depuis le $dateFmt...", Toast.LENGTH_SHORT).show()
+                triggerImmediateSync(startDateEpoch = epochMilli)
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        )
+        datePicker.datePicker.maxDate = System.currentTimeMillis()
+        datePicker.show()
+    }
+
+    private fun triggerImmediateSync(startDateEpoch: Long = 0L, sinceLastSyncOnly: Boolean = false) {
         syncNowBtn.isEnabled = false
         syncNowBtn.text = "Synchronisation..."
+        if (::syncFromDateBtn.isInitialized) {
+            syncFromDateBtn.isEnabled = false
+        }
 
-        val inputData = Data.Builder()
-            .putBoolean("is_catchup", true)
-            .build()
+        val builder = Data.Builder()
+        if (startDateEpoch > 0L) {
+            builder.putLong(HealthSyncWorker.KEY_START_DATE_EPOCH, startDateEpoch)
+            builder.putBoolean(HealthSyncWorker.KEY_IS_CATCHUP, true)
+        } else if (sinceLastSyncOnly) {
+            builder.putBoolean(HealthSyncWorker.KEY_IS_CATCHUP, false)
+        } else {
+            builder.putBoolean(HealthSyncWorker.KEY_IS_CATCHUP, true)
+        }
+        val inputData = builder.build()
 
         val oneTimeWork = OneTimeWorkRequestBuilder<HealthSyncWorker>()
             .setInputData(inputData)
@@ -933,7 +1029,8 @@ class MainActivity : AppCompatActivity() {
                 when (workInfo.state) {
                     WorkInfo.State.SUCCEEDED -> {
                         syncNowBtn.isEnabled = true
-                        syncNowBtn.text = "Synchroniser maintenant"
+                        syncNowBtn.text = "Synchroniser (depuis dernière synchro)"
+                        if (::syncFromDateBtn.isInitialized) syncFromDateBtn.isEnabled = true
                         refreshSyncHistory()
                         updateConnectionStatus()
                         val mCount = workInfo.outputData.getInt("metrics_count", -1)
@@ -942,14 +1039,16 @@ class MainActivity : AppCompatActivity() {
                     }
                     WorkInfo.State.FAILED -> {
                         syncNowBtn.isEnabled = true
-                        syncNowBtn.text = "Synchroniser maintenant"
+                        syncNowBtn.text = "Synchroniser (depuis dernière synchro)"
+                        if (::syncFromDateBtn.isInitialized) syncFromDateBtn.isEnabled = true
                         refreshSyncHistory()
                         val errMsg = workInfo.outputData.getString("error_message") ?: "Erreur réseau ou permissions"
                         Toast.makeText(this, "Échec : $errMsg", Toast.LENGTH_LONG).show()
                     }
                     WorkInfo.State.CANCELLED -> {
                         syncNowBtn.isEnabled = true
-                        syncNowBtn.text = "Synchroniser maintenant"
+                        syncNowBtn.text = "Synchroniser (depuis dernière synchro)"
+                        if (::syncFromDateBtn.isInitialized) syncFromDateBtn.isEnabled = true
                     }
                     else -> {}
                 }

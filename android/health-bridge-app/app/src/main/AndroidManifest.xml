@@ -43,6 +43,13 @@
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
+            <!-- Deep link de synchronisation depuis l'application web VitalTrack -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vitaltrack" android:host="sync" />
+            </intent-filter>
         </activity>
 
         <activity-alias

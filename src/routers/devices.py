@@ -33,7 +33,9 @@ router = APIRouter(tags=["devices"])
 
 
 class DeviceSyncRequest(BaseModel):
-    device_id: str
+    device_id: Optional[str] = None
+    start_date: Optional[str] = None
+    since_last_sync: Optional[bool] = False
 
 
 class DeviceConnectInput(BaseModel):
@@ -246,7 +248,13 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
 
 
 @router.post("/api/devices/{device_id}/sync")
-def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(app_module.get_current_user)):
+def sync_device_targeted(
+    device_id: str,
+    payload: Optional[DeviceSyncRequest] = None,
+    start_date: Optional[str] = Query(None, description="Date de début ISO (YYYY-MM-DD)"),
+    since_last_sync: Optional[bool] = Query(False, description="Synchroniser depuis la dernière synchro"),
+    current_user: AuthUser = Depends(app_module.get_current_user)
+):
     """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
     db = get_db()
     # Instancier le connecteur avec les credentials utilisateur déchiffrés si existants
@@ -268,8 +276,23 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(app_mo
     if not connector:
         raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
 
+    req_start = (payload.start_date if payload and payload.start_date else None) or start_date
+    req_since = (payload.since_last_sync if payload and payload.since_last_sync is not None else False) or since_last_sync
+
     today_val = dt_module.date.today()
-    start_val = today_val - dt_module.timedelta(days=7)
+    if req_start:
+        try:
+            start_val = dt_module.date.fromisoformat(str(req_start).split("T")[0])
+        except (ValueError, TypeError):
+            start_val = today_val - dt_module.timedelta(days=7)
+    elif req_since and user_device and (user_device.get("last_sync_at") or user_device.get("last_sync")):
+        try:
+            raw_last = str(user_device.get("last_sync_at") or user_device.get("last_sync"))
+            start_val = dt_module.date.fromisoformat(raw_last.split("T")[0])
+        except (ValueError, TypeError):
+            start_val = today_val - dt_module.timedelta(days=7)
+    else:
+        start_val = today_val - dt_module.timedelta(days=7)
 
     weights = []
     activities = []
@@ -297,14 +320,18 @@ def sync_device_targeted(device_id: str, current_user: AuthUser = Depends(app_mo
             activities = [a.model_dump() for a in raw_acts]
 
     # Mettre à jour l'état de synchronisation en base
-    db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    db.update_device_sync_status(device_id, sync_status="connected", user_id=current_user.id, synced_at=now_iso)
 
     return {
         "device_id": device_id,
         "name": getattr(connector, "name", device_id.capitalize()),
         "status": "success",
         "sync_status": "connected",
-        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "synced_at": now_iso,
+        "start_date": start_val.isoformat(),
+        "end_date": today_val.isoformat(),
+        "since_last_sync": bool(req_since),
         "details": {
             "weights_synced": len(weights),
             "activities_synced": len(activities)
@@ -320,7 +347,7 @@ def sync_device_legacy(
 ):
     """Compatibilité rétroactive pour la synchronisation d'un appareil."""
     dev_id = req.device_id if req and req.device_id else "health_connect"
-    return sync_device_targeted(dev_id, current_user=current_user)
+    return sync_device_targeted(dev_id, payload=req, current_user=current_user)
 
 
 @router.get("/api/devices/{device_id}")
