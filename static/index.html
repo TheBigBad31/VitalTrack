@@ -344,7 +344,10 @@
           </div>
           <div class="my-2">
             <div class="text-2xl sm:text-3xl font-extrabold text-blue-400" id="val-cals-in">-- <span class="text-xs font-normal text-slate-400">kcal</span></div>
-            <div class="text-[11px] text-slate-400">Cible: <span class="text-slate-300 font-semibold">2 000 kcal</span></div>
+            <div class="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Cible: <span class="text-slate-300 font-semibold" id="val-cals-target">2 000 kcal</span></span>
+              <span id="badge-workout-bonus" class="hidden text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">+0 kcal sport</span>
+            </div>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
             <div id="bar-cals-in" class="bg-blue-500 h-1.5 rounded-full" style="width: 0%"></div>
@@ -841,10 +844,14 @@
               <button onclick="setJournalToToday()" class="px-2.5 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 text-brand-400 text-xs font-semibold transition-colors">
                 Aujourd'hui
               </button>
+              <button id="btn-sync-nutrition-metrics" type="button" onclick="refreshNutritionWithMetricsSync()" title="Synchroniser l'activité et actualiser les conseils dynamiques" class="px-2.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
+                <span class="hidden sm:inline">Actualiser conseils</span>
+              </button>
             </div>
 
             <!-- Totaux Macronutriments de la journée sélectionnée -->
-            <div class="flex items-center gap-3 text-xs bg-[#0B0F17] border border-[#25254A] px-3.5 py-2 rounded-xl">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs bg-[#0B0F17] border border-[#25254A] px-3.5 py-2 rounded-xl">
               <div>
                 <span class="text-slate-400">Total :</span>
                 <span id="journal-day-cals" class="font-extrabold text-white text-sm ml-1">0</span>
@@ -855,6 +862,7 @@
               <span class="text-sky-400 font-semibold" id="journal-day-carbs">0g G</span>
               <span class="text-amber-400 font-semibold" id="journal-day-fat">0g L</span>
               <span class="text-slate-400" id="journal-day-fiber">0g F</span>
+              <span id="journal-workout-bonus-pill" class="hidden text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">+0 kcal séance</span>
             </div>
           </div>
 
@@ -1913,7 +1921,13 @@
         </div>
 
         <div class="pt-2 border-t border-[#25254A] flex items-center justify-between">
-          <span class="text-xs text-slate-400">Aliment absent ?</span>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-400">Aliment absent ?</span>
+            <button type="button" onclick="openBarcodeScannerModal(currentMealSlotForCatalogAdd)" class="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1">
+              <i data-lucide="scan-barcode" class="w-3.5 h-3.5"></i>
+              <span>Scanner code-barres</span>
+            </button>
+          </div>
           <button onclick="openCreateCatalogItemModal('food')" class="text-xs font-semibold text-brand-400 hover:underline">
             + Créer dans mon catalogue
           </button>
@@ -1957,7 +1971,110 @@
     </div>
   </div>
 
-      <!-- =================================================================== -->
+  <!-- =================================================================== -->
+  <!-- MODAL : SCANNER CODE-BARRES OPENFOODFACTS (BALI-295) -->
+  <!-- =================================================================== -->
+  <div id="modal-barcode-scanner" role="dialog" aria-modal="true" aria-labelledby="modal-barcode-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+      
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="scan-barcode" class="w-5 h-5 text-amber-400"></i>
+          <div>
+            <h3 class="font-bold text-white text-base" id="modal-barcode-title">Scanner un Code-Barres</h3>
+            <p class="text-xs text-slate-400">Recherche automatique OpenFoodFacts</p>
+          </div>
+        </div>
+        <button onclick="closeBarcodeScannerModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Étape 1 : Scan vidéo ou saisie manuelle code-barres -->
+      <div id="barcode-step-scan" class="space-y-4">
+        <div class="relative bg-black rounded-xl overflow-hidden aspect-video border border-[#1F2A3C] flex items-center justify-center">
+          <video id="barcode-video-preview" playsinline class="w-full h-full object-cover hidden"></video>
+          <div id="barcode-camera-placeholder" class="text-center p-4 space-y-2">
+            <i data-lucide="camera" class="w-8 h-8 text-slate-500 mx-auto"></i>
+            <p class="text-xs text-slate-400">Caméra inactive ou non disponible</p>
+            <button type="button" onclick="startCameraBarcodeScanner()" class="px-3 py-1.5 rounded-lg bg-amber-600/30 border border-amber-500/40 text-amber-300 text-xs font-semibold hover:bg-amber-600/50">
+              Activer la caméra
+            </button>
+          </div>
+          <div id="barcode-scan-overlay" class="absolute inset-0 border-2 border-dashed border-amber-400/60 rounded-xl pointer-events-none hidden flex items-center justify-center">
+            <div class="text-[11px] bg-black/60 px-2 py-1 rounded text-amber-300">Alignez le code-barres ici</div>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-300">Ou saisir le code-barres manuellement :</label>
+          <div class="flex gap-2">
+            <input type="text" id="barcode-manual-input" placeholder="Ex: 3017620422003" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" onkeydown="if(event.key==='Enter') lookupManualBarcode()">
+            <button type="button" onclick="lookupManualBarcode()" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              <span>Rechercher</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="barcode-scan-status" class="text-xs text-slate-400 text-center min-h-[1.25rem]"></div>
+      </div>
+
+      <!-- Étape 2 : Résultat du produit scanné -->
+      <div id="barcode-step-result" class="hidden space-y-4">
+        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl flex gap-3 items-center">
+          <div id="barcode-result-photo-container" class="w-14 h-14 rounded-lg bg-[#151D2A] border border-[#1F2A3C] overflow-hidden shrink-0 flex items-center justify-center">
+            <img id="barcode-result-photo" src="" alt="" class="w-full h-full object-cover hidden">
+            <i id="barcode-result-photo-placeholder" data-lucide="package" class="w-6 h-6 text-slate-500"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <h4 id="barcode-result-name" class="font-bold text-sm text-white truncate">Nom du produit</h4>
+              <span id="barcode-result-nutriscore" class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-700 text-slate-300">?</span>
+            </div>
+            <p id="barcode-result-brand" class="text-xs text-slate-400 truncate">Marque inconnue</p>
+            <p id="barcode-result-code" class="text-[11px] text-slate-500 font-mono">Code : 0000000000000</p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl space-y-1">
+          <div class="text-[11px] text-slate-400 font-medium">Pour 100g de référence :</div>
+          <div class="text-base font-extrabold text-brand-400" id="barcode-result-cals">0 kcal</div>
+          <div class="text-xs text-slate-300" id="barcode-result-macros">P: 0g | G: 0g | L: 0g | Fibres: 0g</div>
+        </div>
+
+        <div id="barcode-portion-selector-box" class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-slate-300">Quantité à ajouter :</label>
+            <span class="text-xs text-amber-400 font-bold" id="barcode-live-portion-cals">0 kcal</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="number" step="1" min="1" id="barcode-portion-qty" oninput="updateBarcodeLivePortionMacros()" value="100" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-amber-500">
+            <span class="text-xs text-slate-400 font-semibold px-2">g</span>
+          </div>
+        </div>
+
+        <div class="space-y-2 pt-2 border-t border-[#1F2A3C]">
+          <button type="button" id="btn-barcode-add-to-meal" onclick="addScannedProductToActiveMeal()" class="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-lg shadow-amber-600/20 flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span id="btn-barcode-add-meal-label">Ajouter directement au repas</span>
+          </button>
+          <div class="flex gap-2">
+            <button type="button" onclick="addScannedProductToCatalog()" class="flex-1 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center justify-center gap-1">
+              <i data-lucide="bookmark-plus" class="w-3.5 h-3.5 text-brand-400"></i>
+              <span>Sauvegarder au catalogue</span>
+            </button>
+            <button type="button" onclick="resetBarcodeScannerStep()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-400 text-xs font-medium">
+              Autre scan
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
   <!-- MODAL : GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85) -->
   <!-- =================================================================== -->
   <div id="modal-friends-catalog" role="dialog" aria-modal="true" aria-labelledby="modal-friends-cat-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">

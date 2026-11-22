@@ -116,6 +116,46 @@ def calculate_tdee(
     return round(bmr_kcal + extra_burn, 1)
 
 
+def calculate_dynamic_tdee_target(
+    bmr_kcal: float,
+    steps: int = 0,
+    workout_calories_kcal: float = 0.0,
+    goal_delta: float = 0.0,
+    min_calories: float = 1200.0,
+) -> Dict[str, float]:
+    """Calcule le budget calorique et de macronutriments dynamique ajusté aux pas et séances.
+
+    Formule de budget :
+      neat_steps_kcal = steps * 0.04
+      target_calories_intake = max(min_calories, bmr_kcal + neat_steps_kcal + workout_calories_kcal + goal_delta)
+    """
+    neat_steps_kcal = round(max(0, steps) * 0.04, 1)
+    workout_cals = round(max(0.0, float(workout_calories_kcal or 0.0)), 1)
+    dynamic_tdee = round(bmr_kcal + neat_steps_kcal + workout_cals, 1)
+    base_target = round(max(min_calories, bmr_kcal + neat_steps_kcal + goal_delta), 1)
+    raw_target = bmr_kcal + neat_steps_kcal + workout_cals + goal_delta
+    target_cals = round(max(min_calories, raw_target), 1)
+
+    # Répartition glucidique ajustée : les calories de séance débloquent principalement des glucides pour la récupération
+    # Protéines 25% (4 kcal/g), Lipides 25-30% (9 kcal/g), Glucides 45-50% (4 kcal/g)
+    prot_g = round((target_cals * 0.25) / 4.0, 1)
+    carbs_g = round((target_cals * 0.45) / 4.0, 1)
+    fat_g = round((target_cals * 0.30) / 9.0, 1)
+
+    return {
+        "bmr_kcal": round(bmr_kcal, 1),
+        "neat_steps_kcal": neat_steps_kcal,
+        "workout_calories_kcal": workout_cals,
+        "dynamic_tdee": dynamic_tdee,
+        "base_target_calories_intake": base_target,
+        "goal_delta": round(goal_delta, 1),
+        "target_calories_intake": target_cals,
+        "daily_carbs_target_g": carbs_g,
+        "daily_protein_target_g": prot_g,
+        "daily_fat_target_g": fat_g,
+    }
+
+
 def compute_energy_balance(
     date_iso: str,
     intake_kcal: float,

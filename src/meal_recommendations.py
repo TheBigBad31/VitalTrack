@@ -17,8 +17,13 @@ DEFAULT_FIBER_TARGET_G = 25.0
 RANGE_TOLERANCE = 0.10
 
 
-def get_daily_nutrition_targets(db: Any, user_id: int = 1) -> Dict[str, float]:
-    """Récupère les objectifs nutritionnels quotidiens de l'utilisateur."""
+def get_daily_nutrition_targets(
+    db: Any,
+    user_id: int = 1,
+    target_calories_override: Optional[float] = None,
+    carbs_target_override: Optional[float] = None
+) -> Dict[str, float]:
+    """Récupère les objectifs nutritionnels quotidiens de l'utilisateur avec support d'override dynamique."""
     profile = db.get_user_profile(user_id=user_id) if hasattr(db, "get_user_profile") else None
 
     def _get_val(obj, key):
@@ -28,7 +33,10 @@ def get_daily_nutrition_targets(db: Any, user_id: int = 1) -> Dict[str, float]:
             return obj.get(key)
         return getattr(obj, key, None)
 
-    target_cal = float(_get_val(profile, "target_calories_intake") or 2000.0)
+    if target_calories_override is not None:
+        target_cal = float(target_calories_override)
+    else:
+        target_cal = float(_get_val(profile, "target_calories_intake") or 2000.0)
 
     prot_target = _get_val(profile, "daily_protein_target_g")
     if prot_target is None:
@@ -39,9 +47,12 @@ def get_daily_nutrition_targets(db: Any, user_id: int = 1) -> Dict[str, float]:
         else:
             prot_target = round((target_cal * 0.25) / 4.0, 1)
 
-    carbs_target = _get_val(profile, "daily_carbs_target_g")
-    if carbs_target is None:
-        carbs_target = round((target_cal * 0.45) / 4.0, 1)
+    if carbs_target_override is not None:
+        carbs_target = float(carbs_target_override)
+    else:
+        carbs_target = _get_val(profile, "daily_carbs_target_g")
+        if carbs_target is None:
+            carbs_target = round((target_cal * 0.45) / 4.0, 1)
 
     fat_target = _get_val(profile, "daily_fat_target_g")
     if fat_target is None:

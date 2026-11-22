@@ -442,18 +442,20 @@ class Database:
                         ALTER TABLE activities ADD CONSTRAINT uq_activities_user_date_source UNIQUE (user_id, date, source);
                     END IF;
 
-                    -- 3. Table food_items : assurer la présence de la colonne category (BALI-273)
+                    -- 3. Table food_items : assurer la présence des colonnes category, barcode et nutriscore
                     IF EXISTS (
                         SELECT 1 FROM information_schema.tables WHERE table_name = 'food_items'
                     ) THEN
                         ALTER TABLE food_items ADD COLUMN IF NOT EXISTS category TEXT;
+                        ALTER TABLE food_items ADD COLUMN IF NOT EXISTS barcode TEXT;
+                        ALTER TABLE food_items ADD COLUMN IF NOT EXISTS nutriscore TEXT;
                     END IF;
                 END $$;
             """)
             conn.commit()
 
     def _ensure_food_items_category_column(self):
-        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`."""
+        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`, barcode et nutriscore."""
         if self.is_postgres:
             return
         with self.get_connection() as conn:
@@ -466,7 +468,12 @@ class Database:
             if "category" not in columns:
                 cursor.execute("ALTER TABLE food_items ADD COLUMN category TEXT")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_category ON food_items(category)")
-                conn.commit()
+            if "barcode" not in columns:
+                cursor.execute("ALTER TABLE food_items ADD COLUMN barcode TEXT")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_barcode ON food_items(barcode)")
+            if "nutriscore" not in columns:
+                cursor.execute("ALTER TABLE food_items ADD COLUMN nutriscore TEXT")
+            conn.commit()
 
     def _pg_bool_true(self):
         """Valeur littérale de `true` adaptée au moteur (BOOLEAN sous PostgreSQL, INTEGER 1 sous SQLite)."""
