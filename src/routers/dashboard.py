@@ -16,6 +16,7 @@ from src.auth import AuthUser
 from src.routers.friends import verify_view_access
 
 
+from src.analytics import detect_metabolic_plateau
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
 from src.meal_recommendations import get_daily_nutrition_targets
 
@@ -94,6 +95,13 @@ async def get_dashboard_data(
         user_id=user_id,
     )
     daily_targets = get_daily_nutrition_targets(db, user_id=user_id)
+    metabolic_plateau = detect_metabolic_plateau(
+        weights=weights,
+        meals=meals,
+        activities=activities,
+        profile=profile,
+        today=today,
+    )
 
     seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     meals_by_day = {}
@@ -151,6 +159,7 @@ async def get_dashboard_data(
             "targets": daily_targets,
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
+            "metabolic_plateau": metabolic_plateau,
             "macros": daily_nutrition["macros"],
             "resting_hr_bpm": (today_activity.resting_hr_bpm if today_activity and today_activity.resting_hr_bpm else (today_metric.resting_hr_bpm if today_metric else None)),
             "hrv_ms": (today_activity.hrv_ms if today_activity and today_activity.hrv_ms else (today_metric.hrv_rmssd_ms if today_metric else None)),

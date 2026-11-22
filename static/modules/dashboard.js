@@ -647,6 +647,10 @@
 
       document.getElementById('summary-recommendation').innerText = s.recommendation || "Poursuivez sur cette trajectoire régulière pour atteindre votre objectif de composition corporelle.";
 
+      if (typeof renderMetabolicPlateauBanner === 'function') {
+        renderMetabolicPlateauBanner(s.metabolic_plateau);
+      }
+
 
 
       // Actualiser le bandeau dynamique de synchronisation Santé Connect / Objets
@@ -657,6 +661,44 @@
 
       renderWeightSummaryChart();
 
+    }
+
+    function renderMetabolicPlateauBanner(plateau) {
+      const containers = [
+        document.getElementById('today-plateau-banner'),
+        document.getElementById('goals-plateau-banner')
+      ].filter(Boolean);
+
+      if (!plateau || !plateau.is_plateau) {
+        containers.forEach((el) => {
+          el.classList.add('hidden');
+          el.innerHTML = '';
+        });
+        return;
+      }
+
+      const recsHtml = (plateau.recommendations || [])
+        .map((r) => `<li class="mt-1"><strong>${escapeHtml(r.title)}</strong> : ${escapeHtml(r.detail)}</li>`)
+        .join('');
+
+      const html = `
+        <div class="flex items-start space-x-2.5">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
+          <div class="flex-1">
+            <div class="font-semibold text-amber-300">Coach Métabolique — Plateau détecté (14j)</div>
+            <p class="mt-1 text-amber-100/90">${escapeHtml(plateau.message || '')}</p>
+            ${recsHtml ? `<ul class="mt-2 list-disc list-inside text-amber-100/80 space-y-0.5">${recsHtml}</ul>` : ''}
+          </div>
+        </div>
+      `;
+
+      containers.forEach((el) => {
+        el.innerHTML = html;
+        el.classList.remove('hidden');
+      });
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+      }
     }
 
 
