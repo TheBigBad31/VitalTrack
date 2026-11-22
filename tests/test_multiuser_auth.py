@@ -335,7 +335,8 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
         "steps": 10000
     }
 
-    # 1. En environnement VERCEL=1 ou ENV=production, si WEBHOOK_SECRET est absent, rejet HTTP 503
+    # 1. En environnement VERCEL=1 ou ENV=production sans WEBHOOK_SECRET :
+    # Un token inconnu doit être rejeté en 401 (aucun token non lié n'est accepté)
     monkeypatch.setenv("VERCEL", "1")
     monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
 
@@ -344,8 +345,8 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
         json=sample_payload,
         headers={"X-Webhook-Token": "some_random_token"}
     )
-    assert res_prod_no_secret.status_code == 503
-    assert "non configuré en production" in res_prod_no_secret.json()["detail"]
+    assert res_prod_no_secret.status_code == 401
+    assert "aucun compte utilisateur ou appareil associé" in res_prod_no_secret.json()["detail"]
 
     # Même chose avec ENV=production
     monkeypatch.delenv("VERCEL", raising=False)
@@ -355,7 +356,8 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
         json=sample_payload,
         headers={"X-Webhook-Token": "some_random_token"}
     )
-    assert res_prod_no_secret2.status_code == 503
+    assert res_prod_no_secret2.status_code == 401
+    assert "aucun compte utilisateur ou appareil associé" in res_prod_no_secret2.json()["detail"]
 
     # 2. Hors production sans WEBHOOK_SECRET : un token inconnu doit être rejeté en 401 (aucun fallback silencieux sur user_id=1)
     monkeypatch.delenv("ENV", raising=False)
