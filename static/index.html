@@ -448,30 +448,67 @@
             
             <div class="h-44 relative flex items-center justify-center">
               <canvas id="chart-macros-donut"></canvas>
+              <div id="chart-macros-donut-center" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+                <span class="text-[10px] text-slate-400 font-medium">Calories</span>
+                <span id="donut-cals-ratio" class="text-sm font-extrabold text-white leading-tight">-- / -- kcal</span>
+                <span id="donut-cals-remaining" class="text-[11px] font-bold text-emerald-400 leading-tight">Reste : -- kcal</span>
+              </div>
             </div>
 
             <!-- Liste des macros -->
-            <div class="space-y-2 mt-4 text-xs">
-              <div class="flex justify-between items-center">
-                <span class="flex items-center space-x-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full bg-brand-500"></span>
-                  <span class="text-slate-300">Protéines (4 kcal/g)</span>
-                </span>
-                <span class="font-bold text-white" id="macro-prot-txt">-- g (--%)</span>
+            <div class="space-y-2.5 mt-4 text-xs">
+              <!-- Protéines -->
+              <div class="space-y-1">
+                <div class="flex justify-between items-center">
+                  <span class="flex items-center space-x-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-brand-500"></span>
+                    <span class="text-slate-300 font-medium">Protéines</span>
+                    <span class="text-[10px] text-slate-500">(4 kcal/g)</span>
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <span class="font-bold text-white" id="macro-prot-txt">-- g (--%)</span>
+                    <span class="text-[11px] font-semibold text-emerald-400" id="macro-prot-remaining">Reste : -- g</span>
+                  </div>
+                </div>
+                <div class="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                  <div id="macro-prot-bar" class="bg-brand-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="flex items-center space-x-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
-                  <span class="text-slate-300">Glucides (4 kcal/g)</span>
-                </span>
-                <span class="font-bold text-white" id="macro-carbs-txt">-- g (--%)</span>
+
+              <!-- Glucides -->
+              <div class="space-y-1">
+                <div class="flex justify-between items-center">
+                  <span class="flex items-center space-x-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                    <span class="text-slate-300 font-medium">Glucides</span>
+                    <span class="text-[10px] text-slate-500">(4 kcal/g)</span>
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <span class="font-bold text-white" id="macro-carbs-txt">-- g (--%)</span>
+                    <span class="text-[11px] font-semibold text-emerald-400" id="macro-carbs-remaining">Reste : -- g</span>
+                  </div>
+                </div>
+                <div class="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                  <div id="macro-carbs-bar" class="bg-sky-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
               </div>
-              <div class="flex justify-between items-center">
-                <span class="flex items-center space-x-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                  <span class="text-slate-300">Lipides (9 kcal/g)</span>
-                </span>
-                <span class="font-bold text-white" id="macro-fat-txt">-- g (--%)</span>
+
+              <!-- Lipides -->
+              <div class="space-y-1">
+                <div class="flex justify-between items-center">
+                  <span class="flex items-center space-x-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                    <span class="text-slate-300 font-medium">Lipides</span>
+                    <span class="text-[10px] text-slate-500">(9 kcal/g)</span>
+                  </span>
+                  <div class="flex items-center space-x-2">
+                    <span class="font-bold text-white" id="macro-fat-txt">-- g (--%)</span>
+                    <span class="text-[11px] font-semibold text-emerald-400" id="macro-fat-remaining">Reste : -- g</span>
+                  </div>
+                </div>
+                <div class="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
+                  <div id="macro-fat-bar" class="bg-amber-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
               </div>
             </div>
           </div>

@@ -21,22 +21,29 @@ def get_daily_nutrition_targets(db: Any, user_id: int = 1) -> Dict[str, float]:
     """Récupère les objectifs nutritionnels quotidiens de l'utilisateur."""
     profile = db.get_user_profile(user_id=user_id) if hasattr(db, "get_user_profile") else None
 
-    target_cal = float(getattr(profile, "target_calories_intake", None) or 2000.0)
+    def _get_val(obj, key):
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
 
-    prot_target = getattr(profile, "daily_protein_target_g", None)
+    target_cal = float(_get_val(profile, "target_calories_intake") or 2000.0)
+
+    prot_target = _get_val(profile, "daily_protein_target_g")
     if prot_target is None:
-        per_kg = getattr(profile, "protein_target_per_kg", None)
-        weight = getattr(profile, "current_weight_kg", None) or getattr(profile, "target_weight_kg", None)
+        per_kg = _get_val(profile, "protein_target_per_kg")
+        weight = _get_val(profile, "current_weight_kg") or _get_val(profile, "target_weight_kg")
         if per_kg and weight:
             prot_target = round(float(per_kg) * float(weight), 1)
         else:
             prot_target = round((target_cal * 0.25) / 4.0, 1)
 
-    carbs_target = getattr(profile, "daily_carbs_target_g", None)
+    carbs_target = _get_val(profile, "daily_carbs_target_g")
     if carbs_target is None:
         carbs_target = round((target_cal * 0.45) / 4.0, 1)
 
-    fat_target = getattr(profile, "daily_fat_target_g", None)
+    fat_target = _get_val(profile, "daily_fat_target_g")
     if fat_target is None:
         fat_target = round((target_cal * 0.30) / 9.0, 1)
 

@@ -17,6 +17,7 @@ from src.routers.friends import verify_view_access
 
 
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
+from src.meal_recommendations import get_daily_nutrition_targets
 
 router = APIRouter(tags=["dashboard"])
 
@@ -92,6 +93,7 @@ async def get_dashboard_data(
         gender=profile.get("gender", "male"),
         user_id=user_id,
     )
+    daily_targets = get_daily_nutrition_targets(db, user_id=user_id)
 
     seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     meals_by_day = {}
@@ -146,6 +148,7 @@ async def get_dashboard_data(
             "bmr_kcal": energy_balance["bmr_kcal"],
             "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],
             "target_calories_intake": profile.get("target_calories_intake", 2000.0),
+            "targets": daily_targets,
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
             "macros": daily_nutrition["macros"],
