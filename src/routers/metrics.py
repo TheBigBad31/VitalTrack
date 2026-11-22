@@ -6,15 +6,16 @@ Endpoints :
 """
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import src.app as app_module
 from src.auth import AuthUser
 from src.biometrics_math import DailyBiometrics
 from src.db import Database
+from src.models import HydrationLogEntry
 from src.routers.friends import verify_view_access
 from src.analytics import BiometricsAnalyticsService
 
@@ -45,6 +46,7 @@ def get_daily_metrics_list(
 @router.get("/api/metrics")
 def get_biometrics_metrics(
     days: int = Query(30, ge=7, le=90, description="Nombre de jours d'historique (30 à 90)"),
+    date_str: Optional[str] = Query(None, alias="date", description="Date cible au format YYYY-MM-DD pour les échantillons intraday"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(app_module.get_current_user)
 ):
@@ -61,7 +63,13 @@ def get_biometrics_metrics(
     daily_metrics_list = db.get_daily_metrics(limit=days, user_id=user_id)
     workouts_list = db.get_workouts(limit=days, user_id=user_id)
     sleep_sessions_list = db.get_sleep_sessions(limit=days, user_id=user_id)
-    intraday_hr_samples = db.get_intraday_samples(metric_type="hr", limit=288, user_id=user_id)
+    
+    start_time_iso = f"{date_str}T00:00:00" if date_str else None
+    end_time_iso = f"{date_str}T23:59:59" if date_str else None
+    intraday_hr_samples = db.get_intraday_samples(metric_type="hr", start_time=start_time_iso, end_time=end_time_iso, limit=288, user_id=user_id)
+    # Fallback si aucune donnée sur la date sélectionnée sans date spécifiée
+    if not intraday_hr_samples and not date_str:
+        intraday_hr_samples = db.get_intraday_samples(metric_type="hr", limit=288, user_id=user_id)
 
     # Pesées et activités pour corrélations
     weights_list = db.get_weights(limit=days, user_id=user_id, exclude_simulation=not is_demo)
@@ -89,6 +97,7 @@ def get_biometrics_metrics(
         
         # Agréger: max pour HRV/RHR/SpO2/Temp/Sleep, somme pour steps/calories
         max_hrv = max((m.hrv_rmssd_ms for m in metrics if m.hrv_rmssd_ms is not None), default=None)
+        max_sdnn = max((m.hrv_sdnn_ms for m in metrics if m.hrv_sdnn_ms is not None), default=None)
         max_rhr = max((m.resting_hr_bpm for m in metrics if m.resting_hr_bpm is not None), default=None)
         max_spo2 = max((m.spo2_pct for m in metrics if m.spo2_pct is not None), default=None)
         max_temp = max((m.skin_temperature_c for m in metrics if m.skin_temperature_c is not None), default=None)
@@ -255,10 +264,14 @@ def get_biometrics_metrics(
     trends = []
     for bio in bio_history:
         d_iso = bio.date.isoformat()
+        metrics_for_date = metrics_by_date.get(d_iso, [])
         trends.append({
             "date": d_iso,
             "resting_hr_bpm": bio.resting_hr_bpm,
             "hrv_rmssd_ms": bio.hrv_rmssd_ms,
+            "hrv_sdnn_ms": max((m.hrv_sdnn_ms for m in metrics_for_date if m.hrv_sdnn_ms is not None), default=None),
+            "spo2_pct": bio.spo2_pct,
+            "skin_temperature_c": bio.skin_temp_deviation_c,
             "sleep_score": bio.sleep_score,
             "recovery_score": next((m.recovery_score for m in daily_metrics_list if m.date.isoformat() == d_iso and m.recovery_score is not None), None)
         })
@@ -272,6 +285,24 @@ def get_biometrics_metrics(
         }
         for s in intraday_hr_samples
     ]
+
+    # Dernières métriques physiologiques du jour
+    today_dt = date.today()
+    latest_daily = daily_metrics_list[-1] if daily_metrics_list else None
+    today_iso = today_dt.isoformat()
+    today_metrics_list = metrics_by_date.get(today_iso, [])
+    latest_metrics_list = metrics_by_date.get(bio_history[-1].date.isoformat(), []) if bio_history else []
+    active_m_list = today_metrics_list or latest_metrics_list
+
+    current_spo2 = max((m.spo2_pct for m in active_m_list if m.spo2_pct is not None), default=None)
+    current_skin_temp = max((m.skin_temperature_c for m in active_m_list if m.skin_temperature_c is not None), default=None)
+    current_hrv_sdnn = max((m.hrv_sdnn_ms for m in active_m_list if m.hrv_sdnn_ms is not None), default=None)
+    current_hrv_rmssd = max((m.hrv_rmssd_ms for m in active_m_list if m.hrv_rmssd_ms is not None), default=None)
+    current_resting_hr = max((m.resting_hr_bpm for m in active_m_list if m.resting_hr_bpm is not None), default=None)
+
+    # Hydratation journalière du jour
+    today_hydration_total = db.get_daily_hydration_total(target_date=today_dt, user_id=user_id)
+    daily_water_target = float(profile.get("daily_water_target_ml", 2000.0) or 2000.0)
 
     # Séances / Workouts
     workouts_data = [w.model_dump() for w in workouts_list]
@@ -365,6 +396,7 @@ def get_biometrics_metrics(
     has_real_data = bool(
         daily_metrics_list or workouts_list or sleep_sessions_list or
         intraday_hr_samples or (weights_list and not is_demo) or (activities_list and not is_demo)
+        or (today_hydration_total > 0)
     )
 
     return {
@@ -378,6 +410,20 @@ def get_biometrics_metrics(
         "sleep": sleep_analysis,
         "trends": trends,
         "intraday_hr": intraday_hr,
+        "current_biometrics": {
+            "spo2_pct": current_spo2,
+            "skin_temperature_c": current_skin_temp,
+            "hrv_sdnn_ms": current_hrv_sdnn,
+            "hrv_rmssd_ms": current_hrv_rmssd,
+            "resting_hr_bpm": current_resting_hr,
+        },
+        "hydration": {
+            "total_ml": today_hydration_total,
+            "target_ml": daily_water_target,
+            "glasses_count": round(today_hydration_total / 250.0, 1),
+            "target_glasses": round(daily_water_target / 250.0, 1),
+            "pct": min(100.0, round((today_hydration_total / daily_water_target) * 100, 1)) if daily_water_target > 0 else 0.0
+        },
         "workouts": workouts_data,
         "correlations": {
             "weight_vs_calories": correlations_weight_calories,
@@ -385,4 +431,78 @@ def get_biometrics_metrics(
         },
         "heatmap": heatmap,
         "generated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+class HydrationCreateIn(BaseModel):
+    volume_ml: float = Field(..., gt=0, le=5000, description="Volume d'eau en millilitres")
+    date: Optional[str] = Field(None, description="Date (YYYY-MM-DD), par défaut aujourd'hui")
+    source: str = Field("manual", description="Source (manual, health_connect, smart_bottle)")
+
+
+@router.get("/api/metrics/hydration")
+def get_hydration(
+    target_date: Optional[str] = Query(None, alias="date", description="Date au format YYYY-MM-DD (par défaut aujourd'hui)"),
+    user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
+    current_user: AuthUser = Depends(app_module.get_current_user)
+):
+    """Retourne les logs d'hydratation et le total pour la date sélectionnée."""
+    db = get_db()
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+
+    selected_date = date.fromisoformat(target_date) if target_date else date.today()
+    profile = db.get_user_profile(user_id=target_uid)
+    daily_water_target = float(profile.get("daily_water_target_ml", 2000.0) or 2000.0)
+
+    logs = db.get_hydration_logs(target_date=selected_date, user_id=target_uid)
+    total_ml = sum(l.volume_ml for l in logs)
+
+    return {
+        "status": "success",
+        "date": selected_date.isoformat(),
+        "total_ml": round(total_ml, 1),
+        "target_ml": round(daily_water_target, 1),
+        "glasses_count": round(total_ml / 250.0, 1),
+        "target_glasses": round(daily_water_target / 250.0, 1),
+        "percentage": min(100.0, round((total_ml / daily_water_target) * 100, 1)) if daily_water_target > 0 else 0.0,
+        "logs": [l.model_dump() for l in logs]
+    }
+
+
+@router.post("/api/metrics/hydration")
+def add_hydration(
+    payload: HydrationCreateIn,
+    current_user: AuthUser = Depends(app_module.get_current_user)
+):
+    """Enregistre un apport hydrique journalier."""
+    db = get_db()
+    target_date = payload.date
+    if isinstance(target_date, str):
+        log_date = date.fromisoformat(target_date[:10])
+    elif isinstance(target_date, date):
+        log_date = target_date
+    else:
+        log_date = date.today()
+
+    entry = HydrationLogEntry(
+        user_id=current_user.id,
+        date=log_date,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        volume_ml=payload.volume_ml,
+        source=payload.source
+    )
+    saved = db.insert_hydration_log(entry, user_id=current_user.id)
+    total_ml = db.get_daily_hydration_total(target_date=log_date, user_id=current_user.id)
+
+    profile = db.get_user_profile(user_id=current_user.id)
+    daily_water_target = float(profile.get("daily_water_target_ml", 2000.0) or 2000.0)
+
+    return {
+        "status": "success",
+        "entry": saved.model_dump(),
+        "total_ml": round(total_ml, 1),
+        "target_ml": round(daily_water_target, 1),
+        "glasses_count": round(total_ml / 250.0, 1),
+        "percentage": min(100.0, round((total_ml / daily_water_target) * 100, 1)) if daily_water_target > 0 else 0.0
     }

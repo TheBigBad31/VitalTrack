@@ -142,23 +142,23 @@ def test_devices_data_map_with_multi_source_fixtures(client):
     assert metric_map["steps"]["rendered_in_ui"] is True
     assert metric_map["steps"]["last_point"]["value"] == "9200 pas"
 
-    # SpO2, Skin Temp, Hydratation, HRV SDNN doivent être ingested_not_displayed (colorés en rouge)
-    assert metric_map["spo2"]["status"] == "ingested_not_displayed"
-    assert metric_map["spo2"]["rendered_in_ui"] is False
+    # SpO2, Skin Temp, Hydratation, HRV SDNN sont désormais restitués dans l'UI (BALI-293)
+    assert metric_map["spo2"]["status"] == "ingested_and_displayed"
+    assert metric_map["spo2"]["rendered_in_ui"] is True
     assert metric_map["spo2"]["last_point"]["value"] == "98.5 %"
 
-    assert metric_map["skin_temperature"]["status"] == "ingested_not_displayed"
-    assert metric_map["skin_temperature"]["rendered_in_ui"] is False
+    assert metric_map["skin_temperature"]["status"] == "ingested_and_displayed"
+    assert metric_map["skin_temperature"]["rendered_in_ui"] is True
     assert metric_map["skin_temperature"]["last_point"]["value"] == "36.4 °C"
 
-    assert metric_map["hydration"]["status"] == "ingested_not_displayed"
-    assert metric_map["hydration"]["rendered_in_ui"] is False
+    assert metric_map["hydration"]["status"] == "ingested_and_displayed"
+    assert metric_map["hydration"]["rendered_in_ui"] is True
     assert metric_map["hydration"]["last_point"]["value"] == "1750.0 ml"
 
-    assert metric_map["hrv_sdnn"]["status"] == "ingested_not_displayed"
-    assert metric_map["hrv_sdnn"]["rendered_in_ui"] is False
+    assert metric_map["hrv_sdnn"]["status"] == "ingested_and_displayed"
+    assert metric_map["hrv_sdnn"]["rendered_in_ui"] is True
 
     # Résumé
     summary = res["summary"]
-    assert summary["ingested_not_displayed"] >= 5
-    assert summary["ingested_and_displayed"] >= 2
+    assert summary["ingested_not_displayed"] == 0
+    assert summary["ingested_and_displayed"] >= 7

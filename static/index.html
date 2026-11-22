@@ -520,6 +520,50 @@
           </div>
         </div>
       </div>
+
+      <!-- Widget Hydratation Journalière (BALI-293) -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <i data-lucide="droplet" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <span>Hydratation Journalière</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold" id="hydration-badge-status">0%</span>
+              </h3>
+              <p class="text-xs text-slate-400">Objectif d'eau quotidien (en ml et verres de 250 ml)</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button type="button" onclick="quickAddWater(250)" class="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+250 ml (1 verre)</span>
+            </button>
+            <button type="button" onclick="quickAddWater(500)" class="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md shadow-cyan-600/20 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+500 ml (2 verres)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Jauge & Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+          <div class="space-y-1.5 md:col-span-2">
+            <div class="flex items-baseline justify-between text-xs">
+              <span class="text-slate-300">Volume bu aujourd'hui : <strong class="text-white font-extrabold text-sm" id="val-hydration-current">0</strong> <span class="text-slate-400">/ <span id="val-hydration-target">2000</span> ml</span></span>
+              <span class="text-cyan-400 font-bold" id="val-hydration-glasses">0 / 8 verres</span>
+            </div>
+            <div class="w-full bg-[#0B0F17] rounded-full h-3 p-0.5 border border-[#1F2A3C] overflow-hidden">
+              <div id="bar-hydration" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-indigo-500 transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="flex items-center justify-center md:justify-end gap-1.5" id="hydration-glasses-visual">
+            <!-- 8 verres visualisés dynamiquement -->
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- =================================================================== -->
@@ -944,6 +988,69 @@
 
       <!-- Contenu Biométrique Actif (affiché si has_real_data) -->
       <div id="activity-content-active" class="space-y-6">
+
+        <!-- Métriques Physiologiques Clés : SpO2, Température Cutanée, HRV SDNN & Repos (BALI-293) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <!-- SpO2 -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">Oxygène (SpO2)</span>
+              <div class="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                <i data-lucide="droplets" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-spo2">-- <span class="text-xs font-normal text-slate-400">%</span></div>
+              <div class="text-[10px] text-emerald-400 font-semibold" id="badge-activity-spo2">Normal &ge; 95%</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Saturation nocturne moyenne</div>
+          </div>
+
+          <!-- Température Cutanée -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">Température Cutanée</span>
+              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <i data-lucide="thermometer" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-temp">-- <span class="text-xs font-normal text-slate-400">&deg;C</span></div>
+              <div class="text-[10px] text-cyan-400 font-semibold" id="badge-activity-temp">Équilibre thermique</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Variation cutanée continue</div>
+          </div>
+
+          <!-- HRV SDNN -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">HRV SDNN</span>
+              <div class="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-sdnn">-- <span class="text-xs font-normal text-slate-400">ms</span></div>
+              <div class="text-[10px] text-indigo-400 font-semibold" id="badge-activity-sdnn">Variabilité globale 24h</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Système autonome global</div>
+          </div>
+
+          <!-- HRV RMSSD & FC Repos -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">FC Repos & RMSSD</span>
+              <div class="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <i data-lucide="heart-pulse" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-rhr-rmssd">-- <span class="text-xs font-normal text-slate-400">bpm</span></div>
+              <div class="text-[10px] text-rose-400 font-semibold" id="badge-activity-rmssd">RMSSD: -- ms</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Tonus vagal parasympathique</div>
+          </div>
+        </div>
         
         <!-- Rangée 1 : Score de Récupération, Sommeil RingConn & Dette de Sommeil -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1060,15 +1167,18 @@
           
           <!-- Courbe de FC sur 24 h (Échantillons intraday) -->
           <div class="glass-card rounded-2xl p-5 border border-[#25254A] space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 class="text-sm font-bold text-white">Fréquence Cardiaque sur 24 h</h3>
                 <p class="text-xs text-slate-400">Échantillons intraday haute fréquence (bpm)</p>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 font-semibold flex items-center space-x-1">
-                <i data-lucide="heart" class="w-3 h-3 text-rose-400"></i>
-                <span id="stat-resting-hr-pill">Repos: -- bpm</span>
-              </span>
+              <div class="flex items-center space-x-2">
+                <input type="date" id="activity-hr-date-input" onchange="handleActivityDateChange(event)" class="bg-[#0B0F17] border border-[#25254A] text-slate-200 text-[11px] font-semibold rounded-lg px-2.5 py-1 focus:outline-none focus:border-violet-500 cursor-pointer">
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 font-semibold flex items-center space-x-1 shrink-0">
+                  <i data-lucide="heart" class="w-3 h-3 text-rose-400"></i>
+                  <span id="stat-resting-hr-pill">Repos: -- bpm</span>
+                </span>
+              </div>
             </div>
             <div class="h-64">
               <canvas id="chart-hr-intraday"></canvas>
