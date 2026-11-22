@@ -16,6 +16,7 @@ from src.auth import AuthUser
 from src.routers.friends import verify_view_access
 
 
+from src.analytics import detect_metabolic_plateau
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
 from src.meal_recommendations import get_daily_nutrition_targets
 from src.nutrition_engine import NutritionEngine
@@ -98,6 +99,7 @@ async def get_dashboard_data(
         gender=profile.get("gender", "male"),
         user_id=user_id,
     )
+<<<<<<< HEAD
     today_str = today.isoformat()
     today_workouts = [w for w in (user_workouts or []) if (w.start_time or "").startswith(today_str)]
     today_workout_calories = round(sum(float(w.calories_kcal or 0.0) for w in today_workouts), 1)
@@ -122,6 +124,13 @@ async def get_dashboard_data(
         user_id=user_id,
         target_calories_override=effective_target_calories,
         carbs_target_override=dynamic_tdee["daily_carbs_target_g"]
+    )
+    metabolic_plateau = detect_metabolic_plateau(
+        weights=weights,
+        meals=meals,
+        activities=activities,
+        profile=profile,
+        today=today,
     )
 
     seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
@@ -185,6 +194,7 @@ async def get_dashboard_data(
             "dynamic_tdee": dynamic_tdee,
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
+            "metabolic_plateau": metabolic_plateau,
             "macros": daily_nutrition["macros"],
             "resting_hr_bpm": (today_activity.resting_hr_bpm if today_activity and today_activity.resting_hr_bpm else (today_metric.resting_hr_bpm if today_metric else None)),
             "hrv_ms": (today_activity.hrv_ms if today_activity and today_activity.hrv_ms else (today_metric.hrv_rmssd_ms if today_metric else None)),

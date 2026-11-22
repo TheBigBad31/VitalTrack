@@ -3,6 +3,150 @@
 
 const JWT_STORAGE_KEY = 'vitaltrack_jwt_token';
 const GOOGLE_SESSION_KEY = 'vitaltrack_google_session';
+const OFFLINE_QUEUE_DB = 'vitaltrack_offline_queue';
+const OFFLINE_QUEUE_STORE = 'mutations';
+
+function isQueueableOfflineMutation(url, method) {
+  if (String(method || 'GET').toUpperCase() !== 'POST') return false;
+  return /\/api\/meals\/journal\/[^/]+\/items/.test(url) || /\/api\/weights(\?|$)/.test(url);
+}
+
+function openOfflineQueueDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB non disponible'));
+      return;
+    }
+    const req = indexedDB.open(OFFLINE_QUEUE_DB, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(OFFLINE_QUEUE_STORE)) {
+        db.createObjectStore(OFFLINE_QUEUE_STORE, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function enqueueOfflineMutation(url, opts) {
+  const db = await openOfflineQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readwrite');
+    tx.objectStore(OFFLINE_QUEUE_STORE).add({
+      url,
+      method: opts.method || 'POST',
+      headers: opts.headers || {},
+      body: opts.body || null,
+      createdAt: new Date().toISOString()
+    });
+    tx.oncomplete = () => {
+      refreshOfflineQueueBadge();
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getOfflineQueue() {
+  const db = await openOfflineQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readonly');
+    const req = tx.objectStore(OFFLINE_QUEUE_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function removeOfflineMutation(id) {
+  const db = await openOfflineQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_QUEUE_STORE, 'readwrite');
+    tx.objectStore(OFFLINE_QUEUE_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function refreshOfflineQueueBadge(isSyncing = false) {
+  const badge = document.getElementById('offline-queue-badge');
+  const textEl = document.getElementById('offline-queue-badge-text');
+  if (!badge || !textEl) return;
+  let count = 0;
+  try {
+    const items = await getOfflineQueue();
+    count = items.length;
+  } catch (_) {
+    count = 0;
+  }
+  const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (isSyncing) {
+    badge.classList.remove('hidden');
+    badge.classList.add('flex');
+    textEl.textContent = `Sync (${count})...`;
+  } else if (isOffline || count > 0) {
+    badge.classList.remove('hidden');
+    badge.classList.add('flex');
+    textEl.textContent = count > 0 ? `Hors-ligne (${count} en attente)` : 'Hors-ligne';
+  } else {
+    badge.classList.add('hidden');
+    badge.classList.remove('flex');
+  }
+}
+
+async function flushOfflineQueue() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  let items = [];
+  try {
+    items = await getOfflineQueue();
+  } catch (_) {
+    return;
+  }
+  if (!items.length) {
+    refreshOfflineQueueBadge(false);
+    return;
+  }
+  await refreshOfflineQueueBadge(true);
+  for (const item of items) {
+    try {
+      const res = await fetch(item.url, {
+        method: item.method || 'POST',
+        headers: item.headers || { 'Content-Type': 'application/json' },
+        body: item.body
+      });
+      if (res.ok || (res.status >= 400 && res.status < 500)) {
+        await removeOfflineMutation(item.id);
+      }
+    } catch (_) {
+      break;
+    }
+  }
+  await refreshOfflineQueueBadge(false);
+  if (typeof loadDashboard === 'function') {
+    loadDashboard();
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    flushOfflineQueue();
+  });
+  window.addEventListener('offline', () => {
+    refreshOfflineQueueBadge(false);
+  });
+  window.addEventListener('DOMContentLoaded', () => {
+    refreshOfflineQueueBadge(false);
+    if (navigator.onLine) {
+      flushOfflineQueue();
+    }
+  });
+  window.VitalTrackOfflineQueue = {
+    enqueueOfflineMutation,
+    getOfflineQueue,
+    flushOfflineQueue,
+    refreshOfflineQueueBadge
+  };
+}
 
 /**
  * Main HTTP wrapper injecting Bearer token and handling global auth errors.
@@ -23,6 +167,13 @@ async function apiFetch(url, options = {}) {
 
   try {
     const response = await fetch(url, opts);
+    if (response.status === 503 && isQueueableOfflineMutation(url, opts.method)) {
+      await enqueueOfflineMutation(url, opts);
+      return new Response(
+        JSON.stringify({ queued: true, offline: true, message: 'Enregistré hors-ligne, synchronisation automatique au retour du réseau.' }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     if (response.status === 401) {
       console.warn(`[apiFetch 401] Session expirée ou non autorisée sur ${url}. Réinitialisation session.`);
       localStorage.removeItem(JWT_STORAGE_KEY);
@@ -39,6 +190,13 @@ async function apiFetch(url, options = {}) {
     }
     return response;
   } catch (err) {
+    if (isQueueableOfflineMutation(url, opts.method)) {
+      await enqueueOfflineMutation(url, opts);
+      return new Response(
+        JSON.stringify({ queued: true, offline: true, message: 'Enregistré hors-ligne, synchronisation automatique au retour du réseau.' }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     throw err;
   } finally {
     window.showGlobalLoading(false);
