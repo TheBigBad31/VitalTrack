@@ -650,10 +650,10 @@
 
 
       // Actualiser le bandeau dynamique de synchronisation Santé Connect / Objets
-
       renderLiveSyncBanner();
 
-
+      // Charger les données d'hydratation journalière (BALI-293)
+      loadHydrationWidget();
 
       renderWeightSummaryChart();
 
@@ -2240,7 +2240,69 @@
 
       if (activeEl) activeEl.classList.remove('hidden');
 
+      // 0. Cartes Métriques Physiologiques Clés (BALI-293) : SpO2, Température Cutanée, HRV SDNN & Repos
+      const curBio = metrics.current_biometrics || {};
+      const latestTrend = (metrics.trends && metrics.trends.length > 0) ? metrics.trends[metrics.trends.length - 1] : {};
 
+      // SpO2
+      const spo2Val = curBio.spo2_pct ?? latestTrend.spo2_pct;
+      const spo2El = document.getElementById('val-activity-spo2');
+      const spo2Badge = document.getElementById('badge-activity-spo2');
+      if (spo2El) {
+        spo2El.innerHTML = spo2Val !== undefined && spo2Val !== null ? `${Math.round(spo2Val)} <span class="text-xs font-normal text-slate-400">%</span>` : `-- <span class="text-xs font-normal text-slate-400">%</span>`;
+      }
+      if (spo2Badge && spo2Val !== undefined && spo2Val !== null) {
+        if (spo2Val >= 95) {
+          spo2Badge.innerText = `Optimal (${Math.round(spo2Val)}%)`;
+          spo2Badge.className = 'text-[10px] text-emerald-400 font-semibold';
+        } else if (spo2Val >= 90) {
+          spo2Badge.innerText = `Vigilance (${Math.round(spo2Val)}%)`;
+          spo2Badge.className = 'text-[10px] text-amber-400 font-semibold';
+        } else {
+          spo2Badge.innerText = `Faible (${Math.round(spo2Val)}%)`;
+          spo2Badge.className = 'text-[10px] text-rose-400 font-semibold';
+        }
+      }
+
+      // Température Cutanée
+      const tempVal = curBio.skin_temperature_c ?? latestTrend.skin_temperature_c;
+      const tempEl = document.getElementById('val-activity-temp');
+      const tempBadge = document.getElementById('badge-activity-temp');
+      if (tempEl) {
+        tempEl.innerHTML = tempVal !== undefined && tempVal !== null ? `${Number(tempVal).toFixed(1)} <span class="text-xs font-normal text-slate-400">&deg;C</span>` : `-- <span class="text-xs font-normal text-slate-400">&deg;C</span>`;
+      }
+      if (tempBadge && tempVal !== undefined && tempVal !== null) {
+        tempBadge.innerText = tempVal >= 35.0 && tempVal <= 37.5 ? 'Équilibre thermique' : (tempVal > 37.5 ? 'Élévation cutanée' : 'Baisse cutanée');
+      }
+
+      // HRV SDNN
+      const sdnnVal = curBio.hrv_sdnn_ms ?? latestTrend.hrv_sdnn_ms;
+      const sdnnEl = document.getElementById('val-activity-sdnn');
+      const sdnnBadge = document.getElementById('badge-activity-sdnn');
+      if (sdnnEl) {
+        sdnnEl.innerHTML = sdnnVal !== undefined && sdnnVal !== null ? `${Math.round(sdnnVal)} <span class="text-xs font-normal text-slate-400">ms</span>` : `-- <span class="text-xs font-normal text-slate-400">ms</span>`;
+      }
+      if (sdnnBadge && sdnnVal !== undefined && sdnnVal !== null) {
+        sdnnBadge.innerText = `SDNN: ${Math.round(sdnnVal)} ms (24h)`;
+      }
+
+      // FC Repos & RMSSD
+      const rhrVal = curBio.resting_hr_bpm ?? latestTrend.resting_hr_bpm;
+      const rmssdVal = curBio.hrv_rmssd_ms ?? latestTrend.hrv_rmssd_ms;
+      const rhrEl = document.getElementById('val-activity-rhr-rmssd');
+      const rmssdBadge = document.getElementById('badge-activity-rmssd');
+      if (rhrEl) {
+        rhrEl.innerHTML = rhrVal !== undefined && rhrVal !== null ? `${Math.round(rhrVal)} <span class="text-xs font-normal text-slate-400">bpm</span>` : `-- <span class="text-xs font-normal text-slate-400">bpm</span>`;
+      }
+      if (rmssdBadge) {
+        rmssdBadge.innerText = rmssdVal !== undefined && rmssdVal !== null ? `RMSSD: ${Math.round(rmssdVal)} ms` : 'RMSSD: -- ms';
+      }
+
+      // Initialiser la date du sélecteur FC Intraday sur aujourd'hui si vide
+      const hrDateInput = document.getElementById('activity-hr-date-input');
+      if (hrDateInput && !hrDateInput.value) {
+        hrDateInput.value = new Date().toISOString().slice(0, 10);
+      }
 
       // 1. Score de Récupération
 
@@ -2666,7 +2728,104 @@
 
     }
 
+    // Gestion du changement de date sur le sélecteur FC Intraday (BALI-293)
+    async function handleActivityDateChange(event) {
+      const selectedDate = event && event.target ? event.target.value : (document.getElementById('activity-hr-date-input')?.value);
+      if (!selectedDate) return;
+      try {
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const resp = await apiFetch(`/api/metrics?days=${currentTrendsDays}&date=${selectedDate}${readOnlyParam}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && Array.isArray(data.intraday_hr)) {
+            renderIntradayHRChart(data.intraday_hr);
+            if (data.intraday_hr.length === 0) {
+              if (typeof showToast === 'function') showToast(`Aucun échantillon FC pour le ${selectedDate}`, 'info');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Metrics] Erreur lors du rechargement de la FC intraday pour la date", selectedDate, err);
+      }
+    }
 
+    // Rendu et gestion de l'hydratation journalière (BALI-293)
+    let currentHydrationData = null;
+
+    async function loadHydrationWidget(targetDate = null) {
+      try {
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const dateQuery = targetDate ? `?date=${targetDate}${readOnlyParam}` : (readOnlyParam ? `?${readOnlyParam.slice(1)}` : '');
+        const resp = await apiFetch(`/api/metrics/hydration${dateQuery}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          currentHydrationData = data;
+          renderHydrationWidget(data);
+          return data;
+        }
+      } catch (err) {
+        console.warn("[Hydration] Impossible de charger l'hydratation:", err);
+      }
+      return null;
+    }
+
+    function renderHydrationWidget(data) {
+      if (!data) return;
+      const totalMl = Math.round(data.total_ml || 0);
+      const targetMl = Math.round(data.target_ml || 2000);
+      const glassesCount = data.glasses_count !== undefined ? data.glasses_count : Math.round((totalMl / 250) * 10) / 10;
+      const targetGlasses = data.target_glasses || 8;
+      const pct = Math.min(100, Math.round((totalMl / (targetMl || 2000)) * 100));
+
+      const curEl = document.getElementById('val-hydration-current');
+      const targetEl = document.getElementById('val-hydration-target');
+      const glassesEl = document.getElementById('val-hydration-glasses');
+      const barEl = document.getElementById('bar-hydration');
+      const visualEl = document.getElementById('hydration-glasses-visual');
+
+      if (curEl) curEl.innerText = totalMl.toLocaleString();
+      if (targetEl) targetEl.innerText = targetMl.toLocaleString();
+      if (glassesEl) glassesEl.innerText = `${glassesCount} / ${targetGlasses} verres (${pct}%)`;
+      if (barEl) barEl.style.width = `${pct}%`;
+
+      if (visualEl) {
+        const fullGlasses = Math.floor(totalMl / 250);
+        let html = '';
+        for (let i = 1; i <= 8; i++) {
+          const isFilled = i <= fullGlasses;
+          const glassColor = isFilled ? 'bg-cyan-500 text-white shadow-sm shadow-cyan-500/30' : 'bg-[#0B0F17] text-slate-600 border border-[#1F2A3C]';
+          html += `<div class="w-6 h-7 rounded-md flex items-center justify-center text-[10px] font-bold transition-all ${glassColor}" title="Verre ${i} (250ml)">${i}</div>`;
+        }
+        visualEl.innerHTML = html;
+      }
+    }
+
+    async function quickAddWater(volumeMl = 250) {
+      try {
+        if (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) {
+          if (typeof showToast === 'function') showToast("Action impossible en mode consultation d'ami.", "warning");
+          return;
+        }
+        const resp = await apiFetch('/api/metrics/hydration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume_ml: volumeMl, source: 'manual_quick_add' })
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          renderHydrationWidget(res);
+          if (typeof showToast === 'function') {
+            showToast(`+${volumeMl} ml d'eau ajoutés ! Total : ${Math.round(res.total_ml)} ml 💧`, 'success');
+          }
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          if (typeof showToast === 'function') showToast(err.detail || "Erreur lors de l'enregistrement de l'hydratation", 'error');
+        }
+      } catch (err) {
+        console.error("[Hydration] Erreur réseau quickAddWater:", err);
+        if (typeof showToast === 'function') showToast("Erreur réseau lors de l'ajout d'eau", 'error');
+      }
+    }
 
     // Graphique Tendances Long Terme (HRV & RHR 30 à 90 jours avec Couloirs de Normalité)
 
@@ -7979,4 +8138,7 @@ function renderGoalsView() {
 }
 
 window.renderGoalsView = renderGoalsView;
+window.handleActivityDateChange = handleActivityDateChange;
+window.loadHydrationWidget = loadHydrationWidget;
+window.quickAddWater = quickAddWater;
 

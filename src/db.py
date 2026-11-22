@@ -818,6 +818,12 @@ class Database:
     def insert_hydration_log(self, entry: HydrationLogEntry, user_id: int = 1) -> HydrationLogEntry:
         return self.metrics.insert_hydration_log(entry, user_id=user_id)
 
+    def get_hydration_logs(self, target_date: Optional[Union[date, str]] = None, limit: int = 100, user_id: int = 1) -> List[HydrationLogEntry]:
+        return self.metrics.get_hydration_logs(target_date=target_date, limit=limit, user_id=user_id)
+
+    def get_daily_hydration_total(self, target_date: Union[date, str], user_id: int = 1) -> float:
+        return self.metrics.get_daily_hydration_total(target_date=target_date, user_id=user_id)
+
     def insert_raw_ingest(self, source: str, payload: Union[Dict[str, Any], str], user_id: int = 1,
                           endpoint: Optional[str] = None, idempotency_key: Optional[str] = None) -> RawIngestEntry:
         return self.metrics.insert_raw_ingest(source, payload, user_id=user_id, endpoint=endpoint,
