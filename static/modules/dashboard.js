@@ -1148,7 +1148,12 @@
 
         const history = [...(currentData.weights_history || [])].reverse();
 
-        tbody.innerHTML = history.slice(0, 10).map(w => `
+        const countBadge = document.getElementById('weights-table-count');
+        if (countBadge) {
+          countBadge.textContent = `${history.length} pesée${history.length > 1 ? 's' : ''}`;
+        }
+
+        tbody.innerHTML = history.map(w => `
 
           <tr class="hover:bg-[#1F2A3C]/40 transition-colors">
 

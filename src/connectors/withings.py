@@ -482,17 +482,18 @@ class WithingsScaleConnector(BaseHealthConnector):
         if not epoch:
             return None
         
-        # Résoudre la date dans le fuseau horaire de l'utilisateur
-        if user_timezone:
-            try:
-                import zoneinfo
-                tz = zoneinfo.ZoneInfo(user_timezone)
-                measure_date = datetime.fromtimestamp(epoch, tz=tz).date()
-            except Exception:
-                # Fallback UTC si fuseau invalide
-                measure_date = datetime.fromtimestamp(epoch, tz=timezone.utc).date()
-        else:
-            measure_date = datetime.fromtimestamp(epoch, tz=timezone.utc).date()
+        # Résoudre la date dans le fuseau horaire de l'utilisateur (défaut Europe/Paris)
+        tz_to_use = user_timezone or self.config.get("timezone") or "Europe/Paris"
+        try:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(tz_to_use)
+            measure_dt = datetime.fromtimestamp(epoch, tz=tz)
+            measure_date = measure_dt.date()
+            measured_at_iso = measure_dt.isoformat()
+        except Exception:
+            measure_dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+            measure_date = measure_dt.date()
+            measured_at_iso = measure_dt.isoformat()
 
         measures = grp.get("measures", [])
         weight = 0.0
@@ -530,6 +531,9 @@ class WithingsScaleConnector(BaseHealthConnector):
         if bone_mass_kg is not None:
             notes_parts.append(f"Masse osseuse: {bone_mass_kg} kg")
 
+        grpid = grp.get("grpid")
+        ext_id = str(grpid) if grpid is not None else None
+
         return WeightEntry(
             date=measure_date,
             weight_kg=weight,
@@ -539,7 +543,9 @@ class WithingsScaleConnector(BaseHealthConnector):
             bmi=bmi,
             source="withings",
             is_simulated=False,
-            notes=" | ".join(notes_parts)
+            notes=" | ".join(notes_parts),
+            external_id=ext_id,
+            measured_at=measured_at_iso
         )
 
     # -------------------------------------------------------------------------

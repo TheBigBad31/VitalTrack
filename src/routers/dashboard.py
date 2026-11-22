@@ -63,13 +63,13 @@ async def get_dashboard_data(
     effective_exclude = not include_simulation and not bool(profile.get("is_demo_profile"))
 
     weights, activities = await asyncio.gather(
-        asyncio.to_thread(db.get_weights, limit=30, user_id=user_id, exclude_simulation=effective_exclude),
-        asyncio.to_thread(db.get_activities, limit=30, user_id=user_id, exclude_simulation=effective_exclude),
+        asyncio.to_thread(db.get_weights, limit=90, user_id=user_id, exclude_simulation=effective_exclude),
+        asyncio.to_thread(db.get_activities, limit=90, user_id=user_id, exclude_simulation=effective_exclude),
     )
     if not weights and not effective_exclude:
-        weights = await asyncio.to_thread(db.get_weights, limit=30, user_id=user_id, exclude_simulation=False)
+        weights = await asyncio.to_thread(db.get_weights, limit=90, user_id=user_id, exclude_simulation=False)
     if not activities and not effective_exclude:
-        activities = await asyncio.to_thread(db.get_activities, limit=30, user_id=user_id, exclude_simulation=False)
+        activities = await asyncio.to_thread(db.get_activities, limit=90, user_id=user_id, exclude_simulation=False)
 
     today = date.today()
     latest_weight = weights[-1] if weights else None

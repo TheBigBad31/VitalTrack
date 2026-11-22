@@ -9,7 +9,8 @@ Valide et convertit le payload JSON universel vers WeightEntry et ActivityEntry.
 """
 
 import hmac
-from datetime import date, datetime
+import zoneinfo
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.connectors.base import BaseHealthConnector
@@ -37,7 +38,7 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
         return hmac.compare_digest(str(token).strip(), str(secret).strip())
 
     def process_webhook_payload(
-        self, payload: Dict[str, Any]
+        self, payload: Dict[str, Any], user_timezone: Optional[str] = None
     ) -> Tuple[Optional[WeightEntry], Optional[ActivityEntry]]:
         """Traite un payload webhook universel et extrait une pesée et/ou une activité."""
         date_raw = payload.get("date")
@@ -91,10 +92,18 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
                 measured_at_val = payload.get("measured_at") or payload.get("weight_measured_at") or payload.get("timestamp")
                 measured_at_iso = None
 
+                # Résolution du fuseau horaire utilisateur (défaut Europe/Paris)
+                effective_tz = None
+                tz_str = user_timezone or self.config.get("timezone") or "Europe/Paris"
+                try:
+                    effective_tz = zoneinfo.ZoneInfo(tz_str)
+                except Exception:
+                    effective_tz = timezone.utc
+
                 if measured_at_val is not None:
                     if isinstance(measured_at_val, (int, float)):
                         epoch_sec = float(measured_at_val) / 1000.0 if float(measured_at_val) > 1e11 else float(measured_at_val)
-                        dt = datetime.fromtimestamp(epoch_sec, timezone.utc)
+                        dt = datetime.fromtimestamp(epoch_sec, tz=effective_tz)
                         measured_at_iso = dt.isoformat()
                         if not weight_date_raw:
                             target_weight_date = dt.date()
@@ -102,9 +111,20 @@ class MobileHealthWebhookConnector(BaseHealthConnector):
                         measured_at_iso = measured_at_val.strip()
                         if not weight_date_raw:
                             try:
-                                target_weight_date = date.fromisoformat(measured_at_iso[:10])
+                                s = measured_at_iso
+                                if s.endswith("Z"):
+                                    dt = datetime.fromisoformat(s[:-1] + "+00:00")
+                                else:
+                                    dt = datetime.fromisoformat(s)
+                                if dt.tzinfo is not None:
+                                    target_weight_date = dt.astimezone(effective_tz).date()
+                                else:
+                                    target_weight_date = dt.date()
                             except Exception:
-                                pass
+                                try:
+                                    target_weight_date = date.fromisoformat(measured_at_iso[:10])
+                                except Exception:
+                                    pass
 
                 if weight_date_raw:
                     if isinstance(weight_date_raw, str):

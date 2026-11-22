@@ -601,8 +601,11 @@
 
       <!-- Tableau des dernières pesées -->
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
-        <h3 class="font-bold text-white text-base mb-3">Dernières Pesées Enregistrées</h3>
-        <div class="overflow-x-auto">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold text-white text-base">Historique des Pesées Enregistrées</h3>
+          <span id="weights-table-count" class="text-xs text-slate-400"></span>
+        </div>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
           <table class="w-full text-xs text-left">
             <thead class="text-slate-400 border-b border-[#1F2A3C]">
               <tr>

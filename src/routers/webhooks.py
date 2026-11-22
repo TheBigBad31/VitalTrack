@@ -238,7 +238,16 @@ def process_single_item(
     saved_hydration = None
 
     # 2. Poids et composition corporelle
-    weight_entry, act_entry = connector.process_webhook_payload(item)
+    user_tz = "Europe/Paris"
+    if hasattr(db_inst, "get_user_profile"):
+        try:
+            prof = db_inst.get_user_profile(user_id=resolved_user_id)
+            if prof and prof.get("timezone"):
+                user_tz = prof["timezone"]
+        except Exception:
+            pass
+
+    weight_entry, act_entry = connector.process_webhook_payload(item, user_timezone=user_tz)
     if weight_entry and can_ingest_biometrics:
         if ext_id and not weight_entry.external_id:
             weight_entry.external_id = str(ext_id)
@@ -249,7 +258,7 @@ def process_single_item(
             if isinstance(w_item, dict):
                 w_payload = dict(item)
                 w_payload.update(w_item)
-                w_entry, _ = connector.process_webhook_payload(w_payload)
+                w_entry, _ = connector.process_webhook_payload(w_payload, user_timezone=user_tz)
                 if w_entry:
                     w_ext = w_item.get("external_id") or w_item.get("weight_external_id") or ext_id
                     if w_ext and not w_entry.external_id:

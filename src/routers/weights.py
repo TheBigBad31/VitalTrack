@@ -44,7 +44,7 @@ def get_db() -> Database:
 @router.get("/api/weights")
 @router.get("/api/weight")
 def get_weights(
-    limit: int = Query(30, ge=1, le=180),
+    limit: int = Query(60, ge=1, le=365),
     include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
     current_user: AuthUser = Depends(app_module.get_current_user)
