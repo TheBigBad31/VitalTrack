@@ -300,7 +300,7 @@ class MetricsRepository(BaseRepository):
             return SleepSessionEntry(**d)
 
     def get_sleep_sessions(self, limit: int = 30, user_id: int = 1) -> List[SleepSessionEntry]:
-        """Récupère l'historique des sessions de sommeil avec leurs phases détaillées."""
+        """Récupère l'historique des sessions de sommeil avec leurs phases détaillées (sans N+1 requêtes)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -310,16 +310,25 @@ class MetricsRepository(BaseRepository):
             """, (user_id, limit))
             rows = cursor.fetchall()
 
+            session_ids = [r["id"] for r in rows]
+            stages_by_session: Dict[int, List[SleepStageEntry]] = {sid: [] for sid in session_ids}
+            if session_ids:
+                placeholders = ", ".join(["?"] * len(session_ids))
+                cursor.execute(
+                    f"SELECT * FROM sleep_stages WHERE sleep_session_id IN ({placeholders}) ORDER BY start_time ASC",
+                    tuple(session_ids)
+                )
+                for st in cursor.fetchall():
+                    st_dict = dict(st)
+                    sid = st_dict.get("sleep_session_id")
+                    if sid in stages_by_session:
+                        stages_by_session[sid].append(SleepStageEntry(**st_dict))
+
             results = []
             for r in rows:
                 d = dict(r)
                 d["date"] = date.fromisoformat(d["date"][:10])
-                cursor.execute(
-                    "SELECT * FROM sleep_stages WHERE sleep_session_id = ? ORDER BY start_time ASC",
-                    (d["id"],)
-                )
-                stages_rows = cursor.fetchall()
-                d["stages"] = [SleepStageEntry(**dict(st)) for st in stages_rows]
+                d["stages"] = stages_by_session.get(d["id"], [])
                 if d.get("created_at"):
                     d["created_at"] = datetime.fromisoformat(d["created_at"])
                 if d.get("updated_at"):

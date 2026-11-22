@@ -52,9 +52,10 @@ async function loadFriendsData() {
 function updateFriendsBadges() {
   const count = (window.currentFriendsData.incoming_requests || []).length;
   const badgeDesk = document.getElementById('badge-friends-incoming-desk');
+  const badgeMob = document.getElementById('badge-friends-incoming-mob');
   const badgeModal = document.getElementById('badge-friends-incoming-tab');
 
-  [badgeDesk, badgeModal].forEach(b => {
+  [badgeDesk, badgeMob, badgeModal].forEach(b => {
     if (b) {
       if (count > 0) {
         b.textContent = count;

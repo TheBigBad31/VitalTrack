@@ -208,6 +208,9 @@ function switchTab(tabId) {
 
 // Invalidate loaded state when user clicks Refresh
 function invalidateTabCaches() {
+  if (typeof currentMetricsData !== 'undefined') {
+    currentMetricsData = null;
+  }
   Object.keys(TAB_MODULES).forEach(key => {
     TAB_MODULES[key].loaded = false;
   });

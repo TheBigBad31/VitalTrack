@@ -2200,8 +2200,8 @@ async function applySuggestedMeal(mealType) {
   const suggested = rec?.suggested_meal;
   if (!suggested || !Array.isArray(suggested.items) || suggested.items.length === 0) return;
 
-  const dateInput = document.getElementById('journal-date-input');
-  const targetDate = dateInput?.value || new Date().toISOString().slice(0, 10);
+  const dateInput = document.getElementById('journal-date-picker') || document.getElementById('journal-date-input');
+  const targetDate = (dateInput && dateInput.value) || currentJournalDate || new Date().toISOString().slice(0, 10);
   const items = suggested.items.map((it) => ({
     food_item_id: it.food_item_id || null,
     name: it.name,
@@ -2215,14 +2215,19 @@ async function applySuggestedMeal(mealType) {
   }));
 
   try {
-    const res = await fetch(`${API_BASE}/api/meals/journal/${encodeURIComponent(mealType)}/items`, {
+    const res = await apiFetch(`/api/meals/journal/${encodeURIComponent(mealType)}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: targetDate, items }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json().catch(() => null);
     if (typeof showToast === 'function') showToast('Repas suggéré ajouté au journal', 'success');
-    if (typeof loadMealsJournal === 'function') await loadMealsJournal();
+    if (payload && typeof consolidateJournalMutationResponse === 'function') {
+      consolidateJournalMutationResponse(targetDate, payload, mealType);
+    } else if (typeof loadMealsJournal === 'function') {
+      await loadMealsJournal(true);
+    }
   } catch (err) {
     console.error('applySuggestedMeal error:', err);
     if (typeof showToast === 'function') showToast('Impossible d’ajouter le repas suggéré', 'error');
@@ -2396,8 +2401,8 @@ function aggregateDayBenefits(meals) {
 }
 
 function renderJournalDayBenefitsSummary(meals) {
-  const container = document.getElementById('journal-day-benefits-summary');
-  const countBadge = document.getElementById('journal-day-benefits-count');
+  const container = document.getElementById('journal-day-benefits-tags') || document.getElementById('journal-day-benefits-summary');
+  const countBadge = document.getElementById('journal-benefits-count-badge') || document.getElementById('journal-day-benefits-count');
   if (!container) return;
 
   const benefitsList = aggregateDayBenefits(meals);
@@ -2782,7 +2787,7 @@ async function loadFriendSubscriptions() {
 }
 
 function renderFriendSubscriptionsList(subs) {
-  const container = document.getElementById('friends-subscriptions-container');
+  const container = document.getElementById('friends-subscriptions-list') || document.getElementById('friends-subscriptions-container');
   if (!container) return;
 
   if (!subs || subs.length === 0) {
@@ -2800,9 +2805,10 @@ function renderFriendSubscriptionsList(subs) {
   container.innerHTML = subs.map(sub => {
     const rawTargetId = sub.friend_id || sub.target_user_id || sub.id;
     const targetId = parseInt(rawTargetId, 10) || 0;
-    const rawFriendName = sub.friend_name || (sub.email ? sub.email.split('@')[0] : 'Ami');
+    const rawEmail = sub.friend_email || sub.target_user_email || sub.email || '';
+    const rawFriendName = sub.friend_name || sub.target_user_name || (rawEmail ? rawEmail.split('@')[0] : 'Ami');
     const friendName = escapeHtml(rawFriendName);
-    const friendEmail = escapeHtml(sub.friend_email || sub.email || 'Utilisateur partagé');
+    const friendEmail = escapeHtml(rawEmail || 'Utilisateur partagé');
     const friendPicture = sanitizeUrl(sub.friend_picture || sub.picture);
     const initials = escapeHtml(rawFriendName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT');
     const itemsCount = sub.shared_items_count !== undefined ? parseInt(sub.shared_items_count, 10) : (sub.items ? sub.items.length : 0);
@@ -2957,7 +2963,8 @@ async function exploreFriendCatalog(friendId, friendName) {
   try {
     const res = await apiFetch(`/api/catalog/friends/${friendId}/items`);
     if (res.ok) {
-      currentExplorerFriendItems = await res.json();
+      const payload = await res.json();
+      currentExplorerFriendItems = Array.isArray(payload) ? payload : (payload.items || []);
       if (countEl) countEl.textContent = `${currentExplorerFriendItems.length} aliment${currentExplorerFriendItems.length > 1 ? 's' : ''} et plat${currentExplorerFriendItems.length > 1 ? 's' : ''}`;
       renderFriendExplorerItems(currentExplorerFriendItems);
     } else {
@@ -2977,7 +2984,7 @@ function closeFriendCatalogExplorer() {
 }
 
 function renderFriendExplorerItems(items) {
-  const listEl = document.getElementById('friend-catalog-explorer-items');
+  const listEl = document.getElementById('friend-explorer-items-list') || document.getElementById('friend-catalog-explorer-items');
   if (!listEl) return;
 
   if (!items || items.length === 0) {

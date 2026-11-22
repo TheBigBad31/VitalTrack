@@ -483,6 +483,8 @@ class DevicesRepository(BaseRepository):
                 pass
 
         latest_weight = recent_weights[0] if recent_weights else None
+        user_prof = self.db.get_user_profile(user_id=user_id) if hasattr(self.db, "get_user_profile") else {}
+        user_height_m = float((user_prof or {}).get("height_cm", 178.0) or 178.0) / 100.0
 
         metrics_definitions = [
             {
@@ -569,7 +571,7 @@ class DevicesRepository(BaseRepository):
                 "ui_location": "Tab Corps, Jauges Métaboliques",
                 "last_point": {
                     "date": latest_weight["date"],
-                    "value": f"{round(float(latest_weight['weight_kg']) / ((1.78)**2), 1)} kg/m²",
+                    "value": f"{round(float(latest_weight['weight_kg']) / (user_height_m ** 2), 1)} kg/m²",
                     "source": latest_weight["source"]
                 } if latest_weight and latest_weight.get("weight_kg") else None,
                 "points_7d_count": weights_7d_count

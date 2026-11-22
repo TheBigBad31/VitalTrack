@@ -131,7 +131,7 @@
 
 
 
-    function selectGoalProfile(profileId) {
+    function selectGoalProfile(profileId, persist = true) {
 
       if (!GOAL_PROFILES[profileId]) return;
 
@@ -197,18 +197,48 @@
 
       // Recalcul de la cible calorique et des jauges
 
+      let newTargetCalories = 2100;
+
       if (currentData && currentData.summary) {
 
         const burned = currentData.summary.calories_burned_kcal || 2280;
 
-        currentData.summary.target_calories_intake = Math.max(1200, Math.round(burned + p.delta));
+        newTargetCalories = Math.max(1200, Math.round(burned + p.delta));
+
+        currentData.summary.target_calories_intake = newTargetCalories;
 
         currentData.summary.steps_target = p.steps;
 
         currentData.summary.recommendation = p.recommendation;
 
+        if (currentData.profile) {
+          currentData.profile.goal_profile_id = profileId;
+          currentData.profile.target_calories_intake = newTargetCalories;
+          currentData.profile.target_steps = p.steps;
+          currentData.profile.protein_target_per_kg = p.protein_per_kg;
+        }
+
         renderSummaryView();
 
+      }
+
+      const isReadOnly = Boolean(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active);
+      if (persist && !isReadOnly && typeof apiFetch === 'function') {
+        apiFetch('/api/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            goal_profile_id: profileId,
+            target_calories_intake: newTargetCalories,
+            target_steps: p.steps,
+            protein_target_per_kg: p.protein_per_kg
+          })
+        }).then(res => {
+          if (res && res.ok) {
+            if (typeof invalidateJournalCache === 'function') invalidateJournalCache();
+            if (typeof showToast === 'function') showToast(`Profil objectif « ${p.title} » enregistré`, 'success');
+          }
+        }).catch(err => console.warn('[Goals] Persistance profil objectif échouée:', err));
       }
 
     }
@@ -403,18 +433,23 @@
       const refreshIcon = document.getElementById('refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
-      // Charger les constantes de configuration (source de verite backend) avant tout rendu.
-      await loadConfig();
-
       try {
 
         const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `?user_id=${window.currentReadOnlyFriend.friend_id}` : '';
 
-        const res = await apiFetch(`/api/dashboard${readOnlyParam}`);
+        // Chargement parallèle de la configuration backend et du dashboard pour réduire le TTFB initial
+        const [, res] = await Promise.all([
+          loadConfig(),
+          apiFetch(`/api/dashboard${readOnlyParam}`)
+        ]);
 
         if (res.ok) {
 
           currentData = await res.json();
+
+          if (currentData && currentData.profile && currentData.profile.goal_profile_id && GOAL_PROFILES[currentData.profile.goal_profile_id]) {
+            activeGoalProfileId = currentData.profile.goal_profile_id;
+          }
 
         } else {
 
@@ -444,7 +479,9 @@
 
     function refreshData() {
 
-      // Actualisation manuelle : on invalide tous les caches (onglets + journal)
+      // Actualisation manuelle : on invalide tous les caches (onglets + journal + métriques)
+
+      currentMetricsData = null;
 
       if (typeof invalidateTabCaches === 'function') invalidateTabCaches();
 
@@ -2007,7 +2044,9 @@
 
       try {
 
-        const resp = await API.get(`/api/metrics?days=${days}`);
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+
+        const resp = await API.get(`/api/metrics?days=${days}${readOnlyParam}`);
 
         if (resp.ok) {
 
@@ -3901,7 +3940,97 @@
 
       if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
 
+      loadDataMapView();
+
     }
+
+    async function loadDataMapView() {
+      const weightsTbody = document.getElementById('data-map-weights-tbody');
+      const metricsTbody = document.getElementById('data-map-metrics-tbody');
+      if (!weightsTbody && !metricsTbody) return;
+
+      try {
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `?user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const res = await apiFetch(`/api/devices/data-map${readOnlyParam}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const summary = data.summary || {};
+        const elTotal = document.getElementById('dm-summary-total');
+        const elDisp = document.getElementById('dm-summary-displayed');
+        const elHid = document.getElementById('dm-summary-hidden');
+        const elNotRead = document.getElementById('dm-summary-notread');
+        if (elTotal) elTotal.textContent = summary.total_metrics ?? 17;
+        if (elDisp) elDisp.textContent = summary.ingested_and_displayed ?? '-';
+        if (elHid) elHid.textContent = summary.ingested_not_displayed ?? '-';
+        if (elNotRead) elNotRead.textContent = summary.not_read ?? '-';
+
+        if (weightsTbody) {
+          const weights = data.recent_weights || [];
+          if (weights.length === 0) {
+            weightsTbody.innerHTML = '<tr><td colspan="5" class="py-3 px-3 text-slate-500 text-center">Aucune pesée enregistrée récemment.</td></tr>';
+          } else {
+            weightsTbody.innerHTML = weights.map(w => {
+              const src = escapeHtml(w.source || 'manual');
+              const srcBadge = src === 'withings'
+                ? '<span class="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-semibold">Withings OAuth</span>'
+                : (src === 'health_connect'
+                  ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">Santé Connect</span>'
+                  : `<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-semibold">${src}</span>`);
+              const fat = w.fat_mass_percent != null ? `${Number(w.fat_mass_percent).toFixed(1)} %` : '—';
+              return `
+                <tr class="hover:bg-[#151D2A]/40 transition-colors">
+                  <td class="py-2 px-3 text-slate-200 font-medium">${escapeHtml(w.date || '—')}</td>
+                  <td class="py-2 px-3 text-white font-bold font-mono">${w.weight_kg != null ? Number(w.weight_kg).toFixed(1) + ' kg' : '—'}</td>
+                  <td class="py-2 px-3 text-slate-300 font-mono">${escapeHtml(fat)}</td>
+                  <td class="py-2 px-3">${srcBadge}</td>
+                  <td class="py-2 px-3 text-slate-400 font-mono text-[11px]">${escapeHtml(w.created_at || w.date || '—')}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+
+        if (metricsTbody) {
+          const metrics = data.metrics || [];
+          if (metrics.length === 0) {
+            metricsTbody.innerHTML = '<tr><td colspan="7" class="py-4 px-3 text-slate-500 text-center">Aucune métrique répertoriée.</td></tr>';
+          } else {
+            metricsTbody.innerHTML = metrics.map(m => {
+              const sourcesPills = (m.supported_sources || []).map(s =>
+                `<span class="inline-block px-1.5 py-0.5 rounded bg-[#151D2A] border border-[#1F2A3C] text-[10px] text-slate-300 mr-1 mb-0.5">${escapeHtml(s)}</span>`
+              ).join('');
+              const lp = m.last_point;
+              const lastPointHtml = lp
+                ? `<span class="text-white font-mono font-semibold">${escapeHtml(lp.value || '')}</span> <span class="text-[10px] text-slate-400">(${escapeHtml(lp.date || '')} · ${escapeHtml(lp.source || '')})</span>`
+                : '<span class="text-slate-500 italic">Aucun point</span>';
+              let statusBadge = '<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-semibold">● Non lu</span>';
+              if (m.status === 'ingested_and_displayed') {
+                statusBadge = '<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">● Affiché UI</span>';
+              } else if (m.status === 'ingested_not_displayed') {
+                statusBadge = '<span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-semibold">● Stocké non affiché</span>';
+              }
+              return `
+                <tr class="hover:bg-[#151D2A]/40 transition-colors">
+                  <td class="py-2.5 px-3 text-white font-semibold">${escapeHtml(m.label || m.key)}</td>
+                  <td class="py-2.5 px-3">${sourcesPills}</td>
+                  <td class="py-2.5 px-3 text-slate-400 font-mono text-[11px]">${escapeHtml(m.table || '—')}</td>
+                  <td class="py-2.5 px-3">${lastPointHtml}</td>
+                  <td class="py-2.5 px-3 text-center font-mono text-slate-200">${m.points_7d_count ?? 0}</td>
+                  <td class="py-2.5 px-3 text-slate-300 text-[11px]">${escapeHtml(m.ui_location || '—')}</td>
+                  <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+      } catch (err) {
+        console.warn('[DataMap] Impossible de charger /api/devices/data-map:', err);
+        if (weightsTbody) weightsTbody.innerHTML = '<tr><td colspan="5" class="py-3 px-3 text-rose-400 text-center">Impossible de charger la provenance des pesées.</td></tr>';
+        if (metricsTbody) metricsTbody.innerHTML = '<tr><td colspan="7" class="py-4 px-3 text-rose-400 text-center">Impossible de charger la cartographie des flux.</td></tr>';
+      }
+    }
+    window.loadDataMapView = loadDataMapView;
 
 
 
@@ -7832,13 +7961,21 @@
 
 
 function renderGoalsView() {
-
-  if (typeof activeGoalProfileId !== 'undefined') {
-
-    selectGoalProfile(activeGoalProfileId);
-
+  if (currentData && currentData.profile) {
+    if (currentData.profile.goal_profile_id && GOAL_PROFILES[currentData.profile.goal_profile_id]) {
+      activeGoalProfileId = currentData.profile.goal_profile_id;
+    }
+    if (currentData.profile.target_weight_kg) {
+      const targetWeight = Number(currentData.profile.target_weight_kg);
+      const inputEl = document.getElementById('goal-target-weight-input');
+      const valEl = document.getElementById('goal-target-weight-value');
+      if (inputEl) inputEl.value = targetWeight.toFixed(1);
+      if (valEl) valEl.textContent = `${targetWeight.toFixed(1)} kg`;
+    }
   }
-
+  if (typeof activeGoalProfileId !== 'undefined') {
+    selectGoalProfile(activeGoalProfileId, false);
+  }
 }
 
 window.renderGoalsView = renderGoalsView;
