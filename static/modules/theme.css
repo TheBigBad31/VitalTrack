@@ -12,6 +12,11 @@
   --color-surface-elevated: #1C1C36;
   --color-border-subtle: #25254A;
   --color-border-hover: #3D3D6B;
+
+  /* Design System Nuit Indigo aliases */
+  --bg-surface: var(--color-surface-base);
+  --bg-card: #13132B;
+  --border-subtle: var(--color-border-subtle);
   
   --color-primary: #7C3AED;
   --color-primary-electric: #2563FF;
