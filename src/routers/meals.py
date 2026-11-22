@@ -33,7 +33,7 @@ Endpoints :
 """
 
 import binascii
-from datetime import date
+from datetime import date, datetime
 import datetime as dt_module
 import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -70,16 +70,39 @@ logger = logging.getLogger("vitaltrack.meals")
 router = APIRouter(tags=["meals"])
 
 
+def determine_meal_type(hour: Optional[int] = None) -> MealType:
+    """Détermine automatiquement le créneau de repas (slot) selon l'heure courante ou fournie.
+    
+    5h - 11h : breakfast
+    11h - 15h : lunch
+    15h - 18h : snack
+    18h - 23h : dinner
+    23h - 5h : snack
+    """
+    if hour is None:
+        hour = datetime.now().hour
+    if 5 <= hour < 11:
+        return "breakfast"
+    elif 11 <= hour < 15:
+        return "lunch"
+    elif 15 <= hour < 18:
+        return "snack"
+    elif 18 <= hour < 23:
+        return "dinner"
+    else:
+        return "snack"
+
+
 class MealEstimateRequest(BaseModel):
     photo_data_url: Optional[str] = None
     description: Optional[str] = None
-    meal_type: MealType = "lunch"
+    meal_type: Optional[MealType] = None
     portion_scale: float = Field(1.0, ge=0.5, le=2.0, description="Curseur de portion (0.5x à 2.0x)")
 
 
 class MealSaveRequest(BaseModel):
     date: Optional[dt_module.date] = None
-    meal_type: MealType
+    meal_type: Optional[MealType] = None
     photo_data_url: Optional[str] = None
     portion_scale: float = Field(1.0, ge=0.5, le=2.0)
     items: List[FoodItem] = Field(default_factory=list)
@@ -282,6 +305,7 @@ def calculate_day_summary(target_date: date, user_id: int = 1) -> Tuple[List[Dic
     }
 
     day_summary = {
+        "calories_consumed_kcal": round(day_total_cal, 1),
         "total_calories": round(day_total_cal, 1),
         "total_protein_g": round(day_total_prot, 1),
         "total_carbs_g": round(day_total_carbs, 1),
@@ -374,18 +398,19 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
     db = get_db()
     nutrition_engine = get_nutrition_engine()
     target_date = req.date or dt_module.date.today()
+    meal_type = req.meal_type or determine_meal_type()
 
     if req.items:
         items = req.items
         saved = nutrition_engine.log_meal(
             date_val=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             items=items,
             photo_data_url=req.photo_data_url,
             user_id=current_user.id
         )
     elif req.total_calories_kcal is not None:
-        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        meal_name = req.meal_name or f"Repas direct ({meal_type})"
         items = [
             FoodItem(
                 name=meal_name,
@@ -399,7 +424,7 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         ]
         entry = MealEntry(
             date=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             total_calories_kcal=round(req.total_calories_kcal, 1),
             protein_g=round(req.protein_g or 0.0, 1),
             carbs_g=round(req.carbs_g or 0.0, 1),
@@ -414,16 +439,27 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         est = calorie_estimator.analyze_meal(
             description=None,
             portion_scale=req.portion_scale,
-            meal_type=req.meal_type
+            meal_type=meal_type
         )
         items = [FoodItem(**item) for item in est.get("items", [])]
         saved = nutrition_engine.log_meal(
             date_val=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             items=items,
             photo_data_url=req.photo_data_url,
             user_id=current_user.id
         )
+
+    # Pont vers meal_logs : synchronise dans le journal pour que GET /api/meals/journal voie immédiatement le repas
+    items_dict = [it.model_dump() for it in items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
@@ -433,6 +469,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
     """Met à jour un repas existant dans le journal pour l'utilisateur connecté."""
     db = get_db()
     target_date = req.date or dt_module.date.today()
+    meal_type = req.meal_type or determine_meal_type()
     if req.items:
         items = req.items
         tot_cal = round(sum(i.calories_kcal for i in items), 1)
@@ -441,7 +478,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
         tot_fat = round(sum(i.fat_g for i in items), 1)
         tot_fiber = round(sum(i.fiber_g or 0.0 for i in items), 1)
     elif req.total_calories_kcal is not None:
-        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        meal_name = req.meal_name or f"Repas direct ({meal_type})"
         items = [
             FoodItem(
                 name=meal_name,
@@ -463,7 +500,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
 
     entry = MealEntry(
         date=target_date,
-        meal_type=req.meal_type,
+        meal_type=meal_type,
         total_calories_kcal=tot_cal,
         protein_g=tot_prot,
         carbs_g=tot_carbs,
@@ -475,6 +512,17 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
     updated = db.update_meal(meal_id, entry, user_id=current_user.id)
     if not updated:
         raise HTTPException(status_code=404, detail="Repas introuvable")
+
+    # Pont vers meal_logs : synchronise dans le journal
+    items_dict = [it.model_dump() for it in items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
@@ -639,6 +687,17 @@ def log_saved_meal_to_journal(
     )
 
     logged = db.insert_meal(entry, user_id=current_user.id)
+
+    # Pont vers meal_logs : synchronise les items du plat dans meal_logs pour ce repas
+    items_dict = [it.model_dump() for it in scaled_items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",

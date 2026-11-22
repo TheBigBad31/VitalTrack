@@ -18,6 +18,7 @@ from src.routers.friends import verify_view_access
 
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
 from src.meal_recommendations import get_daily_nutrition_targets
+from src.nutrition_engine import NutritionEngine
 
 router = APIRouter(tags=["dashboard"])
 
@@ -38,7 +39,9 @@ async def get_dashboard_data(
 ):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté ou un ami."""
     db = app_module.db
-    nutrition_engine = app_module.nutrition_engine
+    nutrition_engine = getattr(app_module, "nutrition_engine", None)
+    if nutrition_engine is None or getattr(nutrition_engine, "db", None) is not db:
+        nutrition_engine = NutritionEngine(db=db)
     device_registry = app_module.device_registry
 
     target_uid = current_user.id if user_id is None else user_id
@@ -144,6 +147,7 @@ async def get_dashboard_data(
             "steps": (today_activity.steps if today_activity else (today_metric.steps if today_metric else 0)) or 0,
             "steps_target": profile.get("target_steps", 10000),
             "calories_intake_kcal": energy_balance["calories_intake_kcal"],
+            "calories_consumed_kcal": energy_balance["calories_intake_kcal"],
             "calories_burned_kcal": energy_balance["calories_burned_kcal"],
             "bmr_kcal": energy_balance["bmr_kcal"],
             "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],

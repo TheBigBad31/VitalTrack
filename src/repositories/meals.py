@@ -1473,6 +1473,152 @@ class MealsRepository(BaseRepository):
             ))
             conn.commit()
 
+    def sync_meal_items_to_meal_log(
+        self,
+        date_val: date,
+        meal_type: str,
+        items: List[Dict[str, Any]],
+        user_id: int = 1,
+        append: bool = False
+    ) -> MealLog:
+        """Synchronise une liste d'aliments dans meal_logs/meal_log_items.
+        
+        Si append=False, remplace les items existants pour ce créneau de repas.
+        Recalcule atomiquement les totaux et synchronise la table meals.
+        """
+        date_str = date_val.isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id FROM meal_logs
+                WHERE user_id = ? AND date = ? AND meal_type = ?
+            """, (user_id, date_str, meal_type))
+            row = cursor.fetchone()
+
+            if not row:
+                if self.is_postgres:
+                    cursor.execute("""
+                        INSERT INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                        ON CONFLICT (user_id, date, meal_type) DO NOTHING
+                        RETURNING id;
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+                    row = cursor.fetchone()
+                else:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO meal_logs (user_id, date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g, created_at, updated_at)
+                        VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?)
+                    """, (user_id, date_str, meal_type, now_str, now_str))
+
+                if not row:
+                    cursor.execute("""
+                        SELECT id FROM meal_logs
+                        WHERE user_id = ? AND date = ? AND meal_type = ?
+                    """, (user_id, date_str, meal_type))
+                    row = cursor.fetchone()
+
+            meal_log_id = row["id"]
+
+            if not append:
+                cursor.execute("DELETE FROM meal_log_items WHERE meal_log_id = ?", (meal_log_id,))
+
+            if items:
+                params_list = []
+                for it in items:
+                    params_list.append((
+                        meal_log_id,
+                        it.get("food_item_id"),
+                        it.get("name", "Aliment"),
+                        float(it.get("quantity") or it.get("portion_g") or 100.0),
+                        it.get("unit", "g"),
+                        float(it.get("calories") or it.get("calories_kcal") or 0.0),
+                        float(it.get("protein_g", 0.0)),
+                        float(it.get("carbs_g", 0.0)),
+                        float(it.get("fat_g", 0.0)),
+                        float(it.get("fiber_g", 0.0)),
+                        now_str
+                    ))
+                sql = """
+                    INSERT INTO meal_log_items (
+                        meal_log_id, food_item_id, name, quantity, unit,
+                        calories, protein_g, carbs_g, fat_g, fiber_g, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.executemany(sql, params_list)
+
+            self._atomic_recalculate_and_sync(cursor, meal_log_id, user_id=user_id)
+            conn.commit()
+
+            result_log = self._fetch_meal_log_with_cursor(cursor, meal_log_id, user_id=user_id)
+
+        return result_log
+
+    def get_daily_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
+        """Source de vérité unique pour le résumé nutritionnel quotidien consolidé."""
+        logs = self.get_meal_logs_for_date(target_date, user_id=user_id)
+        logs_by_type = {log.meal_type: log for log in logs}
+
+        meal_types = ["breakfast", "lunch", "snack", "dinner"]
+        by_meal = {}
+        day_total_cal = 0.0
+        day_total_prot = 0.0
+        day_total_carbs = 0.0
+        day_total_fat = 0.0
+        day_total_fiber = 0.0
+
+        for mt in meal_types:
+            mlog = logs_by_type.get(mt)
+            if mlog:
+                by_meal[mt] = {
+                    "id": mlog.id,
+                    "total_calories": mlog.total_calories,
+                    "protein_g": mlog.total_protein_g,
+                    "carbs_g": mlog.total_carbs_g,
+                    "fat_g": mlog.total_fat_g,
+                    "fiber_g": mlog.total_fiber_g,
+                    "items": [it.model_dump() for it in mlog.items]
+                }
+                day_total_cal += mlog.total_calories
+                day_total_prot += mlog.total_protein_g
+                day_total_carbs += mlog.total_carbs_g
+                day_total_fat += mlog.total_fat_g
+                day_total_fiber += (mlog.total_fiber_g or 0.0)
+            else:
+                by_meal[mt] = {
+                    "id": None,
+                    "total_calories": 0.0,
+                    "protein_g": 0.0,
+                    "carbs_g": 0.0,
+                    "fat_g": 0.0,
+                    "fiber_g": 0.0,
+                    "items": []
+                }
+
+        cal_p = day_total_prot * 4.0
+        cal_c = day_total_carbs * 4.0
+        cal_f = day_total_fat * 9.0
+        sum_macro_cal = cal_p + cal_c + cal_f
+        macros_pct = {
+            "protein_pct": round((cal_p / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0,
+            "carbs_pct": round((cal_c / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0,
+            "fat_pct": round((cal_f / sum_macro_cal) * 100.0, 1) if sum_macro_cal > 0 else 0.0
+        }
+
+        return {
+            "date": target_date.isoformat(),
+            "calories_consumed_kcal": round(day_total_cal, 1),
+            "total_calories": round(day_total_cal, 1),
+            "protein_g": round(day_total_prot, 1),
+            "carbs_g": round(day_total_carbs, 1),
+            "fat_g": round(day_total_fat, 1),
+            "fiber_g": round(day_total_fiber, 1),
+            "macros_pct": macros_pct,
+            "by_meal": by_meal
+        }
+
     def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
         """Synchronise un meal_log avec la table meals pour alimenter l'historique et les calories journalières."""
         now_str = datetime.now(timezone.utc).isoformat()

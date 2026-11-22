@@ -714,6 +714,13 @@ class Database:
     def delete_demo_meals(self, user_id: Optional[int] = None) -> int:
         return self.meals.delete_demo_meals(user_id=user_id)
 
+    def sync_meal_items_to_meal_log(self, date_val: date, meal_type: str, items: List[Dict[str, Any]],
+                                    user_id: int = 1, append: bool = False) -> MealLog:
+        return self.meals.sync_meal_items_to_meal_log(date_val, meal_type, items, user_id=user_id, append=append)
+
+    def get_daily_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
+        return self.meals.get_daily_summary(target_date, user_id=user_id)
+
     def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
         return self.meals._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
 
