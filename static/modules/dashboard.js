@@ -704,23 +704,65 @@
 
 
 
-      // Donut Macros
-
+      // Donut Macros & progression restante
       const m = s.macros || {};
+      const targets = s.targets || {};
+      const profile = (currentData && currentData.profile) || {};
+      const targetCals = s.target_calories_intake || targets.calories || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 2000;
+      const intakeCals = Math.round(s.calories_intake_kcal || 0);
 
-      const elProt = document.getElementById('macro-prot-txt');
+      // Calcul cibles de macronutriments (fallback propre si targets non renseigné)
+      const protTarget = targets.protein_g || profile.daily_protein_target_g || (profile.protein_target_per_kg && (profile.current_weight_kg || profile.target_weight_kg) ? Math.round(profile.protein_target_per_kg * (profile.current_weight_kg || profile.target_weight_kg)) : Math.round((targetCals * 0.25) / 4));
+      const carbsTarget = targets.carbs_g || profile.daily_carbs_target_g || Math.round((targetCals * 0.45) / 4);
+      const fatTarget = targets.fat_g || profile.daily_fat_target_g || Math.round((targetCals * 0.30) / 9);
 
-      const elCarbs = document.getElementById('macro-carbs-txt');
+      // 1. Centre du donut
+      const elRatio = document.getElementById('donut-cals-ratio');
+      if (elRatio) elRatio.innerText = `${intakeCals.toLocaleString('fr-FR')} / ${Math.round(targetCals).toLocaleString('fr-FR')} kcal`;
 
-      const elFat = document.getElementById('macro-fat-txt');
+      const elDonutRemaining = document.getElementById('donut-cals-remaining');
+      if (elDonutRemaining) {
+        const calDiff = Math.round(targetCals - intakeCals);
+        if (calDiff >= 0) {
+          elDonutRemaining.innerText = `Reste : ${calDiff.toLocaleString('fr-FR')} kcal`;
+          elDonutRemaining.className = 'text-[11px] font-bold text-emerald-400 leading-tight';
+        } else {
+          elDonutRemaining.innerText = `+${Math.abs(calDiff).toLocaleString('fr-FR')} kcal`;
+          elDonutRemaining.className = 'text-[11px] font-bold text-amber-400 leading-tight';
+        }
+      }
 
-      if (elProt) elProt.innerText = `${m.protein_g || 0}g (${m.protein_pct || 0}%)`;
+      // 2. Macronutriments consommés, cibles, reste et barres de progression
+      const protConsumed = Math.round(Number(m.protein_g) || 0);
+      const carbsConsumed = Math.round(Number(m.carbs_g) || 0);
+      const fatConsumed = Math.round(Number(m.fat_g) || 0);
 
-      if (elCarbs) elCarbs.innerText = `${m.carbs_g || 0}g (${m.carbs_pct || 0}%)`;
+      const updateMacroRow = (txtId, remId, barId, consumed, pct, target) => {
+        const elTxt = document.getElementById(txtId);
+        if (elTxt) elTxt.innerText = `${consumed}g (${pct || 0}%) / ${Math.round(target)}g`;
 
-      if (elFat) elFat.innerText = `${m.fat_g || 0}g (${m.fat_pct || 0}%)`;
+        const elRem = document.getElementById(remId);
+        if (elRem) {
+          const rem = Math.round(target - consumed);
+          if (rem >= 0) {
+            elRem.innerText = `Reste : ${rem} g`;
+            elRem.className = 'text-[11px] font-semibold text-emerald-400';
+          } else {
+            elRem.innerText = `+${Math.abs(rem)} g`;
+            elRem.className = 'text-[11px] font-semibold text-amber-400';
+          }
+        }
 
+        const elBar = document.getElementById(barId);
+        if (elBar) {
+          const progress = target > 0 ? Math.min(100, Math.round((consumed / target) * 100)) : 0;
+          elBar.style.width = `${progress}%`;
+        }
+      };
 
+      updateMacroRow('macro-prot-txt', 'macro-prot-remaining', 'macro-prot-bar', protConsumed, m.protein_pct, protTarget);
+      updateMacroRow('macro-carbs-txt', 'macro-carbs-remaining', 'macro-carbs-bar', carbsConsumed, m.carbs_pct, carbsTarget);
+      updateMacroRow('macro-fat-txt', 'macro-fat-remaining', 'macro-fat-bar', fatConsumed, m.fat_pct, fatTarget);
 
       renderMacrosDonut(m);
 
