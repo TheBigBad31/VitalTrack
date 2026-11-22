@@ -153,3 +153,35 @@ def test_nutrition_engine_with_repositories_di():
     meals = engine.get_meals_by_date(date(2026, 11, 7), user_id=42)
     assert meals == []
     mock_meals.get_meals_for_date.assert_called_once_with(date(2026, 11, 7), user_id=42)
+
+
+def test_calculate_dynamic_tdee_target():
+    from src.domain.nutrition import calculate_dynamic_tdee_target
+
+    # BMR 1700, 10000 steps (400 kcal NEAT), 300 kcal workout, goal_delta -500 (perte de poids)
+    res = calculate_dynamic_tdee_target(
+        bmr_kcal=1700.0,
+        steps=10000,
+        workout_calories_kcal=300.0,
+        goal_delta=-500.0,
+        min_calories=1200.0
+    )
+    assert res["bmr_kcal"] == 1700.0
+    assert res["neat_steps_kcal"] == 400.0
+    assert res["workout_calories_kcal"] == 300.0
+    assert res["dynamic_tdee"] == 2400.0
+    # target = max(1200, 2400 - 500) = 1900 kcal
+    assert res["target_calories_intake"] == 1900.0
+    assert res["base_target_calories_intake"] == 1600.0
+    assert res["daily_carbs_target_g"] == round((1900.0 * 0.45) / 4.0, 1)
+
+    # Respect du seuil minimal (min_calories = 1200)
+    low_res = calculate_dynamic_tdee_target(
+        bmr_kcal=1000.0,
+        steps=2000,
+        workout_calories_kcal=0.0,
+        goal_delta=-500.0,
+        min_calories=1200.0
+    )
+    assert low_res["dynamic_tdee"] == 1080.0
+    assert low_res["target_calories_intake"] == 1200.0

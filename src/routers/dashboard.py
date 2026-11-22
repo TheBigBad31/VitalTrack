@@ -18,6 +18,7 @@ from src.routers.friends import verify_view_access
 
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
 from src.meal_recommendations import get_daily_nutrition_targets
+from src.domain.nutrition import calculate_dynamic_tdee_target
 
 router = APIRouter(tags=["dashboard"])
 
@@ -52,11 +53,12 @@ async def get_dashboard_data(
         if now_ts - cached_ts < DASHBOARD_CACHE_TTL_SECONDS:
             return cached_data
 
-    profile, meals, daily_metrics_rows, saved_devices_raw = await asyncio.gather(
+    profile, meals, daily_metrics_rows, saved_devices_raw, user_workouts = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, user_id=user_id),
         asyncio.to_thread(db.get_meals, limit=60, user_id=user_id),
         asyncio.to_thread(db.get_daily_metrics, limit=5, user_id=user_id),
         asyncio.to_thread(db.get_user_devices, user_id=user_id),
+        asyncio.to_thread(db.get_workouts, limit=30, user_id=user_id),
     )
     saved_devices = {dev["device_id"]: dev for dev in saved_devices_raw}
 
@@ -93,7 +95,31 @@ async def get_dashboard_data(
         gender=profile.get("gender", "male"),
         user_id=user_id,
     )
-    daily_targets = get_daily_nutrition_targets(db, user_id=user_id)
+    today_str = today.isoformat()
+    today_workouts = [w for w in (user_workouts or []) if (w.start_time or "").startswith(today_str)]
+    today_workout_calories = round(sum(float(w.calories_kcal or 0.0) for w in today_workouts), 1)
+
+    today_steps = (today_activity.steps if today_activity else (today_metric.steps if today_metric else 0)) or 0
+    neat_steps_kcal = round(today_steps * 0.04, 1)
+
+    # Calcul dynamique du budget calorique et glucidique du jour
+    goal_id = profile.get("goal_profile_id") or "weight_loss"
+    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0}
+    goal_delta = goal_delta_map.get(goal_id, -500.0)
+
+    dynamic_tdee = calculate_dynamic_tdee_target(
+        bmr_kcal=energy_balance["bmr_kcal"],
+        steps=today_steps,
+        workout_calories_kcal=today_workout_calories,
+        goal_delta=goal_delta,
+    )
+    effective_target_calories = dynamic_tdee["target_calories_intake"]
+    daily_targets = get_daily_nutrition_targets(
+        db,
+        user_id=user_id,
+        target_calories_override=effective_target_calories,
+        carbs_target_override=dynamic_tdee["daily_carbs_target_g"]
+    )
 
     seven_days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     meals_by_day = {}
@@ -146,9 +172,13 @@ async def get_dashboard_data(
             "calories_intake_kcal": energy_balance["calories_intake_kcal"],
             "calories_burned_kcal": energy_balance["calories_burned_kcal"],
             "bmr_kcal": energy_balance["bmr_kcal"],
+            "workout_calories_kcal": today_workout_calories,
+            "neat_steps_kcal": neat_steps_kcal,
             "net_energy_balance_kcal": energy_balance["net_energy_balance_kcal"],
-            "target_calories_intake": profile.get("target_calories_intake", 2000.0),
+            "target_calories_intake": effective_target_calories,
+            "base_target_calories_intake": profile.get("target_calories_intake", 2000.0),
             "targets": daily_targets,
+            "dynamic_tdee": dynamic_tdee,
             "energy_status": energy_balance["status"],
             "recommendation": energy_balance["recommendation"],
             "macros": daily_nutrition["macros"],

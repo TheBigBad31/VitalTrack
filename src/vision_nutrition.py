@@ -129,6 +129,66 @@ class PhotoCalorieEstimator:
             logger.debug(f"OpenFoodFacts lookup failed for '{query}': {exc}")
             return None
 
+    def fetch_openfoodfacts_barcode(self, barcode: str) -> Optional[Dict[str, Any]]:
+        """Interroge l'API OpenFoodFacts v2 pour un code-barres EAN-13."""
+        clean_code = barcode.strip().replace(" ", "").replace("-", "")
+        if not clean_code or not clean_code.isdigit():
+            return None
+
+        url = f"https://world.openfoodfacts.org/api/v2/product/{clean_code}.json"
+        req = Request(url, headers={"User-Agent": "VitalTrack-NutritionEngine/0.1.0 (https://vitaltrack.local)"})
+
+        try:
+            with urlopen(req, timeout=4.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                status = data.get("status")
+                if status != 1 and data.get("status_verbose") != "product found":
+                    return None
+                prod = data.get("product", {})
+                if not prod:
+                    return None
+
+                nutriments = prod.get("nutriments", {})
+                cal_100g = nutriments.get("energy-kcal_100g")
+                if cal_100g is None:
+                    cal_100g = (nutriments.get("energy_100g", 0.0) or 0.0) / 4.184
+
+                # Nutri-Score
+                nutriscore = (
+                    prod.get("nutriscore_grade")
+                    or prod.get("nutrition_grades")
+                    or nutriments.get("nutrition_grade_fr")
+                )
+                if nutriscore:
+                    nutriscore = str(nutriscore).lower()
+
+                # Portion ou quantité de référence
+                serving_qty = prod.get("serving_quantity")
+                try:
+                    serving_g = float(serving_qty) if serving_qty else 100.0
+                except (ValueError, TypeError):
+                    serving_g = 100.0
+
+                return {
+                    "barcode": clean_code,
+                    "name": prod.get("product_name_fr") or prod.get("product_name") or f"Produit {clean_code}",
+                    "brand": prod.get("brands") or "",
+                    "nutriscore": nutriscore,
+                    "default_unit": "g",
+                    "default_quantity": 100.0,
+                    "portion_g": serving_g,
+                    "cal_100g": round(float(cal_100g or 0.0), 1),
+                    "calories": round(float(cal_100g or 0.0), 1),
+                    "protein_g": round(float(nutriments.get("proteins_100g", 0.0) or 0.0), 1),
+                    "carbs_g": round(float(nutriments.get("carbohydrates_100g", 0.0) or 0.0), 1),
+                    "fat_g": round(float(nutriments.get("fat_100g", 0.0) or 0.0), 1),
+                    "fiber_g": round(float(nutriments.get("fiber_100g", 0.0) or 0.0), 1),
+                    "photo_url": prod.get("image_front_url") or prod.get("image_url") or None,
+                }
+        except (URLError, TimeoutError, ValueError, KeyError, Exception) as exc:
+            logger.debug(f"OpenFoodFacts barcode lookup failed for '{clean_code}': {exc}")
+            return None
+
     def lookup_ingredient(self, query: str) -> Optional[Dict[str, float]]:
         """Cherche un ingrédient dans la base locale d'abord, puis OpenFoodFacts."""
         query_norm = query.strip().lower()

@@ -475,9 +475,9 @@ class MealsRepository(BaseRepository):
                         user_id, name, item_type, category, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                         fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
-                        is_public, created_at, updated_at
+                        is_public, barcode, nutriscore, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     RETURNING id, created_at, updated_at;
                 """, (
                     user_id, item.name, item.item_type, category, item.default_unit or "g",
@@ -485,7 +485,7 @@ class MealsRepository(BaseRepository):
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
                     item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    is_pub, now_str, now_str
+                    is_pub, item.barcode, item.nutriscore, now_str, now_str
                 ))
                 row = cursor.fetchone()
                 item_id = row["id"]
@@ -497,16 +497,16 @@ class MealsRepository(BaseRepository):
                         user_id, name, item_type, category, default_unit, default_quantity,
                         calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                         fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
-                        is_public, created_at, updated_at
+                        is_public, barcode, nutriscore, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user_id, item.name, item.item_type, category, item.default_unit or "g",
                     item.default_quantity or 100.0, item.calories_per_unit,
                     item.protein_per_unit_g or 0.0, item.carbs_per_unit_g or 0.0,
                     item.fat_per_unit_g or 0.0, item.fiber_per_unit_g or 0.0,
                     item.photo_url, json.dumps(item.recipe_items) if item.recipe_items else None,
-                    is_pub, now_str, now_str
+                    is_pub, item.barcode, item.nutriscore, now_str, now_str
                 ))
                 item_id = cursor.lastrowid
                 created_at = now_str
@@ -626,6 +626,8 @@ class MealsRepository(BaseRepository):
                 recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=benefits_by_food_id.get(r["id"], []),
                 is_public=bool(r.get("is_public")),
+                barcode=r.get("barcode"),
+                nutriscore=r.get("nutriscore"),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
@@ -685,6 +687,8 @@ class MealsRepository(BaseRepository):
                 recipe_items=json.loads(r["recipe_items_json"]) if r.get("recipe_items_json") else [],
                 benefits=self.get_food_item_benefits(r["id"]),
                 is_public=bool(r.get("is_public")),
+                barcode=r.get("barcode"),
+                nutriscore=r.get("nutriscore"),
                 created_at=datetime.fromisoformat(r["created_at"]) if r.get("created_at") else None,
                 updated_at=datetime.fromisoformat(r["updated_at"]) if r.get("updated_at") else None,
             )
@@ -711,6 +715,8 @@ class MealsRepository(BaseRepository):
         recipe_items_json = json.dumps(recipe_items) if recipe_items is not None else None
         is_public = data.get("is_public", existing.is_public)
         is_pub = is_public if self.is_postgres else (1 if is_public else 0)
+        barcode = data.get("barcode", existing.barcode)
+        nutriscore = data.get("nutriscore", existing.nutriscore)
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -719,13 +725,13 @@ class MealsRepository(BaseRepository):
                 SET name = ?, item_type = ?, category = ?, default_unit = ?, default_quantity = ?,
                     calories_per_unit = ?, protein_per_unit_g = ?, carbs_per_unit_g = ?,
                     fat_per_unit_g = ?, fiber_per_unit_g = ?, photo_url = ?, recipe_items_json = ?,
-                    is_public = ?, updated_at = ?
+                    is_public = ?, barcode = ?, nutriscore = ?, updated_at = ?
                 WHERE id = ? AND user_id = ?
             """, (
                 name, item_type, category, default_unit, default_quantity,
                 calories_per_unit, protein_per_unit_g, carbs_per_unit_g,
                 fat_per_unit_g, fiber_per_unit_g, photo_url, recipe_items_json,
-                is_pub, now_str, item_id, user_id
+                is_pub, barcode, nutriscore, now_str, item_id, user_id
             ))
             conn.commit()
 
@@ -738,6 +744,15 @@ class MealsRepository(BaseRepository):
         updated.default_quantity = default_quantity
         updated.calories_per_unit = calories_per_unit
         updated.protein_per_unit_g = protein_per_unit_g
+        updated.carbs_per_unit_g = carbs_per_unit_g
+        updated.fat_per_unit_g = fat_per_unit_g
+        updated.fiber_per_unit_g = fiber_per_unit_g
+        updated.photo_url = photo_url
+        updated.is_public = bool(is_public)
+        updated.barcode = barcode
+        updated.nutriscore = nutriscore
+        updated.updated_at = datetime.fromisoformat(now_str)
+        return updated
         updated.carbs_per_unit_g = carbs_per_unit_g
         updated.fat_per_unit_g = fat_per_unit_g
         updated.fiber_per_unit_g = fiber_per_unit_g

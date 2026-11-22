@@ -683,10 +683,27 @@
 
       if (elCalsIn) elCalsIn.innerHTML = `${Math.round(s.calories_intake_kcal || 0)} <span class="text-xs font-normal text-slate-400">kcal</span>`;
 
+      const targetCals = s.target_calories_intake || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
+      const elCalsTarget = document.getElementById('val-cals-target');
+      if (elCalsTarget) {
+        elCalsTarget.innerText = `${Math.round(macroTargetCals).toLocaleString()} kcal`;
+      }
+
+      const workoutBonusEl = document.getElementById('badge-workout-bonus');
+      if (workoutBonusEl) {
+        const bonusKcal = Math.round(s.workout_calories_kcal || 0);
+        if (bonusKcal > 0) {
+          workoutBonusEl.innerText = `+${bonusKcal} kcal sport`;
+          workoutBonusEl.title = `+${bonusKcal} kcal débloqués par votre séance du jour`;
+          workoutBonusEl.classList.remove('hidden');
+        } else {
+          workoutBonusEl.classList.add('hidden');
+        }
+      }
+
       const barCalsIn = document.getElementById('bar-cals-in');
 
       if (barCalsIn) {
-        const targetCals = s.target_calories_intake || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
         const inPct = targetCals > 0 ? Math.min(100, Math.round(((s.calories_intake_kcal || 0) / targetCals) * 100)) : 0;
         barCalsIn.style.width = `${inPct}%`;
       }
@@ -745,17 +762,17 @@
       const m = s.macros || {};
       const targets = s.targets || {};
       const profile = (currentData && currentData.profile) || {};
-      const targetCals = s.target_calories_intake || targets.calories || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 2000;
+      const macroTargetCals = s.target_calories_intake || targets.calories || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 2000;
       const intakeCals = Math.round(s.calories_intake_kcal || 0);
 
       // Calcul cibles de macronutriments (fallback propre si targets non renseigné)
-      const protTarget = targets.protein_g || profile.daily_protein_target_g || (profile.protein_target_per_kg && (profile.current_weight_kg || profile.target_weight_kg) ? Math.round(profile.protein_target_per_kg * (profile.current_weight_kg || profile.target_weight_kg)) : Math.round((targetCals * 0.25) / 4));
-      const carbsTarget = targets.carbs_g || profile.daily_carbs_target_g || Math.round((targetCals * 0.45) / 4);
-      const fatTarget = targets.fat_g || profile.daily_fat_target_g || Math.round((targetCals * 0.30) / 9);
+      const protTarget = targets.protein_g || profile.daily_protein_target_g || (profile.protein_target_per_kg && (profile.current_weight_kg || profile.target_weight_kg) ? Math.round(profile.protein_target_per_kg * (profile.current_weight_kg || profile.target_weight_kg)) : Math.round((macroTargetCals * 0.25) / 4));
+      const carbsTarget = targets.carbs_g || profile.daily_carbs_target_g || Math.round((macroTargetCals * 0.45) / 4);
+      const fatTarget = targets.fat_g || profile.daily_fat_target_g || Math.round((macroTargetCals * 0.30) / 9);
 
       // 1. Centre du donut
       const elRatio = document.getElementById('donut-cals-ratio');
-      if (elRatio) elRatio.innerText = `${intakeCals.toLocaleString('fr-FR')} / ${Math.round(targetCals).toLocaleString('fr-FR')} kcal`;
+      if (elRatio) elRatio.innerText = `${intakeCals.toLocaleString('fr-FR')} / ${Math.round(macroTargetCals).toLocaleString('fr-FR')} kcal`;
 
       const elDonutRemaining = document.getElementById('donut-cals-remaining');
       if (elDonutRemaining) {

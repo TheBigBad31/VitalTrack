@@ -344,6 +344,8 @@ class CatalogItem(BaseModel):
     recipe_items: List[Dict[str, Any]] = Field(default_factory=list, description="Ingrédients composant le plat avec quantités et macros")
     benefits: List[AssociatedBenefit] = Field(default_factory=list, description="Bienfaits associés")
     is_public: bool = Field(False, description="True si l'aliment fait partie du socle public accessible à tous")
+    barcode: Optional[str] = Field(None, description="Code-barres EAN-13")
+    nutriscore: Optional[str] = Field(None, description="Lettre Nutri-Score (a, b, c, d, e)")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
