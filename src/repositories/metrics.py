@@ -300,7 +300,7 @@ class MetricsRepository(BaseRepository):
             return SleepSessionEntry(**d)
 
     def get_sleep_sessions(self, limit: int = 30, user_id: int = 1) -> List[SleepSessionEntry]:
-        """Récupère l'historique des sessions de sommeil avec leurs phases détaillées."""
+        """Récupère l'historique des sessions de sommeil avec leurs phases détaillées (sans N+1 requêtes)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -310,16 +310,25 @@ class MetricsRepository(BaseRepository):
             """, (user_id, limit))
             rows = cursor.fetchall()
 
+            session_ids = [r["id"] for r in rows]
+            stages_by_session: Dict[int, List[SleepStageEntry]] = {sid: [] for sid in session_ids}
+            if session_ids:
+                placeholders = ", ".join(["?"] * len(session_ids))
+                cursor.execute(
+                    f"SELECT * FROM sleep_stages WHERE sleep_session_id IN ({placeholders}) ORDER BY start_time ASC",
+                    tuple(session_ids)
+                )
+                for st in cursor.fetchall():
+                    st_dict = dict(st)
+                    sid = st_dict.get("sleep_session_id")
+                    if sid in stages_by_session:
+                        stages_by_session[sid].append(SleepStageEntry(**st_dict))
+
             results = []
             for r in rows:
                 d = dict(r)
                 d["date"] = date.fromisoformat(d["date"][:10])
-                cursor.execute(
-                    "SELECT * FROM sleep_stages WHERE sleep_session_id = ? ORDER BY start_time ASC",
-                    (d["id"],)
-                )
-                stages_rows = cursor.fetchall()
-                d["stages"] = [SleepStageEntry(**dict(st)) for st in stages_rows]
+                d["stages"] = stages_by_session.get(d["id"], [])
                 if d.get("created_at"):
                     d["created_at"] = datetime.fromisoformat(d["created_at"])
                 if d.get("updated_at"):
@@ -516,6 +525,56 @@ class MetricsRepository(BaseRepository):
         d["user_id"] = user_id
         d["created_at"] = datetime.fromisoformat(now_str)
         return HydrationLogEntry(**d)
+
+    def get_hydration_logs(
+        self,
+        target_date: Optional[Union[date, str]] = None,
+        limit: int = 100,
+        user_id: int = 1
+    ) -> List[HydrationLogEntry]:
+        """Récupère les apports hydriques pour user_id (filtrés optionnellement par date)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if target_date:
+                date_str = target_date.isoformat() if isinstance(target_date, date) else str(target_date)[:10]
+                cursor.execute(
+                    "SELECT * FROM hydration_logs WHERE user_id = ? AND date = ? ORDER BY timestamp ASC, id ASC LIMIT ?",
+                    (user_id, date_str, limit)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM hydration_logs WHERE user_id = ? ORDER BY date DESC, timestamp DESC, id DESC LIMIT ?",
+                    (user_id, limit)
+                )
+            rows = cursor.fetchall()
+
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["date"] = date.fromisoformat(str(d["date"])[:10])
+            if d.get("created_at"):
+                d["created_at"] = datetime.fromisoformat(str(d["created_at"]))
+            results.append(HydrationLogEntry(**d))
+        return results
+
+    def get_daily_hydration_total(
+        self,
+        target_date: Union[date, str],
+        user_id: int = 1
+    ) -> float:
+        """Calcule le volume total consommé en millilitres pour une date donnée."""
+        date_str = target_date.isoformat() if isinstance(target_date, date) else str(target_date)[:10]
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COALESCE(SUM(volume_ml), 0.0) as total FROM hydration_logs WHERE user_id = ? AND date = ?",
+                (user_id, date_str)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return 0.0
+            total = row["total"] if isinstance(row, dict) else row[0]
+            return float(total or 0.0)
 
     def insert_raw_ingest(
         self,

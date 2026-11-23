@@ -442,18 +442,20 @@ class Database:
                         ALTER TABLE activities ADD CONSTRAINT uq_activities_user_date_source UNIQUE (user_id, date, source);
                     END IF;
 
-                    -- 3. Table food_items : assurer la présence de la colonne category (BALI-273)
+                    -- 3. Table food_items : assurer la présence des colonnes category, barcode et nutriscore
                     IF EXISTS (
                         SELECT 1 FROM information_schema.tables WHERE table_name = 'food_items'
                     ) THEN
                         ALTER TABLE food_items ADD COLUMN IF NOT EXISTS category TEXT;
+                        ALTER TABLE food_items ADD COLUMN IF NOT EXISTS barcode TEXT;
+                        ALTER TABLE food_items ADD COLUMN IF NOT EXISTS nutriscore TEXT;
                     END IF;
                 END $$;
             """)
             conn.commit()
 
     def _ensure_food_items_category_column(self):
-        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`."""
+        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`, barcode et nutriscore."""
         if self.is_postgres:
             return
         with self.get_connection() as conn:
@@ -466,7 +468,12 @@ class Database:
             if "category" not in columns:
                 cursor.execute("ALTER TABLE food_items ADD COLUMN category TEXT")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_category ON food_items(category)")
-                conn.commit()
+            if "barcode" not in columns:
+                cursor.execute("ALTER TABLE food_items ADD COLUMN barcode TEXT")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_barcode ON food_items(barcode)")
+            if "nutriscore" not in columns:
+                cursor.execute("ALTER TABLE food_items ADD COLUMN nutriscore TEXT")
+            conn.commit()
 
     def _pg_bool_true(self):
         """Valeur littérale de `true` adaptée au moteur (BOOLEAN sous PostgreSQL, INTEGER 1 sous SQLite)."""
@@ -714,6 +721,13 @@ class Database:
     def delete_demo_meals(self, user_id: Optional[int] = None) -> int:
         return self.meals.delete_demo_meals(user_id=user_id)
 
+    def sync_meal_items_to_meal_log(self, date_val: date, meal_type: str, items: List[Dict[str, Any]],
+                                    user_id: int = 1, append: bool = False) -> MealLog:
+        return self.meals.sync_meal_items_to_meal_log(date_val, meal_type, items, user_id=user_id, append=append)
+
+    def get_daily_summary(self, target_date: date, user_id: int = 1) -> Dict[str, Any]:
+        return self.meals.get_daily_summary(target_date, user_id=user_id)
+
     def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
         return self.meals._sync_meal_log_to_meals(meal_log_id, user_id=user_id)
 
@@ -810,6 +824,12 @@ class Database:
 
     def insert_hydration_log(self, entry: HydrationLogEntry, user_id: int = 1) -> HydrationLogEntry:
         return self.metrics.insert_hydration_log(entry, user_id=user_id)
+
+    def get_hydration_logs(self, target_date: Optional[Union[date, str]] = None, limit: int = 100, user_id: int = 1) -> List[HydrationLogEntry]:
+        return self.metrics.get_hydration_logs(target_date=target_date, limit=limit, user_id=user_id)
+
+    def get_daily_hydration_total(self, target_date: Union[date, str], user_id: int = 1) -> float:
+        return self.metrics.get_daily_hydration_total(target_date=target_date, user_id=user_id)
 
     def insert_raw_ingest(self, source: str, payload: Union[Dict[str, Any], str], user_id: int = 1,
                           endpoint: Optional[str] = None, idempotency_key: Optional[str] = None) -> RawIngestEntry:

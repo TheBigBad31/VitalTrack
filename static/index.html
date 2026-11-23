@@ -23,6 +23,11 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
       <style>
+    :root {
+      --bg-surface: #0B0B1E;
+      --bg-card: #13132B;
+      --border-subtle: #25254A;
+    }
     /* Global Loading Bar */
     .global-loading-bar {
       position: fixed;
@@ -84,7 +89,7 @@
 <body class="bg-[#0B0F17] text-slate-100 min-h-screen flex flex-col font-sans pb-24 md:pb-8">
 
   <!-- Header Mobile & Desktop -->
-  <header class="sticky top-0 z-30 bg-[#0B0F17]/90 backdrop-blur-md border-b border-[#1F2A3C] px-4 py-3">
+  <header class="sticky top-0 z-30 bg-[#0B0F17]/90 backdrop-blur-md border-b border-[#25254A] px-4 py-3">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <div class="flex items-center space-x-3">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-electric-cyan flex items-center justify-center shadow-lg shadow-brand-500/20">
@@ -101,6 +106,11 @@
 
       <!-- Actions Rapides Header -->
       <div class="flex items-center space-x-2">
+        <!-- Badge statut synchronisation Offline Queue -->
+        <div id="offline-queue-badge" class="hidden items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium" title="File d'attente hors-ligne IndexedDB">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="offline-queue-badge-text">Hors-ligne</span>
+        </div>
         <!-- Container Authentification Header & Menu Profil Déroulant -->
         <!-- Sélecteur de Profil & Mode Read-Only -->
         <div id="header-profile-selector-container" class="relative"></div>
@@ -112,7 +122,7 @@
           </button>
         </div>
 
-        <button type="button" onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95 cursor-pointer" title="Mon Profil Métabolique">
+        <button type="button" onclick="openProfileModal()" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#13132B] hover:bg-[#25254A] border border-[#25254A] text-slate-200 text-xs font-medium transition-all active:scale-95 cursor-pointer" title="Mon Profil Métabolique">
           <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
           <span class="hidden sm:inline">Mon Profil</span>
         </button>
@@ -124,11 +134,11 @@
           <i data-lucide="camera" class="w-4 h-4"></i>
           <span class="hidden sm:inline">Photo Repas</span>
         </button>
-        <button onclick="openWeightModal()" class="write-action-btn flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-medium transition-all active:scale-95">
+        <button onclick="openWeightModal()" class="write-action-btn flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#13132B] hover:bg-[#25254A] border border-[#25254A] text-slate-200 text-xs font-medium transition-all active:scale-95">
           <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
           <span class="hidden sm:inline">Pesée</span>
         </button>
-        <button onclick="refreshData()" title="Actualiser" class="p-2 rounded-lg bg-[#151D2A] hover:bg-[#1F2A3C] text-slate-300">
+        <button onclick="refreshData()" title="Actualiser" class="p-2 rounded-lg bg-[#13132B] hover:bg-[#25254A] text-slate-300">
           <i data-lucide="refresh-cw" class="w-4 h-4" id="refresh-icon"></i>
         </button>
       </div>
@@ -205,7 +215,7 @@
     </div>
 
     <!-- Banderole d'Action Rapide Mobile (Toujours en tête) -->
-    <section id="quick-meal-banner" class="hidden bg-gradient-to-r from-brand-950/40 via-[#151D2A] to-[#151D2A] border border-brand-500/20 rounded-2xl p-4 shadow-xl">
+    <section id="quick-meal-banner" class="hidden bg-gradient-to-r from-brand-950/40 via-[#13132B] to-[#13132B] border border-brand-500/20 rounded-2xl p-4 shadow-xl">
       <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center space-x-3 w-full sm:w-auto">
           <div class="w-12 h-12 rounded-2xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
@@ -221,11 +231,11 @@
             <i data-lucide="camera" class="w-4 h-4"></i>
             <span>📸 Analyser mon repas</span>
           </button>
-          <button onclick="openWeightModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
+          <button onclick="openWeightModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#25254A] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
             <i data-lucide="plus" class="w-4 h-4 text-brand-400"></i>
             <span>Poids (kg)</span>
           </button>
-          <button onclick="openActivityModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
+          <button onclick="openActivityModal()" class="write-action-btn flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-xl bg-[#25254A] hover:bg-[#2A374D] text-slate-200 font-semibold text-xs border border-slate-700/60 active:scale-95">
             <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
             <span>Activité</span>
           </button>
@@ -317,7 +327,7 @@
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         
         <!-- Jauge 1: Poids actuel & 7j -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Poids Actuel</span>
             <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
@@ -332,14 +342,17 @@
         </div>
 
         <!-- Jauge 2: Calories In vs Out -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Calories Ingérées</span>
             <i data-lucide="utensils" class="w-4 h-4 text-blue-400"></i>
           </div>
           <div class="my-2">
             <div class="text-2xl sm:text-3xl font-extrabold text-blue-400" id="val-cals-in">-- <span class="text-xs font-normal text-slate-400">kcal</span></div>
-            <div class="text-[11px] text-slate-400">Cible: <span class="text-slate-300 font-semibold">2 000 kcal</span></div>
+            <div class="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Cible: <span class="text-slate-300 font-semibold" id="val-cals-target">2 000 kcal</span></span>
+              <span id="badge-workout-bonus" class="hidden text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">+0 kcal sport</span>
+            </div>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
             <div id="bar-cals-in" class="bg-blue-500 h-1.5 rounded-full" style="width: 0%"></div>
@@ -347,7 +360,7 @@
         </div>
 
         <!-- Jauge 3: Dépense énergétique (TDEE) -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Calories Dépensées</span>
             <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
@@ -360,7 +373,7 @@
         </div>
 
         <!-- Jauge 4: Balance nette -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Déficit / Surplus Net</span>
             <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
@@ -373,7 +386,7 @@
         </div>
 
         <!-- Jauge 5: Pas du jour -->
-        <div class="col-span-2 lg:col-span-1 bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col justify-between">
+        <div class="col-span-2 lg:col-span-1 bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col justify-between">
           <div class="flex items-center justify-between text-slate-400 text-xs">
             <span>Pas Quotidiens</span>
             <i data-lucide="footprints" class="w-4 h-4 text-brand-400"></i>
@@ -390,7 +403,7 @@
       </div>
 
       <!-- Bandeau Données en Direct : Google Santé Connect (Android) -->
-      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-brand-950/30 via-[#151D2A] to-[#151D2A] border border-brand-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300">
+      <div id="banner-health-connect-live" class="p-4 rounded-2xl bg-gradient-to-r from-brand-950/30 via-[#13132B] to-[#13132B] border border-brand-500/30 flex flex-col md:flex-row items-center justify-between gap-4 transition-all duration-300">
         <div class="flex items-center space-x-3.5 w-full md:w-auto">
           <div id="live-hc-icon-container" class="w-11 h-11 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0">
             <i id="live-hc-icon" data-lucide="smartphone" class="w-6 h-6"></i>
@@ -414,11 +427,11 @@
         </div>
         <div class="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
           <div class="flex items-center space-x-1.5">
-            <button id="live-hc-sync-btn" type="button" onclick="triggerSyncFromBanner()" class="px-3.5 py-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700/60 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors" title="Synchroniser uniquement depuis la dernière synchro">
+            <button id="live-hc-sync-btn" type="button" onclick="triggerSyncFromBanner()" class="px-3.5 py-2 rounded-xl bg-[#25254A] hover:bg-[#2A374D] border border-slate-700/60 text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors" title="Synchroniser uniquement depuis la dernière synchro">
               <i id="live-hc-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
               <span id="live-hc-sync-txt">Dernière synchro</span>
             </button>
-            <button id="live-hc-sync-custom-btn" type="button" onclick="openDateSyncModal('health_connect')" class="p-2 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700/60 text-cyan-400 text-xs font-semibold flex items-center justify-center transition-colors" title="Choisir une date de début pour synchroniser">
+            <button id="live-hc-sync-custom-btn" type="button" onclick="openDateSyncModal('health_connect')" class="p-2 rounded-xl bg-[#25254A] hover:bg-[#2A374D] border border-slate-700/60 text-cyan-400 text-xs font-semibold flex items-center justify-center transition-colors" title="Choisir une date de début pour synchroniser">
               <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
             </button>
           </div>
@@ -432,13 +445,13 @@
       <!-- Graphique combiné Poids & Tendance + Macros du Jour -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Graphique 7j/30j Poids -->
-        <div class="lg:col-span-2 bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+        <div class="lg:col-span-2 bg-[#13132B] border border-[#25254A] rounded-2xl p-5">
           <div class="flex items-center justify-between mb-4">
             <div>
               <h3 class="font-bold text-white text-base">Évolution du Poids & Tendance Glissante 7j</h3>
               <p class="text-xs text-slate-400">Pesées quotidiennes avec moyenne mobile de lissage</p>
             </div>
-            <span class="text-xs px-2.5 py-1 bg-[#1F2A3C] text-brand-400 rounded-lg font-medium">30 derniers jours</span>
+            <span class="text-xs px-2.5 py-1 bg-[#25254A] text-brand-400 rounded-lg font-medium">30 derniers jours</span>
           </div>
           <div class="h-64">
             <canvas id="chart-weight-summary"></canvas>
@@ -446,7 +459,7 @@
         </div>
 
         <!-- Répartition Macronutriments & Conseils -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 flex flex-col justify-between">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <h3 class="font-bold text-white text-base mb-1">Macronutriments du Jour</h3>
             <p class="text-xs text-slate-400 mb-4">Équilibre Protéines / Glucides / Lipides</p>
@@ -519,9 +532,55 @@
           </div>
 
           <!-- Recommandation nutritionnelle / coach -->
-          <div class="mt-4 p-3 rounded-xl bg-[#1F2A3C]/70 border border-slate-700/40 text-xs text-slate-300 flex items-start space-x-2">
+          <div class="mt-4 p-3 rounded-xl bg-[#25254A]/70 border border-slate-700/40 text-xs text-slate-300 flex items-start space-x-2">
             <i data-lucide="info" class="w-4 h-4 text-brand-400 shrink-0 mt-0.5"></i>
             <p id="summary-recommendation">Chargement des recommandations personnalisées...</p>
+          </div>
+          <!-- Bannière Coach Détection de Plateau Métabolique (Aujourd'hui) -->
+          <div id="today-plateau-banner" class="hidden mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-100"></div>
+        </div>
+      </div>
+
+      <!-- Widget Hydratation Journalière (BALI-293) -->
+      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <i data-lucide="droplet" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <span>Hydratation Journalière</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-semibold" id="hydration-badge-status">0%</span>
+              </h3>
+              <p class="text-xs text-slate-400">Objectif d'eau quotidien (en ml et verres de 250 ml)</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button type="button" onclick="quickAddWater(250)" class="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+250 ml (1 verre)</span>
+            </button>
+            <button type="button" onclick="quickAddWater(500)" class="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md shadow-cyan-600/20 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+500 ml (2 verres)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Jauge & Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+          <div class="space-y-1.5 md:col-span-2">
+            <div class="flex items-baseline justify-between text-xs">
+              <span class="text-slate-300">Volume bu aujourd'hui : <strong class="text-white font-extrabold text-sm" id="val-hydration-current">0</strong> <span class="text-slate-400">/ <span id="val-hydration-target">2000</span> ml</span></span>
+              <span class="text-cyan-400 font-bold" id="val-hydration-glasses">0 / 8 verres</span>
+            </div>
+            <div class="w-full bg-[#0B0F17] rounded-full h-3 p-0.5 border border-[#1F2A3C] overflow-hidden">
+              <div id="bar-hydration" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-indigo-500 transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="flex items-center justify-center md:justify-end gap-1.5" id="hydration-glasses-visual">
+            <!-- 8 verres visualisés dynamiquement -->
           </div>
         </div>
       </div>
@@ -535,7 +594,7 @@
       
       <!-- Cartes Impédancemétrie Balance Connectée -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4">
           <div class="text-xs text-slate-400 flex justify-between items-center">
             <span>Masse Grasse</span>
             <i data-lucide="percent" class="w-4 h-4 text-amber-400"></i>
@@ -544,7 +603,7 @@
           <div class="text-[10px] text-emerald-400 mt-1">Fourchette saine : 14 - 22%</div>
         </div>
 
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4">
           <div class="text-xs text-slate-400 flex justify-between items-center">
             <span>Masse Musculaire</span>
             <i data-lucide="dumbbell" class="w-4 h-4 text-blue-400"></i>
@@ -553,7 +612,7 @@
           <div class="text-[10px] text-slate-400 mt-1">Masse maigre préservée</div>
         </div>
 
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4">
           <div class="text-xs text-slate-400 flex justify-between items-center">
             <span>Masse Hydrique</span>
             <i data-lucide="droplet" class="w-4 h-4 text-cyan-400"></i>
@@ -562,7 +621,7 @@
           <div class="text-[10px] text-slate-400 mt-1">Hydratation normale : 50 - 65%</div>
         </div>
 
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4">
           <div class="text-xs text-slate-400 flex justify-between items-center">
             <span>IMC (Indice de Masse)</span>
             <i data-lucide="heart" class="w-4 h-4 text-brand-400"></i>
@@ -573,14 +632,14 @@
       </div>
 
       <!-- Grand Graphique Suivi du Poids Complet -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
             <h3 class="font-bold text-white text-base">Historique Détaillé du Poids (30 jours)</h3>
             <p class="text-xs text-slate-400">Pas journalier continu · Courbes multi-séries ou Bougies Japonaises (OHLC)</p>
           </div>
           <div class="flex items-center gap-2 self-start sm:self-auto">
-            <div class="inline-flex rounded-lg bg-[#0B0F17] p-0.5 border border-[#1F2A3C]" role="group" aria-label="Mode d'affichage du graphique">
+            <div class="inline-flex rounded-lg bg-[#0B0F17] p-0.5 border border-[#25254A]" role="group" aria-label="Mode d'affichage du graphique">
               <button type="button" id="weight-chart-mode-line" onclick="setWeightChartMode('line')" class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors bg-brand-600 text-white">Courbes</button>
               <button type="button" id="weight-chart-mode-ohlc" onclick="setWeightChartMode('ohlc')" class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors text-slate-400 hover:text-white">Bougies (OHLC)</button>
             </div>
@@ -594,9 +653,9 @@
           <div id="weight-chart-pills" class="flex flex-wrap items-center gap-1.5"></div>
           <div class="flex items-center gap-1 text-[11px]" role="group" aria-label="Préréglages de séries">
             <span class="text-slate-500 mr-1">Préréglages :</span>
-            <button type="button" id="weight-preset-essentiel" onclick="applyWeightChartPreset('essentiel')" class="px-2 py-0.5 rounded-md border border-[#1F2A3C] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Essentiel</button>
-            <button type="button" id="weight-preset-composition" onclick="applyWeightChartPreset('composition')" class="px-2 py-0.5 rounded-md border border-[#1F2A3C] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Composition</button>
-            <button type="button" id="weight-preset-tout" onclick="applyWeightChartPreset('tout')" class="px-2 py-0.5 rounded-md border border-[#1F2A3C] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Tout</button>
+            <button type="button" id="weight-preset-essentiel" onclick="applyWeightChartPreset('essentiel')" class="px-2 py-0.5 rounded-md border border-[#25254A] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Essentiel</button>
+            <button type="button" id="weight-preset-composition" onclick="applyWeightChartPreset('composition')" class="px-2 py-0.5 rounded-md border border-[#25254A] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Composition</button>
+            <button type="button" id="weight-preset-tout" onclick="applyWeightChartPreset('tout')" class="px-2 py-0.5 rounded-md border border-[#25254A] bg-[#0B0F17] text-slate-300 hover:text-white hover:border-slate-500 transition-colors">Tout</button>
           </div>
         </div>
         <div class="h-80">
@@ -605,14 +664,14 @@
       </div>
 
       <!-- Tableau des dernières pesées -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-bold text-white text-base">Historique des Pesées Enregistrées</h3>
           <span id="weights-table-count" class="text-xs text-slate-400"></span>
         </div>
         <div class="overflow-x-auto max-h-96 overflow-y-auto">
           <table class="w-full text-xs text-left">
-            <thead class="text-slate-400 border-b border-[#1F2A3C]">
+            <thead class="text-slate-400 border-b border-[#25254A]">
               <tr>
                 <th class="py-2.5 px-3">Date</th>
                 <th class="py-2.5 px-3">Poids (kg)</th>
@@ -622,7 +681,7 @@
                 <th class="py-2.5 px-3">Source</th>
               </tr>
             </thead>
-            <tbody id="table-weights-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
+            <tbody id="table-weights-body" class="divide-y divide-[#25254A]/60 text-slate-200">
               <!-- Dynamique -->
             </tbody>
           </table>
@@ -638,17 +697,17 @@
       <div id="tab-nutrition-skeleton" class="hidden"></div>
 
       <!-- Barre de Navigation des 3 Vues Nutrition -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-2 shadow-md">
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-2 shadow-md">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#25254A]">
           <button id="btn-subnav-desktop-split" onclick="switchNutritionLayout('split')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-brand-500 text-white shadow-md shadow-brand-500/20 flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="columns-2" class="w-4 h-4"></i>
             <span>Vue Combinée</span>
           </button>
-          <button id="btn-subnav-journal" onclick="switchNutritionSubSection('journal')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all">
+          <button id="btn-subnav-journal" onclick="switchNutritionSubSection('journal')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#13132B] flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="calendar" class="w-4 h-4"></i>
             <span>Journal des Repas</span>
           </button>
-          <button id="btn-subnav-catalog" onclick="switchNutritionSubSection('catalog')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#151D2A] flex items-center justify-center space-x-2 transition-all">
+          <button id="btn-subnav-catalog" onclick="switchNutritionSubSection('catalog')" class="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-[#13132B] flex items-center justify-center space-x-2 transition-all">
             <i data-lucide="book-open" class="w-4 h-4"></i>
             <span>Catalogue Ingrédients &amp; Plats</span>
           </button>
@@ -660,7 +719,7 @@
 
         <!-- Volet Gauche : Mon Catalogue (Ingrédients & Plats composés) -->
         <div id="nutrition-sec-catalog" class="xl:col-span-5 space-y-4">
-          <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
+          <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="min-w-0">
                 <h3 class="font-bold text-white text-base flex items-center space-x-2">
@@ -678,7 +737,7 @@
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                   <span>Plat</span>
                 </button>
-                <span id="catalog-items-count" class="text-xs px-2.5 py-1.5 bg-[#0B0F17] border border-[#1F2A3C] text-slate-300 rounded-xl font-medium">
+                <span id="catalog-items-count" class="text-xs px-2.5 py-1.5 bg-[#0B0F17] border border-[#25254A] text-slate-300 rounded-xl font-medium">
                   0 éléments
                 </span>
               </div>
@@ -688,7 +747,7 @@
             <div class="flex flex-col gap-2.5">
               <div class="relative">
                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un ingrédient ou un plat..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
+                <input type="text" id="catalog-search-input" oninput="handleCatalogSearch(event)" placeholder="Rechercher un ingrédient ou un plat..." class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors">
                 <span class="absolute right-2.5 top-2 text-[10px] text-slate-400 font-mono hidden sm:inline">/</span>
               </div>
 
@@ -704,38 +763,38 @@
                     <span>Gérer les amis</span>
                   </button>
                 </div>
-                <div class="grid grid-cols-4 gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]" id="catalog-source-filters-bar">
+                <div class="grid grid-cols-4 gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#25254A]" id="catalog-source-filters-bar">
                   <button id="cat-source-all" onclick="filterCatalogSource('all')" class="px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all text-center truncate shadow-sm" title="Toutes les sources">
                     Tous
                   </button>
-                  <button id="cat-source-mine" onclick="filterCatalogSource('mine')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Mes créations personnelles">
+                  <button id="cat-source-mine" onclick="filterCatalogSource('mine')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#13132B] transition-all text-center truncate flex items-center justify-center space-x-1" title="Mes créations personnelles">
                     <span>Perso</span>
                   </button>
-                  <button id="cat-source-public" onclick="filterCatalogSource('public')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Socle public commun">
+                  <button id="cat-source-public" onclick="filterCatalogSource('public')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#13132B] transition-all text-center truncate flex items-center justify-center space-x-1" title="Socle public commun">
                     <span>Public</span>
                   </button>
-                  <button id="cat-source-friends" onclick="filterCatalogSource('friends')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-all text-center truncate flex items-center justify-center space-x-1" title="Catalogues d'amis abonnés">
+                  <button id="cat-source-friends" onclick="filterCatalogSource('friends')" class="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#13132B] transition-all text-center truncate flex items-center justify-center space-x-1" title="Catalogues d'amis abonnés">
                     <span>Amis</span>
                   </button>
                 </div>
               </div>
 
               <!-- Filtre par Nature (Tous / Ingrédients / Plats composés) -->
-              <div class="flex items-center gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+              <div class="flex items-center gap-1 p-1 bg-[#0B0F17] rounded-xl border border-[#25254A]">
                 <button id="cat-filter-all" onclick="filterCatalog('all')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors">
                   Tous
                 </button>
-                <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors">
+                <button id="cat-filter-food" onclick="filterCatalog('food')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#13132B] transition-colors">
                   Ingrédients
                 </button>
-                <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#151D2A] transition-colors whitespace-nowrap">
+                <button id="cat-filter-dish" onclick="filterCatalog('dish')" class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-[#13132B] transition-colors whitespace-nowrap">
                   Plats composés
                 </button>
               </div>
 
               <!-- Filtre par Catégorie & Tri du Catalogue (BALI-273) -->
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
-                <select id="cat-filter-category" onchange="handleCategoryFilterChange(event)" aria-label="Filtrer par catégorie alimentaire" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                <select id="cat-filter-category" onchange="handleCategoryFilterChange(event)" aria-label="Filtrer par catégorie alimentaire" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
                   <option value="">🏷️ Toutes les catégories</option>
                   <option value="viandes">🥩 Viandes &amp; Volailles</option>
                   <option value="poissons_oeufs">🐟 Poissons &amp; Œufs</option>
@@ -750,7 +809,7 @@
                   <option value="sucre_snacks">🍫 Produits sucrés &amp; Collations</option>
                   <option value="autre">🍽️ Autre</option>
                 </select>
-                <select id="cat-sort-select" onchange="handleCatalogSortChange(event)" aria-label="Trier le catalogue" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+                <select id="cat-sort-select" onchange="handleCatalogSortChange(event)" aria-label="Trier le catalogue" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
                   <option value="name_asc">🔤 Tri : Nom (A → Z)</option>
                   <option value="category">🗂️ Tri : Par catégorie</option>
                   <option value="calories_asc">🔥 Tri : Calories (croissant)</option>
@@ -760,7 +819,7 @@
               </div>
 
               <!-- Filtre par Bienfait Santé (Stage 13) -->
-              <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+              <select id="cat-filter-benefit" onchange="handleBenefitFilterChange(event)" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
                 <option value="">🎯 Tous les bienfaits santé</option>
                 <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
                 <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
@@ -785,37 +844,42 @@
         <!-- Volet Droit : Journal des 4 Repas Quotidiens -->
         <div id="nutrition-sec-journal" class="xl:col-span-7 space-y-4">
           <!-- Barre de Navigation Temporelle / Sélecteur de Date -->
-          <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
+          <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
             <div class="flex items-center space-x-2">
-              <button onclick="changeJournalDate(-1)" title="Jour précédent" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
+              <button onclick="changeJournalDate(-1)" title="Jour précédent" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-300 hover:text-white transition-colors">
                 <i data-lucide="chevron-left" class="w-4 h-4"></i>
               </button>
-              <input type="date" id="journal-date-input" onchange="handleJournalDateChange(event)" class="bg-[#0B0F17] border border-[#1F2A3C] text-white text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500 cursor-pointer">
-              <button onclick="changeJournalDate(1)" title="Jour suivant" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white transition-colors">
+              <input type="date" id="journal-date-input" onchange="handleJournalDateChange(event)" class="bg-[#0B0F17] border border-[#25254A] text-white text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500 cursor-pointer">
+              <button onclick="changeJournalDate(1)" title="Jour suivant" class="p-2 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-300 hover:text-white transition-colors">
                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
               </button>
               <button onclick="setJournalToToday()" class="px-2.5 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/20 text-brand-400 text-xs font-semibold transition-colors">
                 Aujourd'hui
               </button>
+              <button id="btn-sync-nutrition-metrics" type="button" onclick="refreshNutritionWithMetricsSync()" title="Synchroniser l'activité et actualiser les conseils dynamiques" class="px-2.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-400"></i>
+                <span class="hidden sm:inline">Actualiser conseils</span>
+              </button>
             </div>
 
             <!-- Totaux Macronutriments de la journée sélectionnée -->
-            <div class="flex items-center gap-3 text-xs bg-[#0B0F17] border border-[#1F2A3C] px-3.5 py-2 rounded-xl">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs bg-[#0B0F17] border border-[#25254A] px-3.5 py-2 rounded-xl">
               <div>
                 <span class="text-slate-400">Total :</span>
                 <span id="journal-day-cals" class="font-extrabold text-white text-sm ml-1">0</span>
                 <span class="text-[10px] text-slate-400">kcal</span>
               </div>
-              <div class="h-4 w-px bg-[#1F2A3C]"></div>
+              <div class="h-4 w-px bg-[#25254A]"></div>
               <span class="text-brand-400 font-semibold" id="journal-day-prot">0g P</span>
               <span class="text-sky-400 font-semibold" id="journal-day-carbs">0g G</span>
               <span class="text-amber-400 font-semibold" id="journal-day-fat">0g L</span>
               <span class="text-slate-400" id="journal-day-fiber">0g F</span>
+              <span id="journal-workout-bonus-pill" class="hidden text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">+0 kcal séance</span>
             </div>
           </div>
 
           <!-- Synthèse Métabolique & Bienfaits Santé de la Journée (Stage 13) -->
-          <div id="journal-day-benefits-summary" class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-3.5 sm:p-4 space-y-2 shadow-sm">
+          <div id="journal-day-benefits-summary" class="bg-[#13132B] border border-[#25254A] rounded-2xl p-3.5 sm:p-4 space-y-2 shadow-sm">
             <div class="flex items-center justify-between">
               <div class="flex items-center space-x-2">
                 <span class="text-base">🧬</span>
@@ -841,7 +905,7 @@
       <!-- Blocs analytiques & historique liés au Journal des Repas -->
       <div id="nutrition-journal-analytics" class="space-y-6">
         <!-- Tableau Récapitulatif : Calories par Jour & par Repas -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h3 class="font-bold text-white text-base">Tableau des Calories Journalières & par Repas</h3>
@@ -854,7 +918,7 @@
 
           <div class="overflow-x-auto">
             <table class="w-full text-xs text-left">
-              <thead class="text-slate-400 border-b border-[#1F2A3C]">
+              <thead class="text-slate-400 border-b border-[#25254A]">
                 <tr>
                   <th class="py-2.5 px-3">Date</th>
                   <th class="py-2.5 px-3">🥐 Petit-déj</th>
@@ -866,7 +930,7 @@
                   <th class="py-2.5 px-3">Statut</th>
                 </tr>
               </thead>
-              <tbody id="table-meals-calories-body" class="divide-y divide-[#1F2A3C]/60 text-slate-200">
+              <tbody id="table-meals-calories-body" class="divide-y divide-[#25254A]/60 text-slate-200">
                 <!-- Dynamique via renderNutritionView() -->
               </tbody>
             </table>
@@ -874,7 +938,7 @@
         </div>
 
         <!-- Graphique en Barres Empilées des Calories par Repas (7 jours) -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
             <div>
               <h3 class="font-bold text-white text-base">Calories Réparties par Repas & par Jour</h3>
@@ -891,25 +955,25 @@
         </div>
 
         <!-- Journal Récent des Repas avec Miniatures -->
-        <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-4">
+        <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 class="font-bold text-white text-base">Journal des Repas Enregistrés</h3>
               <p class="text-xs text-slate-400">Photos d'assiettes, aliments décomposés et macronutriments</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <select id="meals-history-type-filter" onchange="renderNutritionView()" aria-label="Filtrer par type de repas" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              <select id="meals-history-type-filter" onchange="renderNutritionView()" aria-label="Filtrer par type de repas" class="bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
                 <option value="">🍽️ Tous les repas</option>
                 <option value="breakfast">🥐 Petit-déjeuner</option>
                 <option value="lunch">🥗 Déjeuner</option>
                 <option value="snack">🍎 Goûter</option>
                 <option value="dinner">🍲 Dîner</option>
               </select>
-              <input type="date" id="meals-history-date-filter" onchange="renderNutritionView()" aria-label="Filtrer par jour" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-              <button type="button" onclick="resetMealsHistoryFilters()" title="Réinitialiser les filtres" class="px-2.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-xs text-slate-400 hover:text-white transition-colors">
+              <input type="date" id="meals-history-date-filter" onchange="renderNutritionView()" aria-label="Filtrer par jour" class="bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              <button type="button" onclick="resetMealsHistoryFilters()" title="Réinitialiser les filtres" class="px-2.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-xs text-slate-400 hover:text-white transition-colors">
                 Tout voir
               </button>
-              <span class="text-xs px-2.5 py-1.5 bg-[#1F2A3C] text-slate-300 rounded-xl" id="meals-count-badge">0 repas</span>
+              <span class="text-xs px-2.5 py-1.5 bg-[#25254A] text-slate-300 rounded-xl" id="meals-count-badge">0 repas</span>
             </div>
           </div>
           
@@ -949,6 +1013,69 @@
 
       <!-- Contenu Biométrique Actif (affiché si has_real_data) -->
       <div id="activity-content-active" class="space-y-6">
+
+        <!-- Métriques Physiologiques Clés : SpO2, Température Cutanée, HRV SDNN & Repos (BALI-293) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <!-- SpO2 -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">Oxygène (SpO2)</span>
+              <div class="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                <i data-lucide="droplets" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-spo2">-- <span class="text-xs font-normal text-slate-400">%</span></div>
+              <div class="text-[10px] text-emerald-400 font-semibold" id="badge-activity-spo2">Normal &ge; 95%</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Saturation nocturne moyenne</div>
+          </div>
+
+          <!-- Température Cutanée -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">Température Cutanée</span>
+              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <i data-lucide="thermometer" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-temp">-- <span class="text-xs font-normal text-slate-400">&deg;C</span></div>
+              <div class="text-[10px] text-cyan-400 font-semibold" id="badge-activity-temp">Équilibre thermique</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Variation cutanée continue</div>
+          </div>
+
+          <!-- HRV SDNN -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">HRV SDNN</span>
+              <div class="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-sdnn">-- <span class="text-xs font-normal text-slate-400">ms</span></div>
+              <div class="text-[10px] text-indigo-400 font-semibold" id="badge-activity-sdnn">Variabilité globale 24h</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Système autonome global</div>
+          </div>
+
+          <!-- HRV RMSSD & FC Repos -->
+          <div class="glass-card rounded-2xl p-4 border border-[#25254A] flex flex-col justify-between">
+            <div class="flex items-center justify-between text-slate-400 text-xs">
+              <span class="font-medium">FC Repos & RMSSD</span>
+              <div class="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <i data-lucide="heart-pulse" class="w-3.5 h-3.5"></i>
+              </div>
+            </div>
+            <div class="my-2">
+              <div class="text-2xl sm:text-3xl font-extrabold text-white" id="val-activity-rhr-rmssd">-- <span class="text-xs font-normal text-slate-400">bpm</span></div>
+              <div class="text-[10px] text-rose-400 font-semibold" id="badge-activity-rmssd">RMSSD: -- ms</div>
+            </div>
+            <div class="text-[10px] text-slate-400">Tonus vagal parasympathique</div>
+          </div>
+        </div>
         
         <!-- Rangée 1 : Score de Récupération, Sommeil RingConn & Dette de Sommeil -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1065,15 +1192,18 @@
           
           <!-- Courbe de FC sur 24 h (Échantillons intraday) -->
           <div class="glass-card rounded-2xl p-5 border border-[#25254A] space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 class="text-sm font-bold text-white">Fréquence Cardiaque sur 24 h</h3>
                 <p class="text-xs text-slate-400">Échantillons intraday haute fréquence (bpm)</p>
               </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 font-semibold flex items-center space-x-1">
-                <i data-lucide="heart" class="w-3 h-3 text-rose-400"></i>
-                <span id="stat-resting-hr-pill">Repos: -- bpm</span>
-              </span>
+              <div class="flex items-center space-x-2">
+                <input type="date" id="activity-hr-date-input" onchange="handleActivityDateChange(event)" class="bg-[#0B0F17] border border-[#25254A] text-slate-200 text-[11px] font-semibold rounded-lg px-2.5 py-1 focus:outline-none focus:border-violet-500 cursor-pointer">
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 font-semibold flex items-center space-x-1 shrink-0">
+                  <i data-lucide="heart" class="w-3 h-3 text-rose-400"></i>
+                  <span id="stat-resting-hr-pill">Repos: -- bpm</span>
+                </span>
+              </div>
             </div>
             <div class="h-64">
               <canvas id="chart-hr-intraday"></canvas>
@@ -1178,8 +1308,10 @@
     <section id="view-goals" class="view-content hidden space-y-6">
       <div id="tab-goals-skeleton" class="hidden"></div>
       <div class="space-y-6">
+        <!-- Bannière Coach Détection de Plateau Métabolique (Objectifs) -->
+        <div id="goals-plateau-banner" class="hidden mb-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-100"></div>
         <!-- Profils d'Objectifs Métaboliques 1-Clic -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-4 sm:p-5 shadow-lg">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 sm:p-5 shadow-lg">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <div class="flex items-center space-x-2">
@@ -1189,7 +1321,7 @@
             <h3 class="text-base font-bold text-white mt-1">Profil Actuel : <span id="active-goal-title" class="text-brand-400">🔥 Perte de Poids Durable</span></h3>
             <p id="active-goal-desc" class="text-xs text-slate-400 mt-0.5">Déficit cible -500 kcal/j, 1,8g/kg de protéines, 10 000 pas/j</p>
           </div>
-          <div class="flex items-center space-x-1.5 self-start sm:self-auto text-xs bg-[#0B0F17] p-1 rounded-xl border border-[#1F2A3C]">
+          <div class="flex items-center space-x-1.5 self-start sm:self-auto text-xs bg-[#0B0F17] p-1 rounded-xl border border-[#25254A]">
             <span class="px-2 py-1 text-slate-400">Profils prédéfinis :</span>
           </div>
         </div>
@@ -1214,7 +1346,7 @@
           </button>
 
           <!-- Bouton 2 : Maintien -->
-          <button onclick="selectGoalProfile('maintenance')" id="btn-goal-maintenance" class="goal-btn text-left p-3.5 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2">
+          <button onclick="selectGoalProfile('maintenance')" id="btn-goal-maintenance" class="goal-btn text-left p-3.5 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2">
             <div class="flex items-center justify-between">
               <span class="font-bold text-sm text-slate-200 flex items-center space-x-1.5">
                 <span>⚖️</span>
@@ -1232,7 +1364,7 @@
           </button>
 
           <!-- Bouton 3 : Recomposition Corporelle -->
-          <button onclick="selectGoalProfile('recomposition')" id="btn-goal-recomposition" class="goal-btn text-left p-3.5 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2">
+          <button onclick="selectGoalProfile('recomposition')" id="btn-goal-recomposition" class="goal-btn text-left p-3.5 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2">
             <div class="flex items-center justify-between">
               <span class="font-bold text-sm text-slate-200 flex items-center space-x-1.5">
                 <span>💪</span>
@@ -1251,21 +1383,16 @@
         </div>
 
         <!-- Nouveau : Champ de poids cible -->
-        <div class="mt-4 p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C]">
+        <div class="mt-4 p-3 rounded-xl bg-[#0B0F17] border border-[#25254A]">
           <div class="flex items-center justify-between gap-2">
             <span class="text-sm text-slate-400">Poids Cible (kg)</span>
             <span class="text-xs text-brand-400 font-medium" id="goal-target-weight-value">77 kg</span>
           </div>
-          <input type="number" id="goal-target-weight-input" min="30" max="300" step="0.1" value="77" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-lg px-3 py-2 text-white font-bold text-xl focus:outline-none focus:border-brand-500 transition-colors">
+          <input type="number" id="goal-target-weight-input" min="30" max="300" step="0.1" value="77" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-lg px-3 py-2 text-white font-bold text-xl focus:outline-none focus:border-brand-500 transition-colors">
           <p class="text-xs text-slate-400 mt-1">Appuyez sur Entrée ou cliquez en dehors pour sauver</p>
         </div>
       </div>
 
-      
-          <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-            <div id="bar-cals-in" class="bg-blue-500 h-1.5 rounded-full" style="width: 0%"></div>
-          </div>
-        </div>
         <div class="glass-card rounded-2xl p-5 border border-[#25254A]">
           <div class="flex items-center justify-between">
             <div>
@@ -1284,7 +1411,7 @@
     <section id="view-devices" class="view-content hidden space-y-6">
       <div id="tab-devices-skeleton" class="hidden"></div>
       
-      <div class="bg-gradient-to-r from-indigo-950/70 via-[#151D2A] to-[#151D2A] border border-indigo-500/30 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="bg-gradient-to-r from-indigo-950/70 via-[#13132B] to-[#13132B] border border-indigo-500/30 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-start space-x-3.5">
           <div class="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
             <i data-lucide="wand-2" class="w-6 h-6"></i>
@@ -1304,7 +1431,7 @@
         </button>
       </div>
 
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5">
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="font-bold text-white text-base">Objets Connectés & Synchronisations Actives</h3>
@@ -1322,8 +1449,8 @@
       </div>
 
       <!-- Panneau Données Connectées & Cartographie des Flux (BALI-197) -->
-      <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 space-y-5">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#1F2A3C] pb-4">
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#25254A] pb-4">
           <div>
             <div class="flex items-center space-x-2">
               <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">Hub Données Connectées</span>
@@ -1332,7 +1459,7 @@
             <h3 class="font-bold text-white text-base mt-1">Données Connectées : Statut des Flux & Diagnostic des Sources</h3>
             <p class="text-xs text-slate-300">Inventaire exhaustif des métriques collectées, persistance en base et restitution visuelle dans VitalTrack.</p>
           </div>
-          <button type="button" onclick="loadDataMapView()" class="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+          <button type="button" onclick="loadDataMapView()" class="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors">
             <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400"></i>
             <span>Actualiser la cartographie</span>
           </button>
@@ -1340,7 +1467,7 @@
 
         <!-- Badges Récapitulatifs -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" id="data-map-summary-badges">
-          <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-3 text-center">
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3 text-center">
             <div class="text-[10px] text-slate-400 uppercase font-bold">Total Types</div>
             <div class="text-lg font-extrabold text-white mt-0.5" id="dm-summary-total">17</div>
           </div>
@@ -1370,7 +1497,7 @@
           <p class="text-xs text-slate-400">Visualisez en temps réel l'origine de chaque pesée (pull serveur OAuth Withings vs push Santé Connect Android) pour identifier tout écrasement ou double enregistrement.</p>
           <div class="overflow-x-auto">
             <table class="w-full text-xs text-left" id="table-data-map-weights">
-              <thead class="text-slate-400 border-b border-[#1F2A3C] bg-[#151D2A]/60">
+              <thead class="text-slate-400 border-b border-[#25254A] bg-[#13132B]/60">
                 <tr>
                   <th class="py-2 px-3">Date</th>
                   <th class="py-2 px-3">Poids</th>
@@ -1379,7 +1506,7 @@
                   <th class="py-2 px-3">Horodatage précis</th>
                 </tr>
               </thead>
-              <tbody id="data-map-weights-tbody" class="divide-y divide-[#1F2A3C]">
+              <tbody id="data-map-weights-tbody" class="divide-y divide-[#25254A]">
                 <tr><td colspan="5" class="py-3 px-3 text-slate-500 text-center">Chargement des pesées...</td></tr>
               </tbody>
             </table>
@@ -1399,9 +1526,9 @@
               <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-semibold">● Non lu</span>
             </div>
           </div>
-          <div class="overflow-x-auto border border-[#1F2A3C] rounded-xl">
+          <div class="overflow-x-auto border border-[#25254A] rounded-xl">
             <table class="w-full text-xs text-left" id="table-data-map-metrics">
-              <thead class="text-slate-400 border-b border-[#1F2A3C] bg-[#0B0F17]">
+              <thead class="text-slate-400 border-b border-[#25254A] bg-[#0B0F17]">
                 <tr>
                   <th class="py-2.5 px-3">Métrique de Santé</th>
                   <th class="py-2.5 px-3">Sources Compatibles</th>
@@ -1412,7 +1539,7 @@
                   <th class="py-2.5 px-3 text-center">Statut du Flux</th>
                 </tr>
               </thead>
-              <tbody id="data-map-metrics-tbody" class="divide-y divide-[#1F2A3C]">
+              <tbody id="data-map-metrics-tbody" class="divide-y divide-[#25254A]">
                 <tr><td colspan="7" class="py-4 px-3 text-slate-500 text-center">Chargement de la cartographie...</td></tr>
               </tbody>
             </table>
@@ -1422,6 +1549,52 @@
       </div>
 
       </section>
+
+    <!-- =================================================================== -->
+    <!-- MODAL : SYNCHRONISATION AVANCÉE DEPUIS UNE DATE (BALI-291) -->
+    <!-- =================================================================== -->
+    <div id="modal-date-sync" role="dialog" aria-modal="true" aria-labelledby="modal-date-sync-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+          <h3 class="font-bold text-white text-base flex items-center space-x-2">
+            <i data-lucide="calendar" class="w-5 h-5 text-cyan-400"></i>
+            <span id="modal-date-sync-title">Synchronisation par Date</span>
+          </h3>
+          <button onclick="closeDateSyncModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3.5">
+          <input type="hidden" id="input-date-sync-device-id" value="health_connect">
+
+          <p class="text-xs text-slate-300">
+            Sélectionnez la date de début pour récupérer et réimporter l'ensemble des données de santé depuis cette date jusqu'à aujourd'hui.
+          </p>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Date de début de synchronisation :</label>
+            <input type="date" id="input-date-sync-start" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+          </div>
+
+          <div id="date-sync-last-info" class="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-[11px] text-slate-300">
+            <span class="text-cyan-400 font-semibold block">Dernière synchro mémorisée :</span>
+            <span id="date-sync-last-val" class="text-white font-medium">--</span>
+          </div>
+
+          <div class="pt-2 flex items-center space-x-2">
+            <button type="button" onclick="submitDateSync(false)" id="btn-submit-date-sync" class="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-cyan-600/30 transition-transform active:scale-95">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              <span>Lancer la synchro</span>
+            </button>
+            <button type="button" onclick="openBridgeFromDateSyncModal()" id="btn-open-bridge-date-sync" class="px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center justify-center space-x-1" title="Déclencher directement l'app Android Bridge">
+              <i data-lucide="smartphone" class="w-4 h-4"></i>
+              <span>App Bridge</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
   </main>
 
@@ -1477,14 +1650,14 @@
   <!-- MODAL : CRÉATION / ÉDITION D'UN ÉLÉMENT DU CATALOGUE -->
   <!-- =================================================================== -->
   <div id="modal-catalog-item" role="dialog" aria-modal="true" aria-labelledby="cat-modal-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="book-open" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="cat-modal-title">Créer un élément de catalogue</h3>
         </div>
-        <button onclick="closeCatalogItemModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeCatalogItemModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1494,20 +1667,20 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de l'ingrédient ou du plat *</label>
-          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="text" id="cat-item-name" required placeholder="Ex: Blanc de poulet, Riz basmati, Bowl Quinoa..." class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Type *</label>
-            <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="cat-item-type" onchange="handleCatItemTypeChange(event)" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="food">Ingrédient</option>
               <option value="dish">Plat composé</option>
             </select>
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Catégorie *</label>
-            <select id="cat-item-category" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="cat-item-category" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="viandes">🥩 Viandes &amp; Volailles</option>
               <option value="poissons_oeufs">🐟 Poissons &amp; Œufs</option>
               <option value="legumes">🥦 Légumes &amp; Crudités</option>
@@ -1524,7 +1697,7 @@
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Unité *</label>
-            <select id="cat-item-unit" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="cat-item-unit" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="g">Grammes (g)</option>
               <option value="portion">Portion</option>
               <option value="ml">Millilitres (ml)</option>
@@ -1533,7 +1706,7 @@
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Quantité réf. *</label>
-            <input type="number" step="0.1" id="cat-item-qty" required value="100" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="cat-item-qty" required value="100" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -1552,11 +1725,11 @@
           <div class="space-y-1.5">
             <label class="block text-[11px] font-semibold text-slate-300">Ajouter un ingrédient ou aliment existant :</label>
             <div class="flex items-center gap-2">
-              <select id="dish-ingredient-select" onchange="handleDishIngredientSelectChange()" class="flex-1 min-w-0 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 truncate">
+              <select id="dish-ingredient-select" onchange="handleDishIngredientSelectChange()" class="flex-1 min-w-0 bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 truncate">
                 <option value="">-- Choisir un aliment existant à ajouter --</option>
               </select>
               <div class="flex items-center space-x-1 shrink-0">
-                <input type="number" step="any" min="0.1" id="dish-ingredient-add-qty" value="100" class="w-16 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs font-bold text-white text-center focus:outline-none focus:border-indigo-500">
+                <input type="number" step="any" min="0.1" id="dish-ingredient-add-qty" value="100" class="w-16 bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs font-bold text-white text-center focus:outline-none focus:border-indigo-500">
                 <span id="dish-ingredient-add-unit" class="text-xs text-slate-400 font-bold w-6">g</span>
               </div>
               <button type="button" onclick="addIngredientToDish()" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-sm shrink-0 flex items-center space-x-1">
@@ -1571,7 +1744,7 @@
 
           <!-- Liste des ingrédients composant le plat -->
           <div id="dish-ingredients-list" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-            <div class="py-3 text-center text-xs text-slate-400 italic bg-[#151D2A]/50 rounded-xl border border-dashed border-[#1F2A3C] p-2">
+            <div class="py-3 text-center text-xs text-slate-400 italic bg-[#13132B]/50 rounded-xl border border-dashed border-[#25254A] p-2">
               Aucun ingrédient ajouté pour l'instant. Choisissez un aliment ci-dessus pour composer votre plat.
             </div>
           </div>
@@ -1599,29 +1772,29 @@
         <div class="grid grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Calories *</label>
-            <input type="number" step="1" id="cat-item-cals" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
+            <input type="number" step="1" id="cat-item-cals" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-brand-400 mb-1">Protéines</label>
-            <input type="number" step="0.1" id="cat-item-prot" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="cat-item-prot" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-sky-400 mb-1">Glucides</label>
-            <input type="number" step="0.1" id="cat-item-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="cat-item-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-amber-400 mb-1">Lipides</label>
-            <input type="number" step="0.1" id="cat-item-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="cat-item-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Fibres (optionnel)</label>
-          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="number" step="0.1" id="cat-item-fiber" oninput="triggerModalNutritionEvaluation()" placeholder="Grammes de fibres" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Section Bienfaits Santé EFSA / ANSES (Stage 13) -->
-        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl space-y-2.5">
+        <div class="p-3 bg-[#0B0F17] border border-[#25254A] rounded-xl space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-white flex items-center gap-1.5">
               <span>🩺</span>
@@ -1649,7 +1822,7 @@
             <div id="modal-selected-benefits-tags" class="flex flex-wrap gap-1.5 mb-2 min-h-[28px]">
               <!-- Tags sélectionnés -->
             </div>
-            <select id="modal-benefit-picker" onchange="addBenefitToModalSelection(this.value); this.value='';" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
+            <select id="modal-benefit-picker" onchange="addBenefitToModalSelection(this.value); this.value='';" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
               <option value="">+ Ajouter un bienfait du référentiel...</option>
               <option value="cardio_protection">❤️ Protection cardiovasculaire</option>
               <option value="cholesterol_regulation">🩸 Régulation du cholestérol</option>
@@ -1678,8 +1851,8 @@
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
-            <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
+            <input type="text" id="cat-item-photo-url" placeholder="URL d'image ou photo" class="flex-1 bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+            <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
               <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
               <input type="file" accept="image/*" class="hidden" onchange="handleCatalogPhotoFile(event)">
@@ -1687,8 +1860,8 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
-          <button type="button" onclick="closeCatalogItemModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium transition-colors">
+        <div class="flex items-center gap-2 pt-2 border-t border-[#25254A]">
+          <button type="button" onclick="closeCatalogItemModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] text-slate-300 text-xs font-medium transition-colors">
             Annuler
           </button>
           <button type="submit" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 transition-all flex items-center justify-center space-x-1">
@@ -1707,8 +1880,8 @@
   
   <!-- POP-IN INLINE RAPIDE POUR DROP DE QUANTITE -->
   <div id="modal-drop-portion" role="dialog" aria-modal="true" aria-labelledby="drop-modal-title" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-[#151D2A] border-2 border-brand-500/60 shadow-2xl shadow-brand-500/20 w-full max-w-md rounded-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+    <div class="bg-[#13132B] border-2 border-brand-500/60 shadow-2xl shadow-brand-500/20 w-full max-w-md rounded-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2.5">
           <span class="p-2 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20">
             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
@@ -1718,13 +1891,13 @@
             <p class="text-xs text-slate-400">Cible : <span id="drop-modal-slot-title" class="text-brand-400 font-bold uppercase"></span></p>
           </div>
         </div>
-        <button onclick="closeDropPortionModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeDropPortionModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#25254A] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="p-3.5 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl flex items-center gap-3">
-        <div id="drop-modal-item-photo-container" class="w-12 h-12 rounded-lg bg-[#151D2A] border border-[#1F2A3C] overflow-hidden shrink-0 hidden">
+      <div class="p-3.5 bg-[#0B0F17] border border-[#25254A] rounded-xl flex items-center gap-3">
+        <div id="drop-modal-item-photo-container" class="w-12 h-12 rounded-lg bg-[#13132B] border border-[#25254A] overflow-hidden shrink-0 hidden">
           <img id="drop-modal-item-photo" src="" alt="" class="w-full h-full object-cover">
         </div>
         <div class="flex-1 min-w-0">
@@ -1742,7 +1915,7 @@
           <div class="relative flex-1">
             <input type="number" step="any" id="drop-modal-qty-input" oninput="updateDropModalLiveMacros()" class="w-full bg-[#0B0F17] border-2 border-brand-500/50 rounded-xl px-4 py-2.5 text-base font-extrabold text-white focus:outline-none focus:border-brand-500 shadow-inner">
           </div>
-          <span id="drop-modal-unit-label" class="px-3 py-2.5 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl text-xs font-bold text-slate-300 min-w-[50px] text-center">g</span>
+          <span id="drop-modal-unit-label" class="px-3 py-2.5 bg-[#0B0F17] border border-[#25254A] rounded-xl text-xs font-bold text-slate-300 min-w-[50px] text-center">g</span>
         </div>
       </div>
 
@@ -1768,8 +1941,8 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
-        <button type="button" onclick="closeDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-400 hover:text-white text-xs font-semibold transition-colors flex items-center justify-center space-x-1">
+      <div class="flex items-center gap-2 pt-2 border-t border-[#25254A]">
+        <button type="button" onclick="closeDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] text-slate-400 hover:text-white text-xs font-semibold transition-colors flex items-center justify-center space-x-1">
           <span>Annuler (Échap)</span>
         </button>
         <button type="button" onclick="confirmDropPortionModal()" class="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-lg shadow-brand-500/20 flex items-center justify-center space-x-1.5 transition-all active:scale-95">
@@ -1781,9 +1954,9 @@
   </div>
 
   <div id="modal-select-catalog-item" role="dialog" aria-modal="true" aria-labelledby="modal-select-catalog-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="plus-circle" class="w-5 h-5 text-brand-400"></i>
           <div>
@@ -1791,7 +1964,7 @@
             <p class="text-xs text-slate-400">Repas sélectionné : <span id="modal-select-cat-slot-title" class="text-brand-400 font-bold">Déjeuner</span></p>
           </div>
         </div>
-        <button onclick="closeSelectFromCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeSelectFromCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1800,15 +1973,21 @@
       <div id="picker-step-select" class="space-y-3">
         <div class="relative">
           <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="text" oninput="renderModalCatalogList(this.value)" placeholder="Rechercher parmi vos aliments & plats..." class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div id="modal-catalog-picker-list" class="space-y-2 max-h-64 overflow-y-auto pr-1">
           <!-- Dynamique -->
         </div>
 
-        <div class="pt-2 border-t border-[#1F2A3C] flex items-center justify-between">
-          <span class="text-xs text-slate-400">Aliment absent ?</span>
+        <div class="pt-2 border-t border-[#25254A] flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-400">Aliment absent ?</span>
+            <button type="button" onclick="openBarcodeScannerModal(currentMealSlotForCatalogAdd)" class="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1">
+              <i data-lucide="scan-barcode" class="w-3.5 h-3.5"></i>
+              <span>Scanner code-barres</span>
+            </button>
+          </div>
           <button onclick="openCreateCatalogItemModal('food')" class="text-xs font-semibold text-brand-400 hover:underline">
             + Créer dans mon catalogue
           </button>
@@ -1822,11 +2001,11 @@
           <span>Choisir un autre aliment</span>
         </button>
 
-        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl">
+        <div class="p-3 bg-[#0B0F17] border border-[#25254A] rounded-xl">
           <h4 id="picker-selected-item-name" class="font-bold text-sm text-white mb-1">Riz basmati</h4>
           <div class="flex items-center gap-2 mt-2">
             <label class="text-xs text-slate-300 font-semibold">Quantité consommée :</label>
-            <input type="number" step="0.1" id="picker-portion-qty" oninput="updatePickerLiveMacros()" value="100" class="w-24 bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="picker-portion-qty" oninput="updatePickerLiveMacros()" value="100" class="w-24 bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
             <span id="picker-portion-unit-label" class="text-xs text-slate-400">g</span>
           </div>
         </div>
@@ -1838,8 +2017,8 @@
           <div class="text-xs text-slate-300" id="picker-live-macros">Protéines: 0g | Glucides: 0g | Lipides: 0g</div>
         </div>
 
-        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
-          <button type="button" onclick="closeSelectFromCatalogModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium">
+        <div class="flex items-center gap-2 pt-2 border-t border-[#25254A]">
+          <button type="button" onclick="closeSelectFromCatalogModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] text-slate-300 text-xs font-medium">
             Annuler
           </button>
           <button type="button" onclick="confirmAddCatalogItemToMeal()" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 flex items-center justify-center space-x-1">
@@ -1852,13 +2031,116 @@
     </div>
   </div>
 
-      <!-- =================================================================== -->
+  <!-- =================================================================== -->
+  <!-- MODAL : SCANNER CODE-BARRES OPENFOODFACTS (BALI-295) -->
+  <!-- =================================================================== -->
+  <div id="modal-barcode-scanner" role="dialog" aria-modal="true" aria-labelledby="modal-barcode-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
+    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+      
+      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="scan-barcode" class="w-5 h-5 text-amber-400"></i>
+          <div>
+            <h3 class="font-bold text-white text-base" id="modal-barcode-title">Scanner un Code-Barres</h3>
+            <p class="text-xs text-slate-400">Recherche automatique OpenFoodFacts</p>
+          </div>
+        </div>
+        <button onclick="closeBarcodeScannerModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Étape 1 : Scan vidéo ou saisie manuelle code-barres -->
+      <div id="barcode-step-scan" class="space-y-4">
+        <div class="relative bg-black rounded-xl overflow-hidden aspect-video border border-[#1F2A3C] flex items-center justify-center">
+          <video id="barcode-video-preview" playsinline class="w-full h-full object-cover hidden"></video>
+          <div id="barcode-camera-placeholder" class="text-center p-4 space-y-2">
+            <i data-lucide="camera" class="w-8 h-8 text-slate-500 mx-auto"></i>
+            <p class="text-xs text-slate-400">Caméra inactive ou non disponible</p>
+            <button type="button" onclick="startCameraBarcodeScanner()" class="px-3 py-1.5 rounded-lg bg-amber-600/30 border border-amber-500/40 text-amber-300 text-xs font-semibold hover:bg-amber-600/50">
+              Activer la caméra
+            </button>
+          </div>
+          <div id="barcode-scan-overlay" class="absolute inset-0 border-2 border-dashed border-amber-400/60 rounded-xl pointer-events-none hidden flex items-center justify-center">
+            <div class="text-[11px] bg-black/60 px-2 py-1 rounded text-amber-300">Alignez le code-barres ici</div>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-slate-300">Ou saisir le code-barres manuellement :</label>
+          <div class="flex gap-2">
+            <input type="text" id="barcode-manual-input" placeholder="Ex: 3017620422003" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500" onkeydown="if(event.key==='Enter') lookupManualBarcode()">
+            <button type="button" onclick="lookupManualBarcode()" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-1">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              <span>Rechercher</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="barcode-scan-status" class="text-xs text-slate-400 text-center min-h-[1.25rem]"></div>
+      </div>
+
+      <!-- Étape 2 : Résultat du produit scanné -->
+      <div id="barcode-step-result" class="hidden space-y-4">
+        <div class="p-3 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl flex gap-3 items-center">
+          <div id="barcode-result-photo-container" class="w-14 h-14 rounded-lg bg-[#151D2A] border border-[#1F2A3C] overflow-hidden shrink-0 flex items-center justify-center">
+            <img id="barcode-result-photo" src="" alt="" class="w-full h-full object-cover hidden">
+            <i id="barcode-result-photo-placeholder" data-lucide="package" class="w-6 h-6 text-slate-500"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <h4 id="barcode-result-name" class="font-bold text-sm text-white truncate">Nom du produit</h4>
+              <span id="barcode-result-nutriscore" class="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-700 text-slate-300">?</span>
+            </div>
+            <p id="barcode-result-brand" class="text-xs text-slate-400 truncate">Marque inconnue</p>
+            <p id="barcode-result-code" class="text-[11px] text-slate-500 font-mono">Code : 0000000000000</p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl space-y-1">
+          <div class="text-[11px] text-slate-400 font-medium">Pour 100g de référence :</div>
+          <div class="text-base font-extrabold text-brand-400" id="barcode-result-cals">0 kcal</div>
+          <div class="text-xs text-slate-300" id="barcode-result-macros">P: 0g | G: 0g | L: 0g | Fibres: 0g</div>
+        </div>
+
+        <div id="barcode-portion-selector-box" class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold text-slate-300">Quantité à ajouter :</label>
+            <span class="text-xs text-amber-400 font-bold" id="barcode-live-portion-cals">0 kcal</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="number" step="1" min="1" id="barcode-portion-qty" oninput="updateBarcodeLivePortionMacros()" value="100" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-amber-500">
+            <span class="text-xs text-slate-400 font-semibold px-2">g</span>
+          </div>
+        </div>
+
+        <div class="space-y-2 pt-2 border-t border-[#1F2A3C]">
+          <button type="button" id="btn-barcode-add-to-meal" onclick="addScannedProductToActiveMeal()" class="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-lg shadow-amber-600/20 flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span id="btn-barcode-add-meal-label">Ajouter directement au repas</span>
+          </button>
+          <div class="flex gap-2">
+            <button type="button" onclick="addScannedProductToCatalog()" class="flex-1 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center justify-center gap-1">
+              <i data-lucide="bookmark-plus" class="w-3.5 h-3.5 text-brand-400"></i>
+              <span>Sauvegarder au catalogue</span>
+            </button>
+            <button type="button" onclick="resetBarcodeScannerStep()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-400 text-xs font-medium">
+              Autre scan
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
   <!-- MODAL : GESTION DES ABONNEMENTS AUX CATALOGUES D'AMIS (BALI-85) -->
   <!-- =================================================================== -->
   <div id="modal-friends-catalog" role="dialog" aria-modal="true" aria-labelledby="modal-friends-cat-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-150">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2.5">
           <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
             <i data-lucide="users" class="w-5 h-5"></i>
@@ -1871,20 +2153,20 @@
             <p class="text-xs text-slate-400">Abonnez-vous aux catalogues de vos proches pour découvrir leurs plats &amp; recettes</p>
           </div>
         </div>
-        <button onclick="closeFriendsCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeFriendsCatalogModal()" aria-label="Fermer la boîte de dialogue" class="p-1.5 rounded-lg hover:bg-[#25254A] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
       <!-- Section 1 : Ajouter un ami (Email ou Identifiant) -->
-      <div class="p-3.5 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl space-y-2">
+      <div class="p-3.5 bg-[#0B0F17] border border-[#25254A] rounded-xl space-y-2">
         <label for="friend-sub-input" class="block text-xs font-semibold text-slate-300">
           S'abonner au catalogue d'un ami :
         </label>
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
             <i data-lucide="at-sign" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
-            <input type="text" id="friend-sub-input" placeholder="Adresse email ou identifiant de votre ami..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors" onkeydown="if(event.key==='Enter'){event.preventDefault(); addFriendSubscription();}">
+            <input type="text" id="friend-sub-input" placeholder="Adresse email ou identifiant de votre ami..." class="w-full bg-[#13132B] border border-[#25254A] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-colors" onkeydown="if(event.key==='Enter'){event.preventDefault(); addFriendSubscription();}">
           </div>
           <button type="button" onclick="addFriendSubscription()" id="btn-add-friend-sub" class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-md shadow-brand-600/20 flex items-center space-x-1.5 shrink-0 active:scale-95">
             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
@@ -1916,7 +2198,7 @@
       </div>
 
       <!-- Section 3 : Explorateur dédié du catalogue de l'ami sélectionné -->
-      <div id="friend-catalog-explorer-view" class="hidden pt-3 border-t border-[#1F2A3C] space-y-3">
+      <div id="friend-catalog-explorer-view" class="hidden pt-3 border-t border-[#25254A] space-y-3">
         <div class="flex items-center justify-between bg-brand-500/10 border border-brand-500/20 rounded-xl p-3">
           <div class="flex items-center space-x-2.5">
             <span class="text-xl">🥗</span>
@@ -1928,7 +2210,7 @@
               <div id="explorer-friend-items-count" class="text-[10px] text-slate-400">0 aliments disponibles</div>
             </div>
           </div>
-          <button type="button" onclick="closeFriendCatalogExplorer()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-[#0B0F17] border border-[#1F2A3C]">
+          <button type="button" onclick="closeFriendCatalogExplorer()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-[#0B0F17] border border-[#25254A]">
             Fermer l'explorateur
           </button>
         </div>
@@ -1938,8 +2220,8 @@
         </div>
       </div>
 
-      <div class="flex items-center justify-end pt-2 border-t border-[#1F2A3C]">
-        <button type="button" onclick="closeFriendsCatalogModal()" class="px-4 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-semibold transition-colors">
+      <div class="flex items-center justify-end pt-2 border-t border-[#25254A]">
+        <button type="button" onclick="closeFriendsCatalogModal()" class="px-4 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] text-slate-300 text-xs font-semibold transition-colors">
           Fermer (Échap)
         </button>
       </div>
@@ -1950,14 +2232,14 @@
 <!-- MODAL 1 : ANALYSE PHOTO DE REPAS & CURSEUR PORTION -->
   <!-- =================================================================== -->
   <div id="modal-meal" role="dialog" aria-modal="true" aria-labelledby="modal-meal-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="camera" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="modal-meal-title">📸 Analyser mon repas</h3>
         </div>
-        <button onclick="closeMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1967,7 +2249,7 @@
         <!-- Zone Photo Smartphone / Fichier -->
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prendre une photo de l'assiette ou choisir un fichier</label>
-          <div class="relative border-2 border-dashed border-[#1F2A3C] hover:border-brand-500/50 rounded-xl p-4 text-center cursor-pointer bg-[#0B0F17]/50 transition-colors" onclick="document.getElementById('meal-file-input').click()">
+          <div class="relative border-2 border-dashed border-[#25254A] hover:border-brand-500/50 rounded-xl p-4 text-center cursor-pointer bg-[#0B0F17]/50 transition-colors" onclick="document.getElementById('meal-file-input').click()">
             <input type="file" id="meal-file-input" accept="image/*" capture="environment" class="hidden" onchange="handleMealPhotoSelected(event)">
             <div id="meal-photo-placeholder" class="space-y-1">
               <i data-lucide="image-plus" class="w-8 h-8 mx-auto text-brand-400"></i>
@@ -1983,7 +2265,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Moment du repas</label>
-            <select id="meal-type-select" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="meal-type-select" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="breakfast">Petit-déjeuner</option>
               <option value="lunch" selected>Déjeuner</option>
               <option value="dinner">Dîner</option>
@@ -1992,13 +2274,13 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-            <input type="date" id="meal-date-input" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="date" id="meal-date-input" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Description ou ingrédients (facultatif)</label>
-          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="text" id="meal-desc-input" placeholder="Ex: Poulet rôti, riz basmati, brocolis vapeur" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <!-- Bouton Déclenchement de l'analyse -->
@@ -2008,10 +2290,10 @@
         </button>
 
         <!-- Résultats de l'estimation IA -->
-        <div id="meal-estimation-result" class="hidden border-t border-[#1F2A3C] pt-3 space-y-3">
+        <div id="meal-estimation-result" class="hidden border-t border-[#25254A] pt-3 space-y-3">
           
           <!-- Curseur d'ajustement de portion interactif -->
-          <div class="bg-[#0B0F17] p-3 rounded-xl border border-[#1F2A3C] space-y-1.5">
+          <div class="bg-[#0B0F17] p-3 rounded-xl border border-[#25254A] space-y-1.5">
             <div class="flex justify-between items-center text-xs">
               <span class="font-semibold text-slate-300">Ajustement de portion :</span>
               <span class="font-bold text-brand-400" id="portion-scale-val">1.0x (Normale)</span>
@@ -2026,19 +2308,19 @@
 
           <!-- Résumé calorique et macros calculés -->
           <div class="grid grid-cols-4 gap-2 text-center">
-            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
+            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#25254A]">
               <span class="text-[10px] text-slate-400 block">Calories</span>
               <span class="text-sm font-extrabold text-white" id="est-calories">0 kcal</span>
             </div>
-            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
+            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#25254A]">
               <span class="text-[10px] text-brand-400 block">Protéines</span>
               <span class="text-xs font-bold text-white" id="est-protein">0g</span>
             </div>
-            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
+            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#25254A]">
               <span class="text-[10px] text-sky-400 block">Glucides</span>
               <span class="text-xs font-bold text-white" id="est-carbs">0g</span>
             </div>
-            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#1F2A3C]">
+            <div class="bg-[#0B0F17] p-2 rounded-xl border border-[#25254A]">
               <span class="text-[10px] text-amber-400 block">Lipides</span>
               <span class="text-xs font-bold text-white" id="est-fat">0g</span>
             </div>
@@ -2058,7 +2340,7 @@
               <i data-lucide="check" class="w-4 h-4"></i>
               <span>Enregistrer dans mon journal</span>
             </button>
-            <button type="button" onclick="saveEstimatedMealAsTemplate()" id="btn-save-as-template" class="w-full py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-amber-500/30 hover:border-amber-500 text-amber-300 font-semibold text-xs transition-all flex items-center justify-center space-x-2">
+            <button type="button" onclick="saveEstimatedMealAsTemplate()" id="btn-save-as-template" class="w-full py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-amber-500/30 hover:border-amber-500 text-amber-300 font-semibold text-xs transition-all flex items-center justify-center space-x-2">
               <i data-lucide="star" class="w-4 h-4 text-amber-400"></i>
               <span>⭐ Sauvegarder comme plat réutilisable</span>
             </button>
@@ -2074,9 +2356,9 @@
   <!-- MODAL : BIBLIOTHÈQUE DE PLATS SAUVEGARDÉS & SÉLECTEUR RAPIDE -->
   <!-- =================================================================== -->
   <div id="modal-saved-meals" role="dialog" aria-modal="true" aria-labelledby="modal-saved-meals-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="bookmark" class="w-5 h-5 text-indigo-400"></i>
           <h3 class="font-bold text-white text-base" id="modal-saved-meals-title">Bibliothèque de Plats Réutilisables</h3>
@@ -2086,14 +2368,14 @@
             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
             <span>Nouveau</span>
           </button>
-          <button onclick="closeSavedMealsLibraryModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+          <button onclick="closeSavedMealsLibraryModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
       </div>
 
       <!-- Onglets Filtre par Repas -->
-      <div class="flex flex-wrap items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#1F2A3C]">
+      <div class="flex flex-wrap items-center gap-1.5 p-1 bg-[#0B0F17] rounded-xl border border-[#25254A]">
         <button onclick="filterSavedMealsLibrary(null)" id="filter-saved-all" class="saved-meal-filter-btn flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-colors">
           Tous
         </button>
@@ -2123,14 +2405,14 @@
   <!-- MODAL : CRÉATION / ÉDITION D'UN PLAT TYPE -->
   <!-- =================================================================== -->
   <div id="modal-create-saved-meal" role="dialog" aria-modal="true" aria-labelledby="saved-meal-form-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <i data-lucide="utensils" class="w-5 h-5 text-brand-400"></i>
           <h3 class="font-bold text-white text-base" id="saved-meal-form-title">Créer un Plat Type Réutilisable</h3>
         </div>
-        <button onclick="closeCreateSavedMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeCreateSavedMealModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2140,13 +2422,13 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du plat *</label>
-          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="text" id="saved-meal-name" required placeholder="Ex: Bowl Flocons d'Avoine & Fruits Rouges" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Type de repas *</label>
-            <select id="saved-meal-type" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="saved-meal-type" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="breakfast">🥐 Petit-déjeuner</option>
               <option value="lunch" selected>🥗 Déjeuner</option>
               <option value="snack">🍎 Goûter / Collation</option>
@@ -2155,7 +2437,7 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Portion / Quantité</label>
-            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+            <input type="text" id="saved-meal-serving" placeholder="Ex: 350g ou 1 grand bol" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -2163,32 +2445,32 @@
         <div class="grid grid-cols-4 gap-2">
           <div>
             <label class="block text-[11px] font-semibold text-slate-300 mb-1">Calories *</label>
-            <input type="number" step="1" id="saved-meal-calories" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500 font-bold">
+            <input type="number" step="1" id="saved-meal-calories" required placeholder="kcal" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500 font-bold">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-brand-400 mb-1">Protéines</label>
-            <input type="number" step="0.1" id="saved-meal-protein" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="saved-meal-protein" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-sky-400 mb-1">Glucides</label>
-            <input type="number" step="0.1" id="saved-meal-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="saved-meal-carbs" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-[11px] font-semibold text-amber-400 mb-1">Lipides</label>
-            <input type="number" step="0.1" id="saved-meal-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="saved-meal-fat" placeholder="g" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Composition / Ingrédients (facultatif)</label>
-          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+          <input type="text" id="saved-meal-ingredients" placeholder="Ex: 80g avoine, 150ml lait d'amande, myrtilles" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
         </div>
 
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Photo (URL ou prise de vue)</label>
           <div class="flex items-center gap-2">
-            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
-            <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
+            <input type="text" id="saved-meal-photo-url" placeholder="URL d'image ou photo encodée" class="flex-1 bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+            <label class="cursor-pointer px-3 py-2 rounded-xl bg-[#13132B] hover:bg-[#25254A] border border-[#25254A] text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0">
               <i data-lucide="camera" class="w-4 h-4 text-brand-400"></i>
               <span>Photo</span>
               <input type="file" accept="image/*" class="hidden" onchange="handleSavedMealPhotoFile(event)">
@@ -2201,8 +2483,8 @@
           <label for="saved-meal-favorite" class="text-xs text-slate-300 font-medium cursor-pointer">⭐ Marquer comme plat favori</label>
         </div>
 
-        <div class="flex items-center gap-2 pt-2 border-t border-[#1F2A3C]">
-          <button type="button" onclick="closeCreateSavedMealModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] text-slate-300 text-xs font-medium transition-colors">
+        <div class="flex items-center gap-2 pt-2 border-t border-[#25254A]">
+          <button type="button" onclick="closeCreateSavedMealModal()" class="flex-1 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] text-slate-300 text-xs font-medium transition-colors">
             Annuler
           </button>
           <button type="submit" id="btn-submit-saved-meal" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-lg shadow-brand-600/20 transition-all flex items-center justify-center space-x-1">
@@ -2219,13 +2501,13 @@
   <!-- MODAL 2 : SAISIE DU POIDS (KG) -->
   <!-- =================================================================== -->
   <div id="modal-weight" role="dialog" aria-modal="true" aria-labelledby="modal-weight-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-sm rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
           <i data-lucide="scale" class="w-5 h-5 text-brand-400"></i>
           <span id="modal-weight-title">Saisie rapide de la pesée</span>
         </h3>
-        <button onclick="closeWeightModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeWeightModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2233,20 +2515,20 @@
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-          <input type="date" id="input-weight-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+          <input type="date" id="input-weight-date" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Poids (kg) *</label>
-          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
+          <input type="number" step="0.1" id="input-weight-val" placeholder="Ex: 79.8" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-400 mb-1">Masse grasse (%)</label>
-            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="input-body-fat" placeholder="Ex: 20.2" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-400 mb-1">Masse muscle (kg)</label>
-            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="input-muscle-mass" placeholder="Ex: 38.2" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -2262,13 +2544,13 @@
   <!-- MODAL 3 : SAISIE ACTIVITÉ / PAS -->
   <!-- =================================================================== -->
   <div id="modal-activity" role="dialog" aria-modal="true" aria-labelledby="modal-activity-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-sm rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <h3 class="font-bold text-white text-base flex items-center space-x-2">
           <i data-lucide="footprints" class="w-5 h-5 text-brand-400"></i>
           <span id="modal-activity-title">Ajouter Activité & Pas</span>
         </h3>
-        <button onclick="closeActivityModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeActivityModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2276,20 +2558,20 @@
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Date</label>
-          <input type="date" id="input-act-date" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+          <input type="date" id="input-act-date" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre de pas du jour</label>
-          <input type="number" id="input-act-steps" placeholder="Ex: 10450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
+          <input type="number" id="input-act-steps" placeholder="Ex: 10450" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 font-bold">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-400 mb-1">Calories brûlées (kcal)</label>
-            <input type="number" id="input-act-cals" placeholder="Ex: 450" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="input-act-cals" placeholder="Ex: 450" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-400 mb-1">Minutes d'exercice</label>
-            <input type="number" id="input-act-minutes" placeholder="Ex: 45" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="input-act-minutes" placeholder="Ex: 45" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
@@ -2304,8 +2586,8 @@
   <!-- MODAL 4 : PROFIL UTILISATEUR & OBJECTIFS PERSONNALISÉS -->
   <!-- =================================================================== -->
   <div id="modal-profile" role="dialog" aria-modal="true" aria-labelledby="modal-profile-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2">
           <div class="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
             <i data-lucide="user" class="w-4 h-4"></i>
@@ -2315,14 +2597,14 @@
             <p class="text-[10px] text-slate-400">Paramètres morphologiques et calcul du métabolisme basal</p>
           </div>
         </div>
-        <button onclick="closeProfileModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeProfileModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
       <div class="space-y-3.5">
         <!-- Compte Google Lié dans le Profil -->
-        <div id="prof-google-banner" class="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] flex items-center justify-between">
+        <div id="prof-google-banner" class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A] flex items-center justify-between">
           <div class="flex items-center space-x-2.5">
             <div id="prof-google-avatar" class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden shrink-0 border border-white/20">
               <svg class="w-4 h-4" viewBox="0 0 24 24">
@@ -2343,50 +2625,50 @@
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Prénom ou Pseudo</label>
-          <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+          <input type="text" id="prof-name" placeholder="Sébastien" value="Sébastien" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
         </div>
 
         <div class="grid grid-cols-3 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Sexe</label>
-            <select id="prof-gender" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <select id="prof-gender" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
               <option value="male" selected>Homme</option>
               <option value="female">Femme</option>
             </select>
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Âge (ans)</label>
-            <input type="number" id="prof-age" value="35" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="prof-age" value="35" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Taille (cm)</label>
-            <input type="number" id="prof-height" value="178" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="prof-height" value="178" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Poids Cible (kg)</label>
-            <input type="number" step="0.1" id="prof-target-weight" value="77.0" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-brand-400 font-bold focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="prof-target-weight" value="77.0" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-brand-400 font-bold focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Objectif Pas / jour</label>
-            <input type="number" id="prof-target-steps" value="10000" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
+            <input type="number" id="prof-target-steps" value="10000" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-slate-300 mb-1">Cible Calories (kcal/j)</label>
-            <input type="number" id="prof-target-cals" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" id="prof-target-cals" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
           <div>
             <label class="block text-xs text-slate-300 mb-1">Protéines (g / kg)</label>
-            <input type="number" step="0.1" id="prof-target-prot" value="1.8" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
+            <input type="number" step="0.1" id="prof-target-prot" value="1.8" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500">
           </div>
         </div>
 
-        <div class="pt-2 border-t border-[#1F2A3C]">
+        <div class="pt-2 border-t border-[#25254A]">
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-xs font-semibold text-slate-300">Objets et Capteurs Associés (cliquez pour connecter)</label>
             <button type="button" onclick="closeProfileModal(); openConnectWizardModal('ringconn')" class="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center space-x-1 underline">
@@ -2395,7 +2677,7 @@
             </button>
           </div>
           <div class="grid grid-cols-2 gap-2 text-xs">
-            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('ringconn')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-indigo-500/60 text-left transition-all cursor-pointer group">
+            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('ringconn')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-indigo-500/60 text-left transition-all cursor-pointer group">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] text-slate-400 block">Bague connectée :</span>
                 <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">Configurer →</span>
@@ -2405,7 +2687,7 @@
                 <span id="prof-ring-label">RingConn Gen 3</span>
               </span>
             </button>
-            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('health_connect')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-brand-500/60 text-left transition-all cursor-pointer group">
+            <button type="button" onclick="closeProfileModal(); openConnectWizardModal('health_connect')" class="p-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-brand-500/60 text-left transition-all cursor-pointer group">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] text-slate-400 block">Agrégateur santé :</span>
                 <span class="text-[9px] px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 font-semibold">Configurer →</span>
@@ -2419,7 +2701,7 @@
         </div>
 
         <!-- Section Cercle d'Amis & Partage dans le Profil -->
-        <div class="pt-2 border-t border-[#1F2A3C]">
+        <div class="pt-2 border-t border-[#25254A]">
           <div class="p-3 rounded-xl bg-gradient-to-r from-brand-950/40 to-[#0B0F17] border border-brand-500/30 flex items-center justify-between">
             <div class="flex items-center space-x-2.5">
               <div class="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
@@ -2447,7 +2729,7 @@
         </button>
 
         <!-- Persistance Anti-Perte Vercel & Sauvegarde Durable -->
-        <div class="pt-3 border-t border-[#1F2A3C] space-y-2">
+        <div class="pt-3 border-t border-[#25254A] space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-white flex items-center space-x-1.5">
               <i data-lucide="shield-check" class="w-4 h-4 text-brand-400"></i>
@@ -2458,11 +2740,11 @@
           <p class="text-[11px] text-slate-400">Vos données sont automatiquement synchronisées localement sur votre téléphone/navigateur (localStorage) pour garantir zéro perte de données même sur Vercel Serverless.</p>
           
           <div class="grid grid-cols-2 gap-2 pt-1">
-            <button type="button" onclick="exportDataBackup()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+            <button type="button" onclick="exportDataBackup()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
               <i data-lucide="download" class="w-3.5 h-3.5 text-brand-400"></i>
               <span>Exporter JSON (1-clic)</span>
             </button>
-            <button type="button" onclick="document.getElementById('file-import-backup').click()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#1F2A3C] border border-[#1F2A3C] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
+            <button type="button" onclick="document.getElementById('file-import-backup').click()" class="py-2 px-3 rounded-xl bg-[#0B0F17] hover:bg-[#25254A] border border-[#25254A] text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
               <i data-lucide="upload" class="w-3.5 h-3.5 text-sky-400"></i>
               <span>Restaurer JSON</span>
             </button>
@@ -2478,7 +2760,7 @@
               <button type="button" onclick="clearPersonalHistory()" class="px-2.5 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 text-[10px] font-semibold transition-colors" title="Efface les données de démonstration pour démarrer vierge">
                 Vider Démo (Profil Vierge)
               </button>
-              <button type="button" onclick="resetDemoData()" class="px-2.5 py-1.5 rounded-lg bg-[#1F2A3C] hover:bg-[#2A374D] text-slate-300 text-[10px] font-semibold transition-colors" title="Recharger les 30 jours réalistes">
+              <button type="button" onclick="resetDemoData()" class="px-2.5 py-1.5 rounded-lg bg-[#25254A] hover:bg-[#2A374D] text-slate-300 text-[10px] font-semibold transition-colors" title="Recharger les 30 jours réalistes">
                 Recharger Démo 30j
               </button>
             </div>
@@ -2492,8 +2774,8 @@
   <!-- MODAL 5 : ASSISTANT DE CONNEXION DES OBJETS (WIZARD RINGCONN & GOOGLE HEALTH) -->
   <!-- =================================================================== -->
   <div id="modal-connect-wizard" role="dialog" aria-modal="true" aria-labelledby="modal-connect-wizard-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-xl rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2.5">
           <div class="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
             <i data-lucide="link-2" class="w-5 h-5"></i>
@@ -2503,7 +2785,7 @@
             <p class="text-[10px] text-slate-400">Connectez vos capteurs en 1-clic pour synchroniser vos données biométriques</p>
           </div>
         </div>
-        <button onclick="closeConnectWizardModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeConnectWizardModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2551,7 +2833,7 @@
             </button>
 
             <!-- Option 2 : Google Health Connect -->
-            <button type="button" onclick="selectWizardDevice('health_connect')" id="wiz-opt-health_connect" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+            <button type="button" onclick="selectWizardDevice('health_connect')" id="wiz-opt-health_connect" class="wizard-device-card p-3 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-white text-xs flex items-center space-x-1.5">
                   <i data-lucide="smartphone" class="w-4 h-4 text-sky-400"></i>
@@ -2563,7 +2845,7 @@
             </button>
 
             <!-- Option 3 : Withings Body Scales -->
-            <button type="button" onclick="selectWizardDevice('withings')" id="wiz-opt-withings" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+            <button type="button" onclick="selectWizardDevice('withings')" id="wiz-opt-withings" class="wizard-device-card p-3 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-white text-xs flex items-center space-x-1.5">
                   <i data-lucide="scale" class="w-4 h-4 text-brand-400"></i>
@@ -2575,7 +2857,7 @@
             </button>
 
             <!-- Option 4 : Oura Ring -->
-            <button type="button" onclick="selectWizardDevice('oura')" id="wiz-opt-oura" class="wizard-device-card p-3 rounded-xl border border-[#1F2A3C] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
+            <button type="button" onclick="selectWizardDevice('oura')" id="wiz-opt-oura" class="wizard-device-card p-3 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 text-left transition-all">
               <div class="flex items-center justify-between mb-1">
                 <span class="font-bold text-white text-xs flex items-center space-x-1.5">
                   <i data-lucide="circle-dot" class="w-4 h-4 text-indigo-400"></i>
@@ -2590,7 +2872,7 @@
         </div>
 
         <!-- Détails dynamiques selon l'appareil sélectionné -->
-        <div id="wizard-config-container" class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-4 space-y-3">
+        <div id="wizard-config-container" class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-4 space-y-3">
           <!-- Dynamique via JS -->
         </div>
 
@@ -2609,10 +2891,10 @@
   <!-- MODAL 6 : AUTHENTIFICATION UNIFIÉE (GOOGLE, EMAIL/MDP, INVITÉ) -->
   <!-- =================================================================== -->
   <div id="modal-auth" role="dialog" aria-modal="true" aria-labelledby="modal-auth-title" class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden" style="touch-action: pan-y;">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-md rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       
       <!-- En-tête de la Modale -->
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-2.5">
           <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-electric-cyan flex items-center justify-center text-white shadow-md">
             <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
@@ -2622,7 +2904,7 @@
             <p class="text-[10px] text-slate-400">Compte unifié, session sécurisée & cloud sync</p>
           </div>
         </div>
-        <button onclick="closeAuthModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeAuthModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2644,7 +2926,7 @@
           </div>
         </div>
 
-        <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] text-xs space-y-1.5">
+        <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A] text-xs space-y-1.5">
           <div class="flex items-center justify-between text-slate-300">
             <span>Jeton Bearer JWT :</span>
             <span class="text-brand-400 font-mono text-[10px] flex items-center space-x-1">
@@ -2689,7 +2971,7 @@
       <div id="auth-login-view" class="space-y-4">
         
         <!-- Onglets de sélection du mode d'authentification -->
-        <div class="grid grid-cols-2 p-1 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] text-xs font-semibold">
+        <div class="grid grid-cols-2 p-1 rounded-xl bg-[#0B0F17] border border-[#25254A] text-xs font-semibold">
           <button type="button" id="tab-auth-google" onclick="switchAuthTab('google')" class="py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all">
             <svg class="w-4 h-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -2721,7 +3003,7 @@
           <!-- Liste des comptes Google : Vue Sélecteur -->
           <div id="google-chooser-list" class="space-y-2">
             <!-- Compte 1-clic principal : Sébastien LAMOLIATE -->
-            <button type="button" onclick="selectGoogleAccount('sebastienlamoliate@gmail.com', 'Sébastien LAMOLIATE', 'https://lh3.googleusercontent.com/a/default-user=s96-c')" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-slate-600 transition-all flex items-center justify-between text-left group">
+            <button type="button" onclick="selectGoogleAccount('sebastienlamoliate@gmail.com', 'Sébastien LAMOLIATE', 'https://lh3.googleusercontent.com/a/default-user=s96-c')" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-slate-600 transition-all flex items-center justify-between text-left group">
               <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
                   S
@@ -2735,7 +3017,7 @@
             </button>
 
             <!-- Option : Utiliser un autre compte -->
-            <button type="button" onclick="showOtherGoogleAccountForm()" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#1F2A3C] hover:border-slate-600 transition-all flex items-center space-x-3 text-left group">
+            <button type="button" onclick="showOtherGoogleAccountForm()" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-slate-600 transition-all flex items-center space-x-3 text-left group">
               <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
                 <i data-lucide="user-plus" class="w-5 h-5 text-slate-300"></i>
               </div>
@@ -2747,7 +3029,7 @@
           </div>
 
           <!-- Formulaire de saisie d'un autre compte Google -->
-          <div id="google-other-account-form" class="space-y-3 p-3.5 rounded-xl bg-[#0B0F17] border border-[#1F2A3C] hidden">
+          <div id="google-other-account-form" class="space-y-3 p-3.5 rounded-xl bg-[#0B0F17] border border-[#25254A] hidden">
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-white">Autre compte Google</span>
               <button type="button" onclick="hideOtherGoogleAccountForm()" class="text-[11px] text-slate-400 hover:text-white underline">
@@ -2756,11 +3038,11 @@
             </div>
             <div>
               <label class="block text-[10px] text-slate-400 mb-0.5">Adresse email Google :</label>
-              <input type="email" id="google-custom-email" placeholder="nom.prenom@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+              <input type="email" id="google-custom-email" placeholder="nom.prenom@gmail.com" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
             </div>
             <div>
               <label class="block text-[10px] text-slate-400 mb-0.5">Nom d'affichage :</label>
-              <input type="text" id="google-custom-name" placeholder="Votre nom" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+              <input type="text" id="google-custom-name" placeholder="Votre nom" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
             </div>
             <button type="button" onclick="submitOtherGoogleAccount()" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-md active:scale-95">
               <span>Valider et se connecter</span>
@@ -2768,17 +3050,17 @@
           </div>
 
           <!-- Configuration Google Cloud Client ID (Optionnelle) -->
-          <div class="pt-2 border-t border-[#1F2A3C]">
+          <div class="pt-2 border-t border-[#25254A]">
             <details class="text-xs text-slate-400 group">
               <summary class="cursor-pointer font-semibold text-slate-300 hover:text-white flex items-center justify-between py-1">
                 <span>⚙️ Configurer Google Client ID (Optionnel)</span>
                 <span class="group-open:rotate-180 transition-transform">▼</span>
               </summary>
-              <div class="mt-2 space-y-2 p-2.5 rounded-lg bg-[#0B0F17] border border-[#1F2A3C]">
+              <div class="mt-2 space-y-2 p-2.5 rounded-lg bg-[#0B0F17] border border-[#25254A]">
                 <p class="text-[11px] text-slate-400">
                   Entrez votre <strong>Google OAuth 2.0 Client ID</strong> pour le bouton officiel Google GIS.
                 </p>
-                <input type="text" id="google-input-client-id" placeholder="123456789-xxxx.apps.googleusercontent.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+                <input type="text" id="google-input-client-id" placeholder="123456789-xxxx.apps.googleusercontent.com" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
                 <button type="button" onclick="saveGoogleClientId()" class="w-full py-1.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-300 font-semibold text-xs transition-colors">
                   Enregistrer le Client ID
                 </button>
@@ -2792,7 +3074,7 @@
         <!-- ===================================== -->
         <div id="auth-panel-email" class="space-y-3.5 hidden">
           <!-- Sous-sélecteur Se connecter vs Créer un compte -->
-          <div class="flex items-center justify-center space-x-4 border-b border-[#1F2A3C] pb-2 text-xs">
+          <div class="flex items-center justify-center space-x-4 border-b border-[#25254A] pb-2 text-xs">
             <button type="button" id="btn-mode-login" onclick="setAuthEmailMode('login')" class="font-bold text-brand-400 pb-1 border-b-2 border-brand-500 transition-all">
               Se connecter
             </button>
@@ -2805,7 +3087,7 @@
           <div id="email-field-name" class="space-y-1 hidden">
             <label class="block text-[11px] font-medium text-slate-300">Nom complet ou prénom :</label>
             <div class="relative">
-              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <input type="text" id="auth-email-name" placeholder="Sébastien" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
               <i data-lucide="user" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
             </div>
           </div>
@@ -2814,7 +3096,7 @@
           <div class="space-y-1">
             <label class="block text-[11px] font-medium text-slate-300">Adresse email :</label>
             <div class="relative">
-              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
               <i data-lucide="at-sign" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
             </div>
           </div>
@@ -2826,7 +3108,7 @@
               <span id="password-hint" class="text-[10px] text-slate-400 hidden">Minimum 6 caractères</span>
             </div>
             <div class="relative">
-              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <input type="password" id="auth-password-input" placeholder="••••••••" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl pl-3 pr-10 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
               <button type="button" onclick="togglePasswordVisibility()" class="absolute right-3 top-2 text-slate-400 hover:text-slate-200">
                 <i data-lucide="eye" id="icon-toggle-password" class="w-4 h-4"></i>
               </button>
@@ -2848,59 +3130,13 @@
         <!-- ============================================== -->
         <!-- OPTION 3 : CONTINUER EN TANT QU'INVITÉ (GUEST) -->
         <!-- ============================================== -->
-        <div class="pt-2 border-t border-[#1F2A3C] text-center">
+        <div class="pt-2 border-t border-[#25254A] text-center">
           <button type="button" onclick="continueAsGuest()" class="text-xs text-slate-400 hover:text-slate-200 underline flex items-center justify-center space-x-1.5 mx-auto py-1">
             <i data-lucide="compass" class="w-3.5 h-3.5"></i>
             <span>Continuer en tant qu'invité (Mode Démo)</span>
           </button>
         </div>
 
-      </div>
-    </div>
-  </div>
-
-  <!-- =================================================================== -->
-  <!-- MODAL : SYNCHRONISATION AVANCÉE DEPUIS UNE DATE (BALI-291) -->
-  <!-- =================================================================== -->
-  <div id="modal-date-sync" role="dialog" aria-modal="true" aria-labelledby="modal-date-sync-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
-        <h3 class="font-bold text-white text-base flex items-center space-x-2">
-          <i data-lucide="calendar" class="w-5 h-5 text-cyan-400"></i>
-          <span id="modal-date-sync-title">Synchronisation par Date</span>
-        </h3>
-        <button onclick="closeDateSyncModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 min-w-[44px] min-h-[44px] flex items-center justify-center">
-          <i data-lucide="x" class="w-5 h-5"></i>
-        </button>
-      </div>
-
-      <div class="space-y-3.5">
-        <input type="hidden" id="input-date-sync-device-id" value="health_connect">
-
-        <p class="text-xs text-slate-300">
-          Sélectionnez la date de début pour récupérer et réimporter l'ensemble des données de santé depuis cette date jusqu'à aujourd'hui.
-        </p>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Date de début de synchronisation :</label>
-          <input type="date" id="input-date-sync-start" class="w-full bg-[#0B0F17] border border-[#1F2A3C] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
-        </div>
-
-        <div id="date-sync-last-info" class="p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-[11px] text-slate-300">
-          <span class="text-cyan-400 font-semibold block">Dernière synchro mémorisée :</span>
-          <span id="date-sync-last-val" class="text-white font-medium">--</span>
-        </div>
-
-        <div class="pt-2 flex items-center space-x-2">
-          <button type="button" onclick="submitDateSync(false)" id="btn-submit-date-sync" class="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-cyan-600/30 transition-transform active:scale-95">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-            <span>Lancer la synchro</span>
-          </button>
-          <button type="button" onclick="openBridgeFromDateSyncModal()" id="btn-open-bridge-date-sync" class="px-3 py-2.5 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-700 text-cyan-300 font-semibold text-xs flex items-center justify-center space-x-1" title="Déclencher directement l'app Android Bridge">
-            <i data-lucide="smartphone" class="w-4 h-4"></i>
-            <span>App Bridge</span>
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -2950,10 +3186,10 @@
   <!-- MODAL : GESTION DES AMIS & PARTAGE EN LECTURE SEULE -->
   <!-- =================================================================== -->
   <div id="modal-friends" role="dialog" aria-modal="true" aria-labelledby="modal-friends-title" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 hidden">
-    <div class="bg-[#151D2A] border border-[#1F2A3C] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+    <div class="bg-[#13132B] border border-[#25254A] w-full max-w-2xl rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 space-y-5 max-h-[92vh] overflow-y-auto">
       
       <!-- En-tête Modale -->
-      <div class="flex items-center justify-between border-b border-[#1F2A3C] pb-3">
+      <div class="flex items-center justify-between border-b border-[#25254A] pb-3">
         <div class="flex items-center space-x-3">
           <div class="w-10 h-10 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400">
             <i data-lucide="users" class="w-5 h-5"></i>
@@ -2963,7 +3199,7 @@
             <p class="text-xs text-slate-400">Partagez votre journal ou consultez celui de vos proches / coachs</p>
           </div>
         </div>
-        <button onclick="closeFriendsModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#1F2A3C] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button onclick="closeFriendsModal()" aria-label="Fermer la boîte de dialogue" class="p-1 rounded-lg hover:bg-[#25254A] text-slate-400 hover:text-white transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2984,7 +3220,7 @@
               type="text" 
               id="friend-invite-input" 
               placeholder="Ex: ami@vitaltrack.io ou pseudo" 
-              class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              class="w-full bg-[#13132B] border border-[#25254A] rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               required
             >
           </div>
@@ -3001,7 +3237,7 @@
       </div>
 
       <!-- Onglets : Mes amis / Demandes reçues / Demandes envoyées -->
-      <div class="flex items-center p-1 bg-[#0B0B1A] rounded-xl border border-[#1F2A3C] text-xs font-semibold gap-1">
+      <div class="flex items-center p-1 bg-[#0B0B1A] rounded-xl border border-[#25254A] text-xs font-semibold gap-1">
         <button 
           type="button"
           onclick="switchFriendsTab('friends')" 
@@ -3060,6 +3296,11 @@
   <script src="/static/modules/api.js?v=1.0.0"></script>
   <script src="/static/modules/lazy.js?v=1.0.0"></script>
   <script src="/static/modules/dashboard.js?v=1.0.0"></script>
+  <script src="/static/modules/views/summary.js?v=1.0.0"></script>
+  <script src="/static/modules/views/weight.js?v=1.0.0"></script>
+  <script src="/static/modules/views/activity.js?v=1.0.0"></script>
+  <script src="/static/modules/views/devices.js?v=1.0.0"></script>
+  <script src="/static/modules/views/goals.js?v=1.0.0"></script>
   <script src="/static/modules/nutrition.js?v=1.0.0"></script>
   <script src="/static/modules/friends.js?v=1.0.0"></script>
 

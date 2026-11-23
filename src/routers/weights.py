@@ -66,10 +66,12 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_mo
     db = get_db()
     target_date = entry_in.date or dt_module.date.today()
 
-    # Estimation BMI si non fourni (sur base d'1m78)
+    # Estimation BMI si non fourni (sur base de la taille du profil utilisateur)
     bmi_val = entry_in.bmi
     if bmi_val is None and entry_in.weight_kg > 0:
-        bmi_val = round(entry_in.weight_kg / (1.78 ** 2), 1)
+        profile = db.get_user_profile(user_id=current_user.id)
+        height_m = float(profile.get("height_cm", 178.0) or 178.0) / 100.0
+        bmi_val = round(entry_in.weight_kg / (height_m ** 2), 1)
 
     entry = WeightEntry(
         date=target_date,
@@ -98,7 +100,9 @@ def update_weight(
     target_date = entry_in.date or dt_module.date.today()
     bmi_val = entry_in.bmi
     if bmi_val is None and entry_in.weight_kg > 0:
-        bmi_val = round(entry_in.weight_kg / (1.78 ** 2), 1)
+        profile = db.get_user_profile(user_id=current_user.id)
+        height_m = float(profile.get("height_cm", 178.0) or 178.0) / 100.0
+        bmi_val = round(entry_in.weight_kg / (height_m ** 2), 1)
 
     entry = WeightEntry(
         date=target_date,

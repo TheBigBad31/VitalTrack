@@ -33,7 +33,7 @@ Endpoints :
 """
 
 import binascii
-from datetime import date
+from datetime import date, datetime
 import datetime as dt_module
 import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -60,6 +60,7 @@ from src.meal_recommendations import (
     get_historical_meal_averages,
     get_historical_meal_candidates,
 )
+from src.domain.nutrition import calculate_dynamic_tdee_target
 from src.nutrition_rules import evaluate_dish_benefits
 from src.otel import record_photo_analysis_metric
 from src.rate_limit import rate_limit_photo_analysis
@@ -70,16 +71,40 @@ logger = logging.getLogger("vitaltrack.meals")
 router = APIRouter(tags=["meals"])
 
 
+def determine_meal_type(hour: Optional[int] = None) -> MealType:
+    """Détermine automatiquement le créneau de repas (slot) selon l'heure courante ou fournie.
+    
+    5h - 11h : breakfast
+    11h - 15h : lunch
+    15h - 18h : snack
+    18h - 23h : dinner
+    23h - 5h : snack
+    """
+    if hour is None:
+        hour = datetime.now().hour
+    if 5 <= hour < 11:
+        return "breakfast"
+    elif 11 <= hour < 15:
+        return "lunch"
+    elif 15 <= hour < 18:
+        return "snack"
+    elif 18 <= hour < 23:
+        return "dinner"
+    else:
+        return "snack"
+
+
 class MealEstimateRequest(BaseModel):
     photo_data_url: Optional[str] = None
     description: Optional[str] = None
-    meal_type: MealType = "lunch"
+    meal_type: Optional[MealType] = None
     portion_scale: float = Field(1.0, ge=0.5, le=2.0, description="Curseur de portion (0.5x à 2.0x)")
+    barcode: Optional[str] = Field(None, description="Code-barres EAN-13 scanné")
 
 
 class MealSaveRequest(BaseModel):
     date: Optional[dt_module.date] = None
-    meal_type: MealType
+    meal_type: Optional[MealType] = None
     photo_data_url: Optional[str] = None
     portion_scale: float = Field(1.0, ge=0.5, le=2.0)
     items: List[FoodItem] = Field(default_factory=list)
@@ -174,6 +199,8 @@ class CatalogItemCreateRequest(BaseModel):
     recipe_items: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Ingrédients composant le plat")
     benefits: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Bienfaits associés à la création")
     is_public: Optional[bool] = Field(False, description="True si l'aliment doit être public")
+    barcode: Optional[str] = Field(None, description="Code-barres EAN-13")
+    nutriscore: Optional[str] = Field(None, description="Lettre Nutri-Score (a, b, c, d, e)")
 
 
 class CatalogItemUpdateRequest(BaseModel):
@@ -190,6 +217,8 @@ class CatalogItemUpdateRequest(BaseModel):
     photo_url: Optional[str] = None
     recipe_items: Optional[List[Dict[str, Any]]] = None
     is_public: Optional[bool] = None
+    barcode: Optional[str] = None
+    nutriscore: Optional[str] = None
 
 
 class CatalogSubscriptionCreateRequest(BaseModel):
@@ -282,6 +311,7 @@ def calculate_day_summary(target_date: date, user_id: int = 1) -> Tuple[List[Dic
     }
 
     day_summary = {
+        "calories_consumed_kcal": round(day_total_cal, 1),
         "total_calories": round(day_total_cal, 1),
         "total_protein_g": round(day_total_prot, 1),
         "total_carbs_g": round(day_total_carbs, 1),
@@ -308,6 +338,21 @@ def get_meals(
     verify_view_access(target_uid, current_user, database=db)
     meals = db.get_meals(limit=limit, user_id=target_uid)
     return [m.model_dump() for m in meals]
+
+
+@router.get("/api/meals/barcode/{barcode}")
+def get_barcode_product(barcode: str):
+    """Recherche un produit par code-barres EAN-13 via OpenFoodFacts."""
+    clean_code = barcode.strip().replace(" ", "").replace("-", "")
+    if not clean_code or not clean_code.isdigit() or len(clean_code) < 8:
+        raise HTTPException(status_code=400, detail="Code-barres EAN-13 invalide (doit contenir au moins 8 chiffres)")
+
+    calorie_estimator = app_module.calorie_estimator
+    product = calorie_estimator.fetch_openfoodfacts_barcode(clean_code)
+    if not product:
+        raise HTTPException(status_code=404, detail="Produit non trouvé sur OpenFoodFacts pour ce code-barres")
+
+    return product
 
 
 @router.get("/api/meals/analyze-photo")
@@ -348,6 +393,44 @@ def estimate_meal_calories(req: MealEstimateRequest):
             image_bytes = None
 
     calorie_estimator = app_module.calorie_estimator
+
+    # Si un code-barres est fourni, recherche OpenFoodFacts en priorité
+    if req.barcode:
+        barcode_prod = calorie_estimator.fetch_openfoodfacts_barcode(req.barcode)
+        if barcode_prod:
+            ratio = (barcode_prod["portion_g"] / 100.0) * scale
+            item = FoodItem(
+                name=barcode_prod["name"],
+                portion_g=round(barcode_prod["portion_g"] * scale, 1),
+                calories_kcal=round(barcode_prod["cal_100g"] * ratio, 1),
+                protein_g=round(barcode_prod["protein_g"] * ratio, 1),
+                carbs_g=round(barcode_prod["carbs_g"] * ratio, 1),
+                fat_g=round(barcode_prod["fat_g"] * ratio, 1),
+                fiber_g=round(barcode_prod["fiber_g"] * ratio, 1),
+                confidence_score=0.99,
+            )
+            record_photo_analysis_metric(engine="openfoodfacts_barcode", status="success")
+            return {
+                "source": "openfoodfacts_barcode",
+                "barcode": req.barcode,
+                "product_name": barcode_prod["name"],
+                "nutriscore": barcode_prod.get("nutriscore"),
+                "portion_scale": scale,
+                "total_calories_kcal": item.calories_kcal,
+                "calories": item.calories_kcal,
+                "protein_g": item.protein_g,
+                "carbs_g": item.carbs_g,
+                "fat_g": item.fat_g,
+                "fiber_g": item.fiber_g,
+                "items": [item.model_dump()],
+                "macros": {
+                    "protein_g": item.protein_g,
+                    "carbs_g": item.carbs_g,
+                    "fat_g": item.fat_g,
+                    "fiber_g": item.fiber_g,
+                }
+            }
+
     result = calorie_estimator.analyze_meal(
         image_bytes=image_bytes,
         mime_type=mime_type,
@@ -374,18 +457,19 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
     db = get_db()
     nutrition_engine = get_nutrition_engine()
     target_date = req.date or dt_module.date.today()
+    meal_type = req.meal_type or determine_meal_type()
 
     if req.items:
         items = req.items
         saved = nutrition_engine.log_meal(
             date_val=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             items=items,
             photo_data_url=req.photo_data_url,
             user_id=current_user.id
         )
     elif req.total_calories_kcal is not None:
-        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        meal_name = req.meal_name or f"Repas direct ({meal_type})"
         items = [
             FoodItem(
                 name=meal_name,
@@ -399,7 +483,7 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         ]
         entry = MealEntry(
             date=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             total_calories_kcal=round(req.total_calories_kcal, 1),
             protein_g=round(req.protein_g or 0.0, 1),
             carbs_g=round(req.carbs_g or 0.0, 1),
@@ -414,16 +498,27 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         est = calorie_estimator.analyze_meal(
             description=None,
             portion_scale=req.portion_scale,
-            meal_type=req.meal_type
+            meal_type=meal_type
         )
         items = [FoodItem(**item) for item in est.get("items", [])]
         saved = nutrition_engine.log_meal(
             date_val=target_date,
-            meal_type=req.meal_type,
+            meal_type=meal_type,
             items=items,
             photo_data_url=req.photo_data_url,
             user_id=current_user.id
         )
+
+    # Pont vers meal_logs : synchronise dans le journal pour que GET /api/meals/journal voie immédiatement le repas
+    items_dict = [it.model_dump() for it in items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
@@ -433,6 +528,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
     """Met à jour un repas existant dans le journal pour l'utilisateur connecté."""
     db = get_db()
     target_date = req.date or dt_module.date.today()
+    meal_type = req.meal_type or determine_meal_type()
     if req.items:
         items = req.items
         tot_cal = round(sum(i.calories_kcal for i in items), 1)
@@ -441,7 +537,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
         tot_fat = round(sum(i.fat_g for i in items), 1)
         tot_fiber = round(sum(i.fiber_g or 0.0 for i in items), 1)
     elif req.total_calories_kcal is not None:
-        meal_name = req.meal_name or f"Repas direct ({req.meal_type})"
+        meal_name = req.meal_name or f"Repas direct ({meal_type})"
         items = [
             FoodItem(
                 name=meal_name,
@@ -463,7 +559,7 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
 
     entry = MealEntry(
         date=target_date,
-        meal_type=req.meal_type,
+        meal_type=meal_type,
         total_calories_kcal=tot_cal,
         protein_g=tot_prot,
         carbs_g=tot_carbs,
@@ -475,6 +571,17 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
     updated = db.update_meal(meal_id, entry, user_id=current_user.id)
     if not updated:
         raise HTTPException(status_code=404, detail="Repas introuvable")
+
+    # Pont vers meal_logs : synchronise dans le journal
+    items_dict = [it.model_dump() for it in items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
@@ -639,6 +746,17 @@ def log_saved_meal_to_journal(
     )
 
     logged = db.insert_meal(entry, user_id=current_user.id)
+
+    # Pont vers meal_logs : synchronise les items du plat dans meal_logs pour ce repas
+    items_dict = [it.model_dump() for it in scaled_items]
+    db.sync_meal_items_to_meal_log(
+        date_val=target_date,
+        meal_type=meal_type,
+        items=items_dict,
+        user_id=current_user.id,
+        append=False
+    )
+
     app_module.invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
@@ -702,7 +820,9 @@ def create_catalog_item(
         fiber_per_unit_g=req.fiber_per_unit_g or 0.0,
         photo_url=req.photo_url,
         recipe_items=req.recipe_items or [],
-        is_public=bool(req.is_public)
+        is_public=bool(req.is_public),
+        barcode=req.barcode,
+        nutriscore=req.nutriscore,
     )
     created = db.insert_food_item(item, user_id=current_user.id)
     return created.model_dump()
@@ -901,7 +1021,43 @@ def get_meals_journal(
     verify_view_access(target_uid, current_user, database=db)
     target_date = dt_module.date.fromisoformat(date_param) if date_param else dt_module.date.today()
     meals_response, day_summary = calculate_day_summary(target_date, user_id=target_uid)
-    targets = get_daily_nutrition_targets(db, user_id=target_uid)
+    # Calcul dynamique des objectifs si activité/séances du jour disponibles
+    user_profile = db.get_user_profile(user_id=target_uid) if hasattr(db, "get_user_profile") else {}
+    workouts = db.get_workouts(limit=30, user_id=target_uid) if hasattr(db, "get_workouts") else []
+    day_workouts = [w for w in (workouts or []) if (w.start_time or "").startswith(target_date.isoformat())]
+    workout_calories_kcal = round(sum(float(w.calories_kcal or 0.0) for w in day_workouts), 1)
+
+    activities = db.get_activities(limit=30, user_id=target_uid) if hasattr(db, "get_activities") else []
+    day_activity = next((a for a in reversed(activities) if a.date == target_date), None)
+    day_steps = day_activity.steps if day_activity else 0
+
+    weights = db.get_weights(limit=10, user_id=target_uid) if hasattr(db, "get_weights") else []
+    latest_weight = weights[-1] if weights else None
+    user_weight_kg = latest_weight.weight_kg if latest_weight else 79.5
+
+    from src.domain.nutrition import calculate_bmr_mifflin_st_jeor
+    bmr = calculate_bmr_mifflin_st_jeor(
+        weight_kg=user_weight_kg,
+        height_cm=user_profile.get("height_cm", 178.0),
+        age=user_profile.get("age", 35),
+        gender=user_profile.get("gender", "male")
+    )
+    goal_id = user_profile.get("goal_profile_id") or "weight_loss"
+    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0}
+    goal_delta = goal_delta_map.get(goal_id, -500.0)
+
+    dynamic_tdee = calculate_dynamic_tdee_target(
+        bmr_kcal=bmr,
+        steps=day_steps,
+        workout_calories_kcal=workout_calories_kcal,
+        goal_delta=goal_delta,
+    )
+    targets = get_daily_nutrition_targets(
+        db,
+        user_id=target_uid,
+        target_calories_override=dynamic_tdee["target_calories_intake"],
+        carbs_target_override=dynamic_tdee["daily_carbs_target_g"]
+    )
     meal_averages = get_historical_meal_averages(db, user_id=target_uid, before_date=target_date)
     historical_meals = get_historical_meal_candidates(db, user_id=target_uid, before_date=target_date)
     nutrition_guidance = compute_weighted_meal_recommendations(
@@ -916,6 +1072,9 @@ def get_meals_journal(
         "date": target_date.isoformat(),
         "meals": meals_response,
         "day_summary": day_summary,
+        "targets": targets,
+        "dynamic_tdee": dynamic_tdee,
+        "workout_calories_kcal": workout_calories_kcal,
         "nutrition_guidance": nutrition_guidance,
     }
 

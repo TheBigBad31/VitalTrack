@@ -483,6 +483,8 @@ class DevicesRepository(BaseRepository):
                 pass
 
         latest_weight = recent_weights[0] if recent_weights else None
+        user_prof = self.db.get_user_profile(user_id=user_id) if hasattr(self.db, "get_user_profile") else {}
+        user_height_m = float((user_prof or {}).get("height_cm", 178.0) or 178.0) / 100.0
 
         metrics_definitions = [
             {
@@ -569,7 +571,7 @@ class DevicesRepository(BaseRepository):
                 "ui_location": "Tab Corps, Jauges Métaboliques",
                 "last_point": {
                     "date": latest_weight["date"],
-                    "value": f"{round(float(latest_weight['weight_kg']) / ((1.78)**2), 1)} kg/m²",
+                    "value": f"{round(float(latest_weight['weight_kg']) / (user_height_m ** 2), 1)} kg/m²",
                     "source": latest_weight["source"]
                 } if latest_weight and latest_weight.get("weight_kg") else None,
                 "points_7d_count": weights_7d_count
@@ -645,8 +647,8 @@ class DevicesRepository(BaseRepository):
                 "category": "biometrics",
                 "table": "daily_metrics",
                 "supported_sources": ["health_connect", "ringconn"],
-                "rendered_in_ui": False,
-                "ui_location": "Non restitué dans l'UI",
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte Biométrie & Santé",
                 "last_point": {
                     "date": last_dm_dict.get("date"),
                     "value": f"{last_dm_dict.get('hrv_sdnn_ms')} ms",
@@ -661,8 +663,8 @@ class DevicesRepository(BaseRepository):
                 "category": "biometrics",
                 "table": "daily_metrics",
                 "supported_sources": ["health_connect", "ringconn", "oura"],
-                "rendered_in_ui": False,
-                "ui_location": "Non restitué dans l'UI",
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte Biométrie & Santé",
                 "last_point": {
                     "date": last_dm_dict.get("date"),
                     "value": f"{last_dm_dict.get('spo2_pct')} %",
@@ -677,8 +679,8 @@ class DevicesRepository(BaseRepository):
                 "category": "biometrics",
                 "table": "daily_metrics",
                 "supported_sources": ["health_connect", "ringconn", "oura"],
-                "rendered_in_ui": False,
-                "ui_location": "Non restitué dans l'UI",
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Carte Biométrie & Santé",
                 "last_point": {
                     "date": last_dm_dict.get("date"),
                     "value": f"{last_dm_dict.get('skin_temperature_c')} °C",
@@ -725,8 +727,8 @@ class DevicesRepository(BaseRepository):
                 "category": "nutrition",
                 "table": "hydration_logs",
                 "supported_sources": ["health_connect", "manual"],
-                "rendered_in_ui": False,
-                "ui_location": "Non restitué dans l'UI",
+                "rendered_in_ui": True,
+                "ui_location": "Tab Aujourd'hui & Tab Nutrition, Suivi Hydrique",
                 "last_point": {
                     "date": last_hydration["date"],
                     "value": f"{last_hydration['volume_ml']} ml",
@@ -741,8 +743,8 @@ class DevicesRepository(BaseRepository):
                 "category": "biometrics",
                 "table": "intraday_samples",
                 "supported_sources": ["health_connect", "ringconn"],
-                "rendered_in_ui": False,
-                "ui_location": "Non restitué dans l'UI",
+                "rendered_in_ui": True,
+                "ui_location": "Tab Activité, Courbe FC Intraday 24h",
                 "last_point": {
                     "date": str(last_hr_intra["timestamp"])[:10],
                     "value": f"{last_hr_intra['value']} bpm",

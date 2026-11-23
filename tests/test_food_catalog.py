@@ -517,3 +517,45 @@ def test_catalog_categories_filter_and_sort(catalog_setup):
     plats_after = client.get("/api/catalog/items?source=mine&category=plats_composes", headers=headers1).json()
     assert {it["name"] for it in plats_after} == {"Bavette grillée", "Gratin maison"}
 
+
+
+def test_openfoodfacts_barcode_endpoint(catalog_setup, monkeypatch):
+    """Vérifie la route GET /api/meals/barcode/{barcode} avec mock OpenFoodFacts."""
+    client = catalog_setup["client"]
+    token = catalog_setup["token1"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Code invalide (< 8 chiffres ou non numérique)
+    res_invalid = client.get("/api/meals/barcode/123", headers=headers)
+    assert res_invalid.status_code == 400
+    assert "invalide" in res_invalid.json()["detail"].lower()
+
+    # 2. Mock succès OpenFoodFacts
+    mock_product = {
+        "barcode": "3017620422003",
+        "name": "Nutella",
+        "brand": "Ferrero",
+        "calories_100g": 539.0,
+        "protein_100g": 6.3,
+        "carbs_100g": 57.5,
+        "fat_100g": 30.9,
+        "fiber_100g": 0.0,
+        "nutriscore": "e",
+        "photo_url": "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_fr.jpg"
+    }
+
+    import src.app as app_module
+    monkeypatch.setattr(app_module.calorie_estimator, "fetch_openfoodfacts_barcode", lambda b: mock_product)
+
+    res_ok = client.get("/api/meals/barcode/3017620422003", headers=headers)
+    assert res_ok.status_code == 200
+    data = res_ok.json()
+    assert data["name"] == "Nutella"
+    assert data["brand"] == "Ferrero"
+    assert data["nutriscore"] == "e"
+    assert data["calories_100g"] == 539.0
+
+    # 3. Produit introuvable
+    monkeypatch.setattr(app_module.calorie_estimator, "fetch_openfoodfacts_barcode", lambda b: None)
+    res_not_found = client.get("/api/meals/barcode/0000000000000", headers=headers)
+    assert res_not_found.status_code == 404

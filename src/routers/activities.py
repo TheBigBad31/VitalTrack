@@ -59,7 +59,16 @@ def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(app_
     """Ajoute ou synchronise une entrée d'activité physique quotidienne pour l'utilisateur connecté."""
     db = get_db()
     target_date = act_in.date or dt_module.date.today()
-    bmr = 1780.0
+    profile = db.get_user_profile(user_id=current_user.id)
+    weights = db.get_weights(limit=1, user_id=current_user.id, exclude_simulation=not bool(profile.get("is_demo_profile")))
+    latest_weight_kg = weights[-1].weight_kg if weights else float(profile.get("current_weight_kg") or profile.get("target_weight_kg") or 79.5)
+    from src.domain.nutrition import calculate_bmr_mifflin_st_jeor
+    bmr = calculate_bmr_mifflin_st_jeor(
+        weight_kg=latest_weight_kg,
+        height_cm=float(profile.get("height_cm", 178.0) or 178.0),
+        age=int(profile.get("age", 35) or 35),
+        gender=profile.get("gender", "male") if profile.get("gender") in ("male", "female") else "male",
+    )
     active_cal = act_in.active_calories_kcal
     if active_cal <= 0 and act_in.steps > 0:
         active_cal = round(act_in.steps * 0.045, 1)
