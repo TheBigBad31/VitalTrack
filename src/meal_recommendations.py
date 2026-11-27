@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from src.domain.nutrition import resolve_nutrition_goals
 
 
 MEAL_TYPES: Tuple[str, ...] = ("breakfast", "lunch", "snack", "dinner")
@@ -21,50 +22,30 @@ def get_daily_nutrition_targets(
     db: Any,
     user_id: int = 1,
     target_calories_override: Optional[float] = None,
-    carbs_target_override: Optional[float] = None
-) -> Dict[str, float]:
-    """Récupère les objectifs nutritionnels quotidiens de l'utilisateur avec support d'override dynamique."""
+    carbs_target_override: Optional[float] = None,
+    weight_kg: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Récupère les objectifs nutritionnels quotidiens unifiés (cibles + règles plancher/plafond/fourchette)."""
     profile = db.get_user_profile(user_id=user_id) if hasattr(db, "get_user_profile") else None
 
-    def _get_val(obj, key):
-        if obj is None:
-            return None
-        if isinstance(obj, dict):
-            return obj.get(key)
-        return getattr(obj, key, None)
+    eff_weight = weight_kg
+    if eff_weight is None and hasattr(db, "get_weights"):
+        try:
+            is_demo = bool(profile.get("is_demo_profile")) if isinstance(profile, dict) else bool(getattr(profile, "is_demo_profile", False))
+            weights = db.get_weights(limit=1, user_id=user_id, exclude_simulation=not is_demo)
+            if weights:
+                eff_weight = weights[-1].weight_kg
+        except Exception:
+            eff_weight = None
 
-    if target_calories_override is not None:
-        target_cal = float(target_calories_override)
-    else:
-        target_cal = float(_get_val(profile, "target_calories_intake") or 2000.0)
-
-    prot_target = _get_val(profile, "daily_protein_target_g")
-    if prot_target is None:
-        per_kg = _get_val(profile, "protein_target_per_kg")
-        weight = _get_val(profile, "current_weight_kg") or _get_val(profile, "target_weight_kg")
-        if per_kg and weight:
-            prot_target = round(float(per_kg) * float(weight), 1)
-        else:
-            prot_target = round((target_cal * 0.25) / 4.0, 1)
-
-    if carbs_target_override is not None:
-        carbs_target = float(carbs_target_override)
-    else:
-        carbs_target = _get_val(profile, "daily_carbs_target_g")
-        if carbs_target is None:
-            carbs_target = round((target_cal * 0.45) / 4.0, 1)
-
-    fat_target = _get_val(profile, "daily_fat_target_g")
-    if fat_target is None:
-        fat_target = round((target_cal * 0.30) / 9.0, 1)
-
-    return {
-        "calories": round(float(target_cal), 1),
-        "protein_g": round(float(prot_target), 1),
-        "carbs_g": round(float(carbs_target), 1),
-        "fat_g": round(float(fat_target), 1),
-        "fiber_g": DEFAULT_FIBER_TARGET_G,
-    }
+    resolved = resolve_nutrition_goals(
+        profile=profile,
+        weight_kg=eff_weight,
+        target_calories_override=target_calories_override,
+        carbs_target_override=carbs_target_override,
+    )
+    resolved["fiber_g"] = DEFAULT_FIBER_TARGET_G
+    return resolved
 
 
 def get_historical_meal_averages(

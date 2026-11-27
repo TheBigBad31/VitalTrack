@@ -4,8 +4,401 @@ Ne contient aucune dépendance vers des entrées/sorties (base de données, rés
 """
 
 from datetime import date, timedelta
+import json
 from typing import Any, Dict, List, Literal, Optional
 from src.models import FoodItem, MealEntry
+
+
+GOAL_PRESETS_CONFIG: Dict[str, Dict[str, Any]] = {
+    "weight_loss": {
+        "delta": -500.0,
+        "steps": 10000,
+        "protein_per_kg": 1.8,
+        "rules": {
+            "protein": {"mode": "min", "unit": "per_kg", "min": 1.8, "max": None},
+            "calories": {"mode": "range", "source": "dynamic", "tolerance_low_pct": 10.0, "tolerance_high_pct": 8.0},
+            "carbs": {"mode": "range", "source": "auto", "tolerance_low_pct": 15.0, "tolerance_high_pct": 15.0},
+            "fat": {"mode": "range", "source": "auto", "tolerance_low_pct": 20.0, "tolerance_high_pct": 10.0},
+        },
+    },
+    "maintenance": {
+        "delta": 0.0,
+        "steps": 8500,
+        "protein_per_kg": 1.4,
+        "rules": {
+            "protein": {"mode": "min", "unit": "per_kg", "min": 1.4, "max": None},
+            "calories": {"mode": "range", "source": "dynamic", "tolerance_low_pct": 10.0, "tolerance_high_pct": 8.0},
+            "carbs": {"mode": "range", "source": "auto", "tolerance_low_pct": 15.0, "tolerance_high_pct": 15.0},
+            "fat": {"mode": "range", "source": "auto", "tolerance_low_pct": 20.0, "tolerance_high_pct": 10.0},
+        },
+    },
+    "recomposition": {
+        "delta": -200.0,
+        "steps": 10000,
+        "protein_per_kg": 2.2,
+        "rules": {
+            "protein": {"mode": "min", "unit": "per_kg", "min": 2.2, "max": None},
+            "calories": {"mode": "range", "source": "dynamic", "tolerance_low_pct": 10.0, "tolerance_high_pct": 8.0},
+            "carbs": {"mode": "range", "source": "auto", "tolerance_low_pct": 15.0, "tolerance_high_pct": 15.0},
+            "fat": {"mode": "range", "source": "auto", "tolerance_low_pct": 20.0, "tolerance_high_pct": 10.0},
+        },
+    },
+    "muscle_gain": {
+        "delta": 300.0,
+        "steps": 8500,
+        "protein_per_kg": 2.0,
+        "rules": {
+            "protein": {"mode": "min", "unit": "per_kg", "min": 2.0, "max": None},
+            "calories": {"mode": "range", "source": "dynamic", "tolerance_low_pct": 5.0, "tolerance_high_pct": 12.0},
+            "carbs": {"mode": "min", "source": "auto", "tolerance_low_pct": 10.0, "tolerance_high_pct": 20.0},
+            "fat": {"mode": "range", "source": "auto", "tolerance_low_pct": 15.0, "tolerance_high_pct": 15.0},
+        },
+    },
+}
+
+
+def _safe_float(val: Any) -> Optional[float]:
+    if val is None or val == "":
+        return None
+    try:
+        num = float(val)
+        return num if num == num else None  # filtre NaN
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_goals_config(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def resolve_nutrition_goals(
+    profile: Optional[Any],
+    weight_kg: Optional[float] = None,
+    target_calories_override: Optional[float] = None,
+    carbs_target_override: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Source unique de vérité des cibles et règles nutritionnelles (plancher / plafond / fourchette).
+
+    Priorité protéines :
+    - Si `nutrition_goals_config.protein.unit == "g"` : mode grammes fixes explicitement choisi par l'utilisateur.
+    - Sinon : calcul dynamique `protein_target_per_kg * poids` (jamais écrasé par un ancien `daily_protein_target_g` résiduel).
+    - Fallback : `daily_protein_target_g` uniquement si aucun `protein_target_per_kg` ou aucun poids n'est disponible.
+    """
+    def _get(key: str) -> Any:
+        if profile is None:
+            return None
+        if isinstance(profile, dict):
+            return profile.get(key)
+        return getattr(profile, key, None)
+
+    goal_id = _get("goal_profile_id") or "weight_loss"
+    preset = GOAL_PRESETS_CONFIG.get(goal_id, GOAL_PRESETS_CONFIG["weight_loss"])
+    preset_rules = preset["rules"]
+    cfg_all = _parse_goals_config(_get("nutrition_goals_config"))
+
+    eff_weight = _safe_float(weight_kg)
+    if not eff_weight or eff_weight <= 0:
+        eff_weight = _safe_float(_get("current_weight_kg")) or _safe_float(_get("target_weight_kg"))
+    if eff_weight is not None and eff_weight <= 0:
+        eff_weight = None
+
+    # --- 1. CALORIES ---
+    cal_cfg = cfg_all.get("calories") if isinstance(cfg_all.get("calories"), dict) else {}
+    cal_preset = preset_rules["calories"]
+    cal_mode = cal_cfg.get("mode") if cal_cfg.get("mode") in ("min", "max", "range") else cal_preset["mode"]
+    cal_source = cal_cfg.get("source") if cal_cfg.get("source") in ("dynamic", "fixed") else (
+        "dynamic" if target_calories_override is not None else "fixed"
+    )
+    tol_lo_cal = _safe_float(cal_cfg.get("tolerance_low_pct"))
+    if tol_lo_cal is None:
+        tol_lo_cal = cal_preset["tolerance_low_pct"]
+    tol_hi_cal = _safe_float(cal_cfg.get("tolerance_high_pct"))
+    if tol_hi_cal is None:
+        tol_hi_cal = cal_preset["tolerance_high_pct"]
+
+    profile_cal = _safe_float(_get("target_calories_intake")) or 2000.0
+    if cal_source == "fixed":
+        cfg_min = _safe_float(cal_cfg.get("min"))
+        cfg_max = _safe_float(cal_cfg.get("max"))
+        cfg_tgt = _safe_float(cal_cfg.get("target"))
+        if cal_mode == "min":
+            cal_min = round(cfg_min or cfg_tgt or profile_cal, 1)
+            cal_max = None
+            target_cal = cal_min
+        elif cal_mode == "max":
+            cal_max = round(cfg_max or cfg_tgt or profile_cal, 1)
+            cal_min = None
+            target_cal = cal_max
+        else:
+            cal_min = round(cfg_min if cfg_min is not None else (cfg_tgt or profile_cal) * (1.0 - tol_lo_cal / 100.0), 1)
+            cal_max = round(cfg_max if cfg_max is not None else (cfg_tgt or profile_cal) * (1.0 + tol_hi_cal / 100.0), 1)
+            if cal_min > cal_max:
+                cal_min, cal_max = cal_max, cal_min
+            target_cal = round(cfg_tgt if cfg_tgt is not None else (cal_min + cal_max) / 2.0, 1)
+    else:
+        base_cal = round(float(target_calories_override) if target_calories_override is not None else profile_cal, 1)
+        target_cal = base_cal
+        if cal_mode == "min":
+            cal_min = base_cal
+            cal_max = None
+        elif cal_mode == "max":
+            cal_min = None
+            cal_max = base_cal
+        else:
+            cal_min = round(base_cal * (1.0 - tol_lo_cal / 100.0), 1)
+            cal_max = round(base_cal * (1.0 + tol_hi_cal / 100.0), 1)
+
+    calories_rule = {
+        "mode": cal_mode,
+        "target": target_cal,
+        "min": cal_min,
+        "max": cal_max,
+        "unit": "kcal",
+        "source": cal_source,
+        "tolerance_low_pct": tol_lo_cal,
+        "tolerance_high_pct": tol_hi_cal,
+    }
+
+    # --- 2. PROTÉINES ---
+    prot_cfg = cfg_all.get("protein") if isinstance(cfg_all.get("protein"), dict) else {}
+    prot_preset = preset_rules["protein"]
+    prot_mode = prot_cfg.get("mode") if prot_cfg.get("mode") in ("min", "max", "range") else prot_preset["mode"]
+    prot_input_unit = prot_cfg.get("unit") if prot_cfg.get("unit") in ("per_kg", "g") else None
+
+    profile_per_kg = _safe_float(_get("protein_target_per_kg"))
+    profile_fixed_g = _safe_float(_get("daily_protein_target_g"))
+
+    prot_min: Optional[float] = None
+    prot_max: Optional[float] = None
+    prot_min_per_kg: Optional[float] = None
+    prot_max_per_kg: Optional[float] = None
+    prot_per_kg: Optional[float] = None
+
+    if prot_input_unit == "g":
+        cfg_min = _safe_float(prot_cfg.get("min"))
+        cfg_max = _safe_float(prot_cfg.get("max"))
+        cfg_tgt = _safe_float(prot_cfg.get("target")) or _safe_float(prot_cfg.get("value"))
+        fallback_g = profile_fixed_g or (round(profile_per_kg * eff_weight, 1) if (profile_per_kg and eff_weight) else round((target_cal * 0.25) / 4.0, 1))
+        if prot_mode == "min":
+            prot_min = round(cfg_min or cfg_tgt or fallback_g, 1)
+            target_prot = prot_min
+        elif prot_mode == "max":
+            prot_max = round(cfg_max or cfg_tgt or fallback_g, 1)
+            target_prot = prot_max
+        else:
+            prot_min = round(cfg_min if cfg_min is not None else (cfg_tgt or fallback_g) * 0.9, 1)
+            prot_max = round(cfg_max if cfg_max is not None else (cfg_tgt or fallback_g) * 1.15, 1)
+            if prot_min > prot_max:
+                prot_min, prot_max = prot_max, prot_min
+            target_prot = round(cfg_tgt if cfg_tgt is not None else (prot_min + prot_max) / 2.0, 1)
+        if eff_weight:
+            prot_per_kg = round(target_prot / eff_weight, 2)
+            prot_min_per_kg = round(prot_min / eff_weight, 2) if prot_min is not None else None
+            prot_max_per_kg = round(prot_max / eff_weight, 2) if prot_max is not None else None
+    else:
+        # Mode g/kg par défaut : priorité absolue à protein_target_per_kg * poids
+        resolved_per_kg = (
+            _safe_float(prot_cfg.get("value"))
+            or _safe_float(prot_cfg.get("target"))
+            or _safe_float(prot_cfg.get("min"))
+            or profile_per_kg
+        )
+        if resolved_per_kg and eff_weight:
+            prot_input_unit = "per_kg"
+            if prot_mode == "min":
+                prot_min_per_kg = round(_safe_float(prot_cfg.get("min")) or resolved_per_kg, 2)
+                prot_min = round(prot_min_per_kg * eff_weight, 1)
+                target_prot = prot_min
+                prot_per_kg = prot_min_per_kg
+            elif prot_mode == "max":
+                prot_max_per_kg = round(_safe_float(prot_cfg.get("max")) or resolved_per_kg, 2)
+                prot_max = round(prot_max_per_kg * eff_weight, 1)
+                target_prot = prot_max
+                prot_per_kg = prot_max_per_kg
+            else:
+                prot_min_per_kg = round(_safe_float(prot_cfg.get("min")) or resolved_per_kg, 2)
+                prot_max_per_kg = round(_safe_float(prot_cfg.get("max")) or (prot_min_per_kg + 0.4), 2)
+                if prot_min_per_kg > prot_max_per_kg:
+                    prot_min_per_kg, prot_max_per_kg = prot_max_per_kg, prot_min_per_kg
+                prot_min = round(prot_min_per_kg * eff_weight, 1)
+                prot_max = round(prot_max_per_kg * eff_weight, 1)
+                target_prot = round((prot_min + prot_max) / 2.0, 1)
+                prot_per_kg = round((prot_min_per_kg + prot_max_per_kg) / 2.0, 2)
+        else:
+            prot_input_unit = "g"
+            base_prot = profile_fixed_g or round((target_cal * 0.25) / 4.0, 1)
+            target_prot = round(base_prot, 1)
+            if prot_mode == "min":
+                prot_min = target_prot
+            elif prot_mode == "max":
+                prot_max = target_prot
+            else:
+                prot_min = round(target_prot * 0.9, 1)
+                prot_max = round(target_prot * 1.15, 1)
+
+    protein_rule = {
+        "mode": prot_mode,
+        "target": target_prot,
+        "min": prot_min,
+        "max": prot_max,
+        "unit": "g",
+        "input_unit": prot_input_unit,
+        "per_kg": prot_per_kg,
+        "min_per_kg": prot_min_per_kg,
+        "max_per_kg": prot_max_per_kg,
+    }
+
+    # --- 3. GLUCIDES ---
+    carbs_cfg = cfg_all.get("carbs") if isinstance(cfg_all.get("carbs"), dict) else {}
+    carbs_preset = preset_rules["carbs"]
+    carbs_mode = carbs_cfg.get("mode") if carbs_cfg.get("mode") in ("min", "max", "range") else carbs_preset["mode"]
+    carbs_has_fixed_cfg = carbs_cfg.get("source") == "fixed" or (
+        carbs_cfg.get("source") != "auto"
+        and any(_safe_float(carbs_cfg.get(k)) is not None for k in ("min", "max", "target"))
+    )
+    carbs_source = "fixed" if carbs_has_fixed_cfg else "auto"
+    tol_lo_carbs = _safe_float(carbs_cfg.get("tolerance_low_pct"))
+    if tol_lo_carbs is None:
+        tol_lo_carbs = carbs_preset["tolerance_low_pct"]
+    tol_hi_carbs = _safe_float(carbs_cfg.get("tolerance_high_pct"))
+    if tol_hi_carbs is None:
+        tol_hi_carbs = carbs_preset["tolerance_high_pct"]
+
+    profile_carbs = _safe_float(_get("daily_carbs_target_g"))
+    if carbs_source == "fixed":
+        cfg_min = _safe_float(carbs_cfg.get("min"))
+        cfg_max = _safe_float(carbs_cfg.get("max"))
+        cfg_tgt = _safe_float(carbs_cfg.get("target"))
+        fallback_carbs = profile_carbs or round((target_cal * 0.45) / 4.0, 1)
+        if carbs_mode == "min":
+            carbs_min = round(cfg_min or cfg_tgt or fallback_carbs, 1)
+            carbs_max = None
+            target_carbs = carbs_min
+        elif carbs_mode == "max":
+            carbs_max = round(cfg_max or cfg_tgt or fallback_carbs, 1)
+            carbs_min = None
+            target_carbs = carbs_max
+        else:
+            carbs_min = round(cfg_min if cfg_min is not None else (cfg_tgt or fallback_carbs) * (1.0 - tol_lo_carbs / 100.0), 1)
+            carbs_max = round(cfg_max if cfg_max is not None else (cfg_tgt or fallback_carbs) * (1.0 + tol_hi_carbs / 100.0), 1)
+            if carbs_min > carbs_max:
+                carbs_min, carbs_max = carbs_max, carbs_min
+            target_carbs = round(cfg_tgt if cfg_tgt is not None else (carbs_min + carbs_max) / 2.0, 1)
+    else:
+        if carbs_target_override is not None and cal_source == "dynamic":
+            base_carbs = round(float(carbs_target_override), 1)
+        elif profile_carbs is not None and carbs_cfg.get("source") != "auto":
+            base_carbs = round(profile_carbs, 1)
+        else:
+            base_carbs = round((target_cal * 0.45) / 4.0, 1)
+        target_carbs = base_carbs
+        if carbs_mode == "min":
+            carbs_min = base_carbs
+            carbs_max = None
+        elif carbs_mode == "max":
+            carbs_min = None
+            carbs_max = base_carbs
+        else:
+            carbs_min = round(base_carbs * (1.0 - tol_lo_carbs / 100.0), 1)
+            carbs_max = round(base_carbs * (1.0 + tol_hi_carbs / 100.0), 1)
+
+    carbs_rule = {
+        "mode": carbs_mode,
+        "target": target_carbs,
+        "min": carbs_min,
+        "max": carbs_max,
+        "unit": "g",
+        "source": carbs_source,
+        "tolerance_low_pct": tol_lo_carbs,
+        "tolerance_high_pct": tol_hi_carbs,
+    }
+
+    # --- 4. LIPIDES ---
+    fat_cfg = cfg_all.get("fat") if isinstance(cfg_all.get("fat"), dict) else {}
+    fat_preset = preset_rules["fat"]
+    fat_mode = fat_cfg.get("mode") if fat_cfg.get("mode") in ("min", "max", "range") else fat_preset["mode"]
+    fat_has_fixed_cfg = fat_cfg.get("source") == "fixed" or (
+        fat_cfg.get("source") != "auto"
+        and any(_safe_float(fat_cfg.get(k)) is not None for k in ("min", "max", "target"))
+    )
+    fat_source = "fixed" if fat_has_fixed_cfg else "auto"
+    tol_lo_fat = _safe_float(fat_cfg.get("tolerance_low_pct"))
+    if tol_lo_fat is None:
+        tol_lo_fat = fat_preset["tolerance_low_pct"]
+    tol_hi_fat = _safe_float(fat_cfg.get("tolerance_high_pct"))
+    if tol_hi_fat is None:
+        tol_hi_fat = fat_preset["tolerance_high_pct"]
+
+    profile_fat = _safe_float(_get("daily_fat_target_g"))
+    if fat_source == "fixed":
+        cfg_min = _safe_float(fat_cfg.get("min"))
+        cfg_max = _safe_float(fat_cfg.get("max"))
+        cfg_tgt = _safe_float(fat_cfg.get("target"))
+        fallback_fat = profile_fat or round((target_cal * 0.30) / 9.0, 1)
+        if fat_mode == "min":
+            fat_min = round(cfg_min or cfg_tgt or fallback_fat, 1)
+            fat_max = None
+            target_fat = fat_min
+        elif fat_mode == "max":
+            fat_max = round(cfg_max or cfg_tgt or fallback_fat, 1)
+            fat_min = None
+            target_fat = fat_max
+        else:
+            fat_min = round(cfg_min if cfg_min is not None else (cfg_tgt or fallback_fat) * (1.0 - tol_lo_fat / 100.0), 1)
+            fat_max = round(cfg_max if cfg_max is not None else (cfg_tgt or fallback_fat) * (1.0 + tol_hi_fat / 100.0), 1)
+            if fat_min > fat_max:
+                fat_min, fat_max = fat_max, fat_min
+            target_fat = round(cfg_tgt if cfg_tgt is not None else (fat_min + fat_max) / 2.0, 1)
+    else:
+        if profile_fat is not None and fat_cfg.get("source") != "auto":
+            base_fat = round(profile_fat, 1)
+        else:
+            base_fat = round((target_cal * 0.30) / 9.0, 1)
+        target_fat = base_fat
+        if fat_mode == "min":
+            fat_min = base_fat
+            fat_max = None
+        elif fat_mode == "max":
+            fat_min = None
+            fat_max = base_fat
+        else:
+            fat_min = round(base_fat * (1.0 - tol_lo_fat / 100.0), 1)
+            fat_max = round(base_fat * (1.0 + tol_hi_fat / 100.0), 1)
+
+    fat_rule = {
+        "mode": fat_mode,
+        "target": target_fat,
+        "min": fat_min,
+        "max": fat_max,
+        "unit": "g",
+        "source": fat_source,
+        "tolerance_low_pct": tol_lo_fat,
+        "tolerance_high_pct": tol_hi_fat,
+    }
+
+    return {
+        "calories": target_cal,
+        "protein_g": target_prot,
+        "carbs_g": target_carbs,
+        "fat_g": target_fat,
+        "fiber_g": 25.0,
+        "protein_per_kg": prot_per_kg,
+        "weight_kg": round(eff_weight, 1) if eff_weight else None,
+        "rules": {
+            "protein": protein_rule,
+            "calories": calories_rule,
+            "carbs": carbs_rule,
+            "fat": fat_rule,
+        },
+    }
 
 
 def calculate_meal_totals(items: List[FoodItem]) -> Dict[str, float]:
@@ -199,17 +592,69 @@ def evaluate_nutrient_day_status(
     nutrient: Literal["protein", "calories", "carbs", "fat"],
     value: float,
     target: float,
+    rule: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Évalue l'atteinte d'un objectif quotidien selon la sémantique propre à chaque nutriment.
+    """Évalue l'atteinte d'un objectif quotidien selon la règle configurée (plancher, plafond, fourchette).
 
-    - Protéines : objectif plancher prioritaire (>= 95 % atteint, 80-95 % proche, < 80 % insuffisant).
-    - Calories : fourchette cible [90 %, 108 %], proche [75 %, 90 %[ ou ]108 %, 115 %], sinon insuffisant/dépassé.
-    - Glucides : fourchette cible [85 %, 115 %], proche [70 %, 85 %[ ou ]115 %, 125 %], sinon insuffisant/dépassé.
-    - Lipides : fourchette cible [80 %, 110 %], proche [65 %, 80 %[ ou ]110 %, 120 %], sinon insuffisant/dépassé.
+    Si `rule` est fourni (`{"mode": "min"|"max"|"range", "min": ..., "max": ..., "target": ...}`) :
+    - `min` (seuil plancher) : atteint si `>= min`, proche si `[85 % * min, min[`, sinon `below`.
+    - `max` (plafond) : atteint si `<= max`, proche si `]max, 110 % * max]`, sinon `over`.
+    - `range` (fourchette) : atteint si `[min, max]`, proche si `[85 % * min, min[` ou `]max, 110 % * max]`, sinon `below` / `over`.
+
+    Si `rule` est omis (rétrocompatibilité) : utilise les pourcentages par défaut de chaque nutriment.
     """
     val = round(max(0.0, float(value or 0.0)), 1)
-    tgt = round(max(0.0, float(target or 0.0)), 1)
+    tgt = round(max(0.0, float((rule.get("target") if isinstance(rule, dict) and rule.get("target") is not None else target) or 0.0)), 1)
     diff = round(val - tgt, 1)
+
+    if isinstance(rule, dict) and rule.get("mode") in ("min", "max", "range"):
+        mode = rule["mode"]
+        min_v = _safe_float(rule.get("min"))
+        max_v = _safe_float(rule.get("max"))
+        ref_val = tgt
+        if mode == "min" and min_v is not None:
+            ref_val = min_v
+            diff = round(val - min_v, 1)
+        elif mode == "max" and max_v is not None:
+            ref_val = max_v
+            diff = round(val - max_v, 1)
+
+        if val <= 0.0:
+            return {"pct": 0.0, "diff": diff, "state": "empty", "mode": mode, "min": min_v, "max": max_v}
+
+        pct = round((val / ref_val) * 100.0, 1) if ref_val > 0.0 else 0.0
+
+        if mode == "min":
+            floor = min_v if min_v is not None else tgt
+            if val >= floor:
+                state = "reached"
+            elif val >= floor * 0.85:
+                state = "close"
+            else:
+                state = "below"
+        elif mode == "max":
+            ceil_v = max_v if max_v is not None else tgt
+            if val <= ceil_v:
+                state = "reached"
+            elif val <= ceil_v * 1.10:
+                state = "close"
+            else:
+                state = "over"
+        else:  # range
+            lo = min_v if min_v is not None else round(tgt * 0.9, 1)
+            hi = max_v if max_v is not None else round(tgt * 1.1, 1)
+            if lo > hi:
+                lo, hi = hi, lo
+            if lo <= val <= hi:
+                state = "reached"
+            elif (lo * 0.85 <= val < lo) or (hi < val <= hi * 1.10):
+                state = "close"
+            elif val > hi * 1.10:
+                state = "over"
+            else:
+                state = "below"
+
+        return {"pct": pct, "diff": diff, "state": state, "mode": mode, "min": min_v, "max": max_v}
 
     if val <= 0.0:
         return {"pct": 0.0, "diff": diff, "state": "empty"}
@@ -256,14 +701,17 @@ def evaluate_nutrient_day_status(
 
 def compute_daily_macro_goals_history(
     meals: List[MealEntry],
-    targets: Dict[str, float],
+    targets: Dict[str, Any],
     today: Optional[date] = None,
     days: int = 30,
     weight_kg: Optional[float] = None,
+    rules: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Construit l'historique quotidien des objectifs (protéines, calories, glucides, lipides) et leurs KPIs."""
     ref_day = today or date.today()
     safe_days = max(1, min(int(days or 30), 90))
+
+    effective_rules = rules if isinstance(rules, dict) else (targets.get("rules") if isinstance(targets.get("rules"), dict) else None)
 
     target_protein = round(float(targets.get("protein_g") or 140.0), 1)
     target_calories = round(float(targets.get("calories") or 2000.0), 1)
@@ -318,10 +766,10 @@ def compute_daily_macro_goals_history(
                 "fiber_g": fiber,
                 "protein_per_kg": prot_per_kg,
                 "status": {
-                    "protein": evaluate_nutrient_day_status("protein", prot, target_protein),
-                    "calories": evaluate_nutrient_day_status("calories", cals, target_calories),
-                    "carbs": evaluate_nutrient_day_status("carbs", carbs, target_carbs),
-                    "fat": evaluate_nutrient_day_status("fat", fat, target_fat),
+                    "protein": evaluate_nutrient_day_status("protein", prot, target_protein, rule=(effective_rules or {}).get("protein")),
+                    "calories": evaluate_nutrient_day_status("calories", cals, target_calories, rule=(effective_rules or {}).get("calories")),
+                    "carbs": evaluate_nutrient_day_status("carbs", carbs, target_carbs, rule=(effective_rules or {}).get("carbs")),
+                    "fat": evaluate_nutrient_day_status("fat", fat, target_fat, rule=(effective_rules or {}).get("fat")),
                 },
             }
         )
@@ -370,6 +818,8 @@ def compute_daily_macro_goals_history(
             "adherence_pct": adherence_pct,
             "current_streak": streak,
         }
+        if effective_rules and nutrient in effective_rules:
+            entry_metric["rule"] = effective_rules[nutrient]
         if nutrient == "protein":
             entry_metric["today_per_kg"] = today_row["protein_per_kg"]
             entry_metric["avg_per_kg"] = (
@@ -389,6 +839,7 @@ def compute_daily_macro_goals_history(
             "carbs_g": target_carbs,
             "fat_g": target_fat,
         },
+        "rules": effective_rules,
         "daily": daily_rows,
         "metrics": metrics,
     }

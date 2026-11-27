@@ -8,6 +8,7 @@ from src.app import app
 from src.domain.nutrition import (
     compute_daily_macro_goals_history,
     evaluate_nutrient_day_status,
+    resolve_nutrition_goals,
 )
 from src.models import FoodItem, MealEntry
 
@@ -134,3 +135,133 @@ def test_api_dashboard_and_goals_history_endpoint():
     assert "calories" in hist_data["metrics"]
     assert "carbs" in hist_data["metrics"]
     assert "fat" in hist_data["metrics"]
+    assert "rules" in hist_data
+
+
+def test_evaluate_nutrient_day_status_configurable_rules():
+    """Vérifie l'évaluation selon les 3 modes configurables : plancher (min), plafond (max), fourchette (range)."""
+    # 1. Mode plancher (>= 180 g)
+    min_rule = {"mode": "min", "min": 180.0, "max": None, "target": 180.0}
+    assert evaluate_nutrient_day_status("protein", 0, 180, rule=min_rule)["state"] == "empty"
+    assert evaluate_nutrient_day_status("protein", 140, 180, rule=min_rule)["state"] == "below"
+    assert evaluate_nutrient_day_status("protein", 160, 180, rule=min_rule)["state"] == "close"
+    assert evaluate_nutrient_day_status("protein", 180, 180, rule=min_rule)["state"] == "reached"
+    assert evaluate_nutrient_day_status("protein", 210, 180, rule=min_rule)["state"] == "reached"
+
+    # 2. Mode plafond (<= 65 g)
+    max_rule = {"mode": "max", "min": None, "max": 65.0, "target": 65.0}
+    assert evaluate_nutrient_day_status("fat", 45, 65, rule=max_rule)["state"] == "reached"
+    assert evaluate_nutrient_day_status("fat", 65, 65, rule=max_rule)["state"] == "reached"
+    assert evaluate_nutrient_day_status("fat", 70, 65, rule=max_rule)["state"] == "close"
+    assert evaluate_nutrient_day_status("fat", 80, 65, rule=max_rule)["state"] == "over"
+
+    # 3. Mode fourchette ([1800, 2100] kcal)
+    range_rule = {"mode": "range", "min": 1800.0, "max": 2100.0, "target": 1950.0}
+    assert evaluate_nutrient_day_status("calories", 1400, 1950, rule=range_rule)["state"] == "below"
+    assert evaluate_nutrient_day_status("calories", 1600, 1950, rule=range_rule)["state"] == "close"
+    assert evaluate_nutrient_day_status("calories", 1900, 1950, rule=range_rule)["state"] == "reached"
+    assert evaluate_nutrient_day_status("calories", 2200, 1950, rule=range_rule)["state"] == "close"
+    assert evaluate_nutrient_day_status("calories", 2500, 1950, rule=range_rule)["state"] == "over"
+
+
+def test_resolve_nutrition_goals_protein_per_kg_never_overridden_by_legacy_140g():
+    """Régression BALI-303 : un profil à 1.8 g/kg pour 100 kg doit donner 180 g même si daily_protein_target_g=140 traîne en BDD."""
+    legacy_profile = {
+        "goal_profile_id": "weight_loss",
+        "protein_target_per_kg": 1.8,
+        "daily_protein_target_g": 140.0,
+        "target_calories_intake": 2000.0,
+        "current_weight_kg": 100.0,
+        "nutrition_goals_config": None,
+    }
+    resolved = resolve_nutrition_goals(legacy_profile, weight_kg=100.0, target_calories_override=2100.0)
+    assert resolved["protein_g"] == 180.0
+    assert resolved["protein_per_kg"] == 1.8
+    assert resolved["rules"]["protein"]["mode"] == "min"
+    assert resolved["rules"]["protein"]["min"] == 180.0
+
+    # Si l'utilisateur choisit explicitement le mode grammes fixes (unit="g"), sa valeur fixe est respectée
+    fixed_profile = {
+        **legacy_profile,
+        "nutrition_goals_config": {
+            "protein": {"mode": "range", "unit": "g", "min": 150.0, "max": 170.0},
+            "calories": {"mode": "max", "source": "fixed", "max": 1950.0},
+            "carbs": {"mode": "range", "source": "fixed", "min": 160.0, "max": 200.0},
+            "fat": {"mode": "max", "source": "fixed", "max": 60.0},
+        },
+    }
+    res_fixed = resolve_nutrition_goals(fixed_profile, weight_kg=100.0, target_calories_override=2400.0)
+    assert res_fixed["protein_g"] == 160.0
+    assert res_fixed["rules"]["protein"]["min"] == 150.0
+    assert res_fixed["rules"]["protein"]["max"] == 170.0
+    assert res_fixed["calories"] == 1950.0
+    assert res_fixed["rules"]["calories"]["mode"] == "max"
+    assert res_fixed["carbs_g"] == 180.0
+    assert res_fixed["fat_g"] == 60.0
+
+
+def test_api_goals_config_unified_across_all_endpoints(tmp_path):
+    """Vérifie que les objectifs configurés via PUT /api/profile se propagent à /api/dashboard, /api/meals/journal et /api/nutrition/goals-history."""
+    from src import app as app_module
+    from src.db import Database
+    from src.auth import create_access_token
+
+    db_path = str(tmp_path / "bali303_goals.db")
+    test_db = Database(db_path=db_path)
+    user = test_db.get_or_create_user(email="goals@vitaltrack.local", name="Goals Tester")
+    token = create_access_token(user["id"], user["uuid"], user["email"], user["name"])
+    headers = {"Authorization": f"Bearer {token}"}
+
+    old_db = app_module.db
+    app_module.db = test_db
+    app_module.invalidate_dashboard_cache()
+    try:
+        client = TestClient(app)
+
+        # Configurer 2.0 g/kg pour 90 kg -> 180 g/j, calories fixes [1700, 1950], lipides plafond <= 60 g
+        payload = {
+            "current_weight_kg": 90.0,
+            "goal_profile_id": "weight_loss",
+            "protein_target_per_kg": 2.0,
+            "daily_protein_target_g": None,
+            "nutrition_goals_config": {
+                "protein": {"mode": "min", "unit": "per_kg", "min": 2.0, "max": None},
+                "calories": {"mode": "range", "source": "fixed", "min": 1700.0, "max": 1950.0},
+                "carbs": {"mode": "range", "source": "fixed", "min": 150.0, "max": 210.0},
+                "fat": {"mode": "max", "source": "fixed", "max": 60.0},
+            },
+        }
+        res_put = client.put("/api/profile", json=payload, headers=headers)
+        assert res_put.status_code == 200
+
+        # Une mise à jour partielle ultérieure (poids cible) ne doit pas écraser nutrition_goals_config
+        res_partial = client.put("/api/profile", json={"target_weight_kg": 82.0}, headers=headers)
+        assert res_partial.status_code == 200
+
+        res_dash = client.get("/api/dashboard", headers=headers)
+        assert res_dash.status_code == 200
+        dash = res_dash.json()
+        assert dash["summary"]["targets"]["protein_g"] == 180.0
+        assert dash["summary"]["targets"]["calories"] == 1825.0
+        assert dash["summary"]["targets"]["fat_g"] == 60.0
+        assert dash["summary"]["targets"]["rules"]["fat"]["mode"] == "max"
+        assert dash["daily_goals_history"]["targets"]["protein_g"] == 180.0
+        assert dash["daily_goals_history"]["rules"]["calories"]["min"] == 1700.0
+        assert dash["daily_goals_history"]["rules"]["calories"]["max"] == 1950.0
+
+        res_journal = client.get("/api/meals/journal", headers=headers)
+        assert res_journal.status_code == 200
+        journal = res_journal.json()
+        assert journal["targets"]["protein_g"] == 180.0
+        assert journal["targets"]["calories"] == 1825.0
+        assert journal["targets"]["fat_g"] == 60.0
+
+        res_hist = client.get("/api/nutrition/goals-history?days=7", headers=headers)
+        assert res_hist.status_code == 200
+        hist = res_hist.json()
+        assert hist["targets"]["protein_g"] == 180.0
+        assert hist["targets"]["calories"] == 1825.0
+        assert hist["rules"]["fat"]["mode"] == "max"
+    finally:
+        app_module.db = old_db
+        app_module.invalidate_dashboard_cache()

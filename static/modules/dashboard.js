@@ -125,6 +125,26 @@
 
         recommendation: "Léger déficit propice au développement musculaire et à l'oxydation des graisses via un ratio protéiné athlétique (2,2g/kg)."
 
+      },
+
+      muscle_gain: {
+
+        id: "muscle_gain",
+
+        title: "🏋️ Prise de Masse Maigre",
+
+        badge: "+300 kcal & P+ 2.0g/kg",
+
+        delta: 300,
+
+        steps: 8500,
+
+        protein_per_kg: 2.0,
+
+        desc: "Surplus contrôlé +300 kcal/j, protéines 2,0g/kg, glucides soutenus",
+
+        recommendation: "Surplus calorique maîtrisé (+300 kcal) pour soutenir l'anabolisme musculaire et la récupération."
+
       }
 
     };
@@ -524,7 +544,12 @@
 
           const p = Math.round(protByDay[idx] || 0);
 
-          const protTarget = Math.round((currentData && currentData.summary && currentData.summary.targets && currentData.summary.targets.protein_g) || 140);
+          const targetsObj = (currentData && currentData.summary && currentData.summary.targets) || {};
+          const rulesObj = targetsObj.rules || {};
+          const protTarget = Math.round(targetsObj.protein_g || 140);
+          const protStatus = typeof evaluateNutrientStatus === 'function'
+            ? evaluateNutrientStatus('protein', p, protTarget, rulesObj.protein)
+            : { state: p >= Math.round(protTarget * 0.95) ? 'reached' : 'below' };
 
           const total = Math.round(b + l + s + d);
 
@@ -534,27 +559,38 @@
 
 
 
-          const target = (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
+          const target = Math.round(targetsObj.calories || (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0);
 
           const pct = target > 0 ? Math.min(Math.round((total / target) * 100), 100) : 0;
 
           const diff = total - target;
+          const calStatus = typeof evaluateNutrientStatus === 'function'
+            ? evaluateNutrientStatus('calories', total, target, rulesObj.calories)
+            : { state: total === 0 ? 'empty' : (total <= target ? 'reached' : 'over') };
 
 
 
           let statusBadge = '';
 
-          if (total === 0) {
+          if (total === 0 || calStatus.state === 'empty') {
 
             statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 font-medium">Non renseigné</span>';
 
-          } else if (total <= target) {
+          } else if (calStatus.state === 'reached') {
 
-            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">🟢 Conforme (-${target - total} kcal)</span>`;
+            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">🟢 Conforme (${diff >= 0 ? '+' : ''}${diff} kcal)</span>`;
+
+          } else if (calStatus.state === 'close') {
+
+            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20">🟡 Proche (${diff >= 0 ? '+' : ''}${diff} kcal)</span>`;
+
+          } else if (calStatus.state === 'over') {
+
+            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 font-bold border border-rose-500/20">🔴 Dépassé (+${diff} kcal)</span>`;
 
           } else {
 
-            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20">🟡 Dépassé (+${diff} kcal)</span>`;
+            statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20">🔵 Sous cible (${diff} kcal)</span>`;
 
           }
 
@@ -586,7 +622,7 @@
 
               <td class="py-2.5 px-3">
 
-                <span class="font-bold ${p >= Math.round(protTarget * 0.95) ? 'text-emerald-400' : (p > 0 ? 'text-brand-300' : 'text-slate-600')}">${p > 0 ? p + ' g' : '-'}</span>
+                <span class="font-bold ${protStatus.state === 'reached' ? 'text-emerald-400' : (p > 0 ? 'text-brand-300' : 'text-slate-600')}">${p > 0 ? p + ' g' : '-'}</span>
 
                 ${p > 0 ? `<span class="text-[10px] text-slate-400"> / ${Math.round(protTarget)}g</span>` : ''}
 
@@ -2297,7 +2333,9 @@
 
         target_calories_intake: parseFloat(document.getElementById('prof-target-cals') && document.getElementById('prof-target-cals').value) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0,
 
-        protein_target_per_kg: parseFloat(document.getElementById('prof-target-prot') && document.getElementById('prof-target-prot').value) || 1.8
+        protein_target_per_kg: parseFloat(document.getElementById('prof-target-prot') && document.getElementById('prof-target-prot').value) || 1.8,
+
+        daily_protein_target_g: null
 
       };
 

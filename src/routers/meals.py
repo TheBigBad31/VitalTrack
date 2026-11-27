@@ -1036,7 +1036,11 @@ def get_meals_journal(
 
     weights = db.get_weights(limit=10, user_id=target_uid) if hasattr(db, "get_weights") else []
     latest_weight = weights[-1] if weights else None
-    user_weight_kg = latest_weight.weight_kg if latest_weight else 79.5
+    user_weight_kg = (
+        latest_weight.weight_kg
+        if latest_weight
+        else (user_profile.get("current_weight_kg") or user_profile.get("target_weight_kg") or 79.5)
+    )
 
     from src.domain.nutrition import calculate_bmr_mifflin_st_jeor
     bmr = calculate_bmr_mifflin_st_jeor(
@@ -1046,7 +1050,7 @@ def get_meals_journal(
         gender=user_profile.get("gender", "male")
     )
     goal_id = user_profile.get("goal_profile_id") or "weight_loss"
-    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0}
+    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0, "muscle_gain": 300.0}
     goal_delta = goal_delta_map.get(goal_id, -500.0)
 
     dynamic_tdee = calculate_dynamic_tdee_target(
@@ -1059,7 +1063,8 @@ def get_meals_journal(
         db,
         user_id=target_uid,
         target_calories_override=dynamic_tdee["target_calories_intake"],
-        carbs_target_override=dynamic_tdee["daily_carbs_target_g"]
+        carbs_target_override=dynamic_tdee["daily_carbs_target_g"],
+        weight_kg=user_weight_kg,
     )
     meal_averages = get_historical_meal_averages(db, user_id=target_uid, before_date=target_date)
     historical_meals = get_historical_meal_candidates(db, user_id=target_uid, before_date=target_date)
@@ -1277,11 +1282,12 @@ def get_nutrition_goals_history(
         else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
     )
 
-    daily_targets = get_daily_nutrition_targets(db, user_id=target_uid)
+    daily_targets = get_daily_nutrition_targets(db, user_id=target_uid, weight_kg=effective_weight_kg)
     return compute_daily_macro_goals_history(
         meals=meals,
         targets=daily_targets,
         today=dt_module.date.today(),
         days=days,
         weight_kg=effective_weight_kg,
+        rules=daily_targets.get("rules"),
     )

@@ -450,29 +450,42 @@ class Database:
                         ALTER TABLE food_items ADD COLUMN IF NOT EXISTS barcode TEXT;
                         ALTER TABLE food_items ADD COLUMN IF NOT EXISTS nutriscore TEXT;
                     END IF;
+
+                    -- 4. Table user_profile : assurer la présence de nutrition_goals_config (BALI-303)
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.tables WHERE table_name = 'user_profile'
+                    ) THEN
+                        ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS nutrition_goals_config TEXT;
+                    END IF;
                 END $$;
             """)
             conn.commit()
 
     def _ensure_food_items_category_column(self):
-        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`, barcode et nutriscore."""
+        """Auto-rattrapage DDL SQLite : garantit la présence de `food_items.category`, barcode, nutriscore et `user_profile.nutrition_goals_config`."""
         if self.is_postgres:
             return
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='food_items'")
-            if not cursor.fetchone():
-                return
-            cursor.execute("PRAGMA table_info(food_items)")
-            columns = {row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()}
-            if "category" not in columns:
-                cursor.execute("ALTER TABLE food_items ADD COLUMN category TEXT")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_category ON food_items(category)")
-            if "barcode" not in columns:
-                cursor.execute("ALTER TABLE food_items ADD COLUMN barcode TEXT")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_barcode ON food_items(barcode)")
-            if "nutriscore" not in columns:
-                cursor.execute("ALTER TABLE food_items ADD COLUMN nutriscore TEXT")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(food_items)")
+                columns = {row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()}
+                if "category" not in columns:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN category TEXT")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_category ON food_items(category)")
+                if "barcode" not in columns:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN barcode TEXT")
+                    cursor.execute("CREATE INDEX IF NOT EXISTS idx_food_items_barcode ON food_items(barcode)")
+                if "nutriscore" not in columns:
+                    cursor.execute("ALTER TABLE food_items ADD COLUMN nutriscore TEXT")
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_profile'")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(user_profile)")
+                prof_cols = {row["name"] if isinstance(row, dict) else row[1] for row in cursor.fetchall()}
+                if "nutrition_goals_config" not in prof_cols:
+                    cursor.execute("ALTER TABLE user_profile ADD COLUMN nutrition_goals_config TEXT")
             conn.commit()
 
     def _pg_bool_true(self):

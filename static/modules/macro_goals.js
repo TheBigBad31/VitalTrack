@@ -75,10 +75,50 @@
     nutrition: { nutrient: 'protein', days: 14, chart: null },
   };
 
-  function evaluateNutrientStatus(nutrient, value, target) {
+  function evaluateNutrientStatus(nutrient, value, target, rule) {
     const val = Math.round(Math.max(0, Number(value) || 0) * 10) / 10;
-    const tgt = Math.round(Math.max(0, Number(target) || 0) * 10) / 10;
-    const diff = Math.round((val - tgt) * 10) / 10;
+    const ruleTarget = rule && rule.target !== undefined && rule.target !== null ? Number(rule.target) : Number(target);
+    const tgt = Math.round(Math.max(0, ruleTarget || 0) * 10) / 10;
+    let diff = Math.round((val - tgt) * 10) / 10;
+
+    if (rule && ['min', 'max', 'range'].includes(rule.mode)) {
+      const mode = rule.mode;
+      const minV = rule.min !== undefined && rule.min !== null ? Number(rule.min) : null;
+      const maxV = rule.max !== undefined && rule.max !== null ? Number(rule.max) : null;
+      let refVal = tgt;
+      if (mode === 'min' && minV !== null) {
+        refVal = minV;
+        diff = Math.round((val - minV) * 10) / 10;
+      } else if (mode === 'max' && maxV !== null) {
+        refVal = maxV;
+        diff = Math.round((val - maxV) * 10) / 10;
+      }
+
+      if (val <= 0) return { pct: 0, diff, state: 'empty', mode, min: minV, max: maxV };
+      const pct = refVal > 0 ? Math.round((val / refVal) * 1000) / 10 : 0;
+
+      let state = 'below';
+      if (mode === 'min') {
+        const floor = minV !== null ? minV : tgt;
+        if (val >= floor) state = 'reached';
+        else if (val >= floor * 0.85) state = 'close';
+        else state = 'below';
+      } else if (mode === 'max') {
+        const ceilV = maxV !== null ? maxV : tgt;
+        if (val <= ceilV) state = 'reached';
+        else if (val <= ceilV * 1.1) state = 'close';
+        else state = 'over';
+      } else {
+        let lo = minV !== null ? minV : Math.round(tgt * 0.9 * 10) / 10;
+        let hi = maxV !== null ? maxV : Math.round(tgt * 1.1 * 10) / 10;
+        if (lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
+        if (val >= lo && val <= hi) state = 'reached';
+        else if ((val >= lo * 0.85 && val < lo) || (val > hi && val <= hi * 1.1)) state = 'close';
+        else if (val > hi * 1.1) state = 'over';
+        else state = 'below';
+      }
+      return { pct, diff, state, mode, min: minV, max: maxV };
+    }
 
     if (val <= 0) return { pct: 0, diff, state: 'empty' };
     const pct = tgt > 0 ? Math.round((val / tgt) * 1000) / 10 : 0;
@@ -112,23 +152,49 @@
     const s = data.summary || {};
     const profile = data.profile || {};
     const t = s.targets || (data.daily_goals_history && data.daily_goals_history.targets) || {};
+    const existingRules = (s.targets && s.targets.rules) || (data.daily_goals_history && data.daily_goals_history.rules) || null;
 
-    const targetCals =
-      Number(s.target_calories_intake) ||
-      Number(t.calories) ||
-      Number(profile.target_calories_intake) ||
-      2000;
     const weight =
+      Number(t.weight_kg) ||
       Number(s.current_weight_kg) ||
       Number(profile.current_weight_kg) ||
       Number(profile.target_weight_kg) ||
       0;
+
+    if (existingRules && Number(t.protein_g) > 0 && Number(t.calories) > 0) {
+      return {
+        protein_g: Math.round(Number(t.protein_g) * 10) / 10,
+        calories: Math.round(Number(t.calories) * 10) / 10,
+        carbs_g: Math.round(Number(t.carbs_g || (t.calories * 0.45) / 4) * 10) / 10,
+        fat_g: Math.round(Number(t.fat_g || (t.calories * 0.30) / 9) * 10) / 10,
+        weight_kg: weight > 0 ? Math.round(weight * 10) / 10 : null,
+        rules: existingRules,
+      };
+    }
+
+    if (typeof resolveNutritionTargetsFromConfig === 'function') {
+      const computed = resolveNutritionTargetsFromConfig(null, { profile, summary: s });
+      return {
+        protein_g: computed.protein_g,
+        calories: computed.calories,
+        carbs_g: computed.carbs_g,
+        fat_g: computed.fat_g,
+        weight_kg: computed.weight_kg,
+        rules: computed.rules,
+      };
+    }
+
+    const targetCals =
+      Number(t.calories) ||
+      Number(s.target_calories_intake) ||
+      Number(profile.target_calories_intake) ||
+      2000;
+    // Priorité à protein_target_per_kg * poids (jamais écrasé par daily_protein_target_g résiduel)
     const targetProt =
       Number(t.protein_g) ||
-      Number(profile.daily_protein_target_g) ||
       (profile.protein_target_per_kg && weight
         ? Math.round(Number(profile.protein_target_per_kg) * weight)
-        : Math.round((targetCals * 0.25) / 4));
+        : Number(profile.daily_protein_target_g) || Math.round((targetCals * 0.25) / 4));
     const targetCarbs =
       Number(t.carbs_g) ||
       Number(profile.daily_carbs_target_g) ||
@@ -144,29 +210,58 @@
       carbs_g: Math.round(targetCarbs * 10) / 10,
       fat_g: Math.round(targetFat * 10) / 10,
       weight_kg: weight > 0 ? Math.round(weight * 10) / 10 : null,
+      rules: existingRules,
     };
+  }
+
+  function formatRuleLabelShort(rule, fallbackTarget, unit) {
+    const fmt = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
+    if (rule && rule.mode === 'min') return `≥ ${fmt(rule.min !== null ? rule.min : fallbackTarget)} ${unit}`;
+    if (rule && rule.mode === 'max') return `≤ ${fmt(rule.max !== null ? rule.max : fallbackTarget)} ${unit}`;
+    if (rule && rule.mode === 'range' && rule.min !== null && rule.max !== null) {
+      return `${fmt(rule.min)}–${fmt(rule.max)} ${unit}`;
+    }
+    return `/ ${fmt(fallbackTarget)} ${unit}`;
+  }
+
+  function formatRuleHintText(cfg, target, rule, targetPerKg) {
+    const fmt = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
+    const perKgStr = targetPerKg ? ` (${targetPerKg} g/kg)` : '';
+    if (rule && rule.mode === 'min') {
+      const floor = rule.min !== null ? rule.min : target;
+      return `${cfg.emoji} ${cfg.label} • Seuil plancher ≥ ${fmt(floor)} ${cfg.unit}/j${perKgStr}`;
+    }
+    if (rule && rule.mode === 'max') {
+      const ceilV = rule.max !== null ? rule.max : target;
+      return `${cfg.emoji} ${cfg.label} • Plafond à ne pas dépasser ≤ ${fmt(ceilV)} ${cfg.unit}/j${perKgStr}`;
+    }
+    if (rule && rule.mode === 'range' && rule.min !== null && rule.max !== null) {
+      return `${cfg.emoji} ${cfg.label} • Fourchette cible ${fmt(rule.min)} – ${fmt(rule.max)} ${cfg.unit}/j${perKgStr}`;
+    }
+    return `${cfg.emoji} ${cfg.label} • Cible ${fmt(target)} ${cfg.unit}/j${perKgStr} — ${cfg.ruleHint}`;
   }
 
   function getGoalsHistoryDataset() {
     const data = (typeof currentData !== 'undefined' && currentData) || {};
     const targets = resolveTargets();
+    const rules = targets.rules || {};
 
     if (
       data.daily_goals_history &&
       Array.isArray(data.daily_goals_history.daily) &&
       data.daily_goals_history.daily.length > 0
     ) {
-      // Recalculer les statuts avec les cibles courantes (en cas de changement de profil)
+      // Recalculer les statuts avec les cibles & règles courantes
       const daily = data.daily_goals_history.daily.map((row) => ({
         ...row,
         status: {
-          protein: evaluateNutrientStatus('protein', row.protein_g, targets.protein_g),
-          calories: evaluateNutrientStatus('calories', row.calories_kcal, targets.calories),
-          carbs: evaluateNutrientStatus('carbs', row.carbs_g, targets.carbs_g),
-          fat: evaluateNutrientStatus('fat', row.fat_g, targets.fat_g),
+          protein: evaluateNutrientStatus('protein', row.protein_g, targets.protein_g, rules.protein),
+          calories: evaluateNutrientStatus('calories', row.calories_kcal, targets.calories, rules.calories),
+          carbs: evaluateNutrientStatus('carbs', row.carbs_g, targets.carbs_g, rules.carbs),
+          fat: evaluateNutrientStatus('fat', row.fat_g, targets.fat_g, rules.fat),
         },
       }));
-      return { targets, weight_kg: data.daily_goals_history.weight_kg || targets.weight_kg, daily };
+      return { targets, rules, weight_kg: targets.weight_kg || data.daily_goals_history.weight_kg, daily };
     }
 
     // Fallback local à partir de recent_meals
@@ -203,15 +298,15 @@
         fiber_g: Math.round(b.fiber_g * 10) / 10,
         protein_per_kg: targets.weight_kg && prot > 0 ? Math.round((prot / targets.weight_kg) * 100) / 100 : null,
         status: {
-          protein: evaluateNutrientStatus('protein', prot, targets.protein_g),
-          calories: evaluateNutrientStatus('calories', cals, targets.calories),
-          carbs: evaluateNutrientStatus('carbs', carbs, targets.carbs_g),
-          fat: evaluateNutrientStatus('fat', fat, targets.fat_g),
+          protein: evaluateNutrientStatus('protein', prot, targets.protein_g, rules.protein),
+          calories: evaluateNutrientStatus('calories', cals, targets.calories, rules.calories),
+          carbs: evaluateNutrientStatus('carbs', carbs, targets.carbs_g, rules.carbs),
+          fat: evaluateNutrientStatus('fat', fat, targets.fat_g, rules.fat),
         },
       });
     }
 
-    return { targets, weight_kg: targets.weight_kg, daily };
+    return { targets, rules, weight_kg: targets.weight_kg, daily };
   }
 
   function computePeriodMetrics(dailySlice, nutrient, target, weightKg) {
@@ -344,11 +439,13 @@
     container.textContent = '';
 
     const todayRow = dataset.daily[dataset.daily.length - 1] || null;
+    const rules = dataset.rules || {};
     NUTRIENT_ORDER.forEach((key) => {
       const cfg = NUTRIENT_CONFIG[key];
       const tgt = dataset.targets[cfg.targetKey];
+      const rule = rules[key] || null;
       const val = todayRow ? Math.round(Number(todayRow[cfg.field]) || 0) : 0;
-      const st = todayRow ? todayRow.status[key] : evaluateNutrientStatus(key, val, tgt);
+      const st = todayRow ? todayRow.status[key] : evaluateNutrientStatus(key, val, tgt, rule);
       const pct = Math.min(100, Math.round(st.pct));
       const isSelected = key === activeNutrient;
       const disp = stateDisplay(st.state, key);
@@ -390,7 +487,7 @@
       valRow.textContent = `${val.toLocaleString('fr-FR')} `;
       const tgtSpan = document.createElement('span');
       tgtSpan.className = 'text-[11px] font-normal text-slate-400';
-      tgtSpan.textContent = `/ ${Math.round(tgt).toLocaleString('fr-FR')} ${cfg.unit}`;
+      tgtSpan.textContent = rule ? `(${formatRuleLabelShort(rule, tgt, cfg.unit)})` : `/ ${Math.round(tgt).toLocaleString('fr-FR')} ${cfg.unit}`;
       valRow.appendChild(tgtSpan);
 
       const barTrack = document.createElement('div');
@@ -486,6 +583,7 @@
     const nutrient = state.nutrient || 'protein';
     const cfg = NUTRIENT_CONFIG[nutrient];
     const target = dataset.targets[cfg.targetKey];
+    const rule = (dataset.rules && dataset.rules[nutrient]) || null;
     const sliceDays = Math.max(1, Math.min(state.days || 7, dataset.daily.length));
     const dailySlice = dataset.daily.slice(-sliceDays);
     const metrics = computePeriodMetrics(dailySlice, nutrient, target, dataset.weight_kg);
@@ -523,9 +621,7 @@
     // 3. Sous-titre / règle du nutriment
     const hintEl = document.getElementById(`${prefix}-macro-goals-hint`);
     if (hintEl) {
-      const targetStr = `${Math.round(target).toLocaleString('fr-FR')} ${cfg.unit}/j`;
-      const perKgStr = metrics.targetPerKg ? ` (${metrics.targetPerKg} g/kg)` : '';
-      hintEl.textContent = `${cfg.emoji} ${cfg.label} • Cible ${targetStr}${perKgStr} — ${cfg.ruleHint}`;
+      hintEl.textContent = formatRuleHintText(cfg, target, rule, metrics.targetPerKg);
     }
 
     // 4. Mini-KPIs
@@ -606,36 +702,99 @@
     const values = dailySlice.map((r) => Math.round(Number(r[cfg.field]) || 0));
     const barColors = dailySlice.map((r) => stateDisplay(r.status[nutrient].state, nutrient).barBg);
     const barBorders = dailySlice.map((r) => stateDisplay(r.status[nutrient].state, nutrient).barBorder);
-    const targetLine = dailySlice.map(() => Math.round(target));
+
+    const chartDatasets = [
+      {
+        type: 'bar',
+        label: `${cfg.label} (${cfg.unit})`,
+        data: values,
+        backgroundColor: barColors,
+        borderColor: barBorders,
+        borderWidth: 1.5,
+        borderRadius: 6,
+        maxBarThickness: 34,
+        order: 2,
+      },
+    ];
+
+    let maxBound = target;
+    if (rule && rule.mode === 'range' && rule.min !== null && rule.max !== null) {
+      const minVal = Math.round(Number(rule.min));
+      const maxVal = Math.round(Number(rule.max));
+      maxBound = Math.max(target, maxVal);
+      chartDatasets.push(
+        {
+          type: 'line',
+          label: `Seuil min (${minVal} ${cfg.unit})`,
+          data: dailySlice.map(() => minVal),
+          borderColor: '#10B981',
+          borderDash: [5, 4],
+          borderWidth: 1.8,
+          pointRadius: 0,
+          fill: false,
+          order: 1,
+        },
+        {
+          type: 'line',
+          label: `Plafond max (${maxVal} ${cfg.unit})`,
+          data: dailySlice.map(() => maxVal),
+          borderColor: '#F59E0B',
+          borderDash: [5, 4],
+          borderWidth: 1.8,
+          pointRadius: 0,
+          backgroundColor: 'rgba(16, 185, 129, 0.08)',
+          fill: '-1',
+          order: 0,
+        }
+      );
+    } else if (rule && rule.mode === 'min') {
+      const floorVal = Math.round(Number(rule.min !== null ? rule.min : target));
+      maxBound = Math.max(target, floorVal);
+      chartDatasets.push({
+        type: 'line',
+        label: `Seuil plancher (≥ ${floorVal} ${cfg.unit})`,
+        data: dailySlice.map(() => floorVal),
+        borderColor: '#10B981',
+        borderDash: [6, 4],
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        order: 0,
+      });
+    } else if (rule && rule.mode === 'max') {
+      const ceilVal = Math.round(Number(rule.max !== null ? rule.max : target));
+      maxBound = Math.max(target, ceilVal);
+      chartDatasets.push({
+        type: 'line',
+        label: `Plafond max (≤ ${ceilVal} ${cfg.unit})`,
+        data: dailySlice.map(() => ceilVal),
+        borderColor: '#F43F5E',
+        borderDash: [6, 4],
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        order: 0,
+      });
+    } else {
+      chartDatasets.push({
+        type: 'line',
+        label: `Objectif (${Math.round(target)} ${cfg.unit})`,
+        data: dailySlice.map(() => Math.round(target)),
+        borderColor: '#F59E0B',
+        borderDash: [6, 4],
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        order: 0,
+      });
+    }
 
     try {
       state.chart = new Chart(canvas, {
         type: 'bar',
         data: {
           labels,
-          datasets: [
-            {
-              type: 'bar',
-              label: `${cfg.label} (${cfg.unit})`,
-              data: values,
-              backgroundColor: barColors,
-              borderColor: barBorders,
-              borderWidth: 1.5,
-              borderRadius: 6,
-              maxBarThickness: 34,
-            },
-            {
-              type: 'line',
-              label: `Objectif (${Math.round(target)} ${cfg.unit})`,
-              data: targetLine,
-              borderColor: '#F59E0B',
-              borderDash: [6, 4],
-              borderWidth: 2,
-              pointRadius: 0,
-              fill: false,
-              order: 0,
-            },
-          ],
+          datasets: chartDatasets,
         },
         options: {
           responsive: true,
@@ -648,7 +807,7 @@
             },
             y: {
               beginAtZero: true,
-              suggestedMax: Math.round(Math.max(target * 1.2, ...values, 10)),
+              suggestedMax: Math.round(Math.max(maxBound * 1.2, ...values, 10)),
               grid: { color: 'rgba(255,255,255,0.05)' },
               ticks: {
                 color: '#94a3b8',
@@ -665,8 +824,8 @@
             tooltip: {
               callbacks: {
                 label: (ctx) => {
-                  if (ctx.datasetIndex === 1) {
-                    return ` Objectif : ${Math.round(target).toLocaleString('fr-FR')} ${cfg.unit}`;
+                  if (ctx.datasetIndex > 0) {
+                    return ` ${ctx.dataset.label}`;
                   }
                   const row = dailySlice[ctx.dataIndex];
                   const st = row.status[nutrient];
@@ -719,6 +878,7 @@
     const fat = Math.round((Number(daySummary.total_fat_g) || 0) * 10) / 10;
     const fiber = Math.round((Number(daySummary.total_fiber_g) || 0) * 10) / 10;
 
+    const rules = targets.rules || {};
     if (
       currentData.daily_goals_history &&
       Array.isArray(currentData.daily_goals_history.daily)
@@ -735,10 +895,10 @@
         protein_per_kg:
           targets.weight_kg && prot > 0 ? Math.round((prot / targets.weight_kg) * 100) / 100 : null,
         status: {
-          protein: evaluateNutrientStatus('protein', prot, targets.protein_g),
-          calories: evaluateNutrientStatus('calories', cals, targets.calories),
-          carbs: evaluateNutrientStatus('carbs', carbs, targets.carbs_g),
-          fat: evaluateNutrientStatus('fat', fat, targets.fat_g),
+          protein: evaluateNutrientStatus('protein', prot, targets.protein_g, rules.protein),
+          calories: evaluateNutrientStatus('calories', cals, targets.calories, rules.calories),
+          carbs: evaluateNutrientStatus('carbs', carbs, targets.carbs_g, rules.carbs),
+          fat: evaluateNutrientStatus('fat', fat, targets.fat_g, rules.fat),
         },
       };
       if (idx >= 0) {
@@ -767,6 +927,7 @@
 
     const sum = daySummary || {};
     const targets = resolveTargets();
+    const rules = targets.rules || {};
     const valuesMap = {
       protein: Math.round(Number(sum.total_protein_g) || 0),
       calories: Math.round(Number(sum.total_calories) || 0),
@@ -778,7 +939,8 @@
       const cfg = NUTRIENT_CONFIG[key];
       const val = valuesMap[key];
       const tgt = targets[cfg.targetKey];
-      const st = evaluateNutrientStatus(key, val, tgt);
+      const rule = rules[key] || null;
+      const st = evaluateNutrientStatus(key, val, tgt, rule);
       const disp = stateDisplay(st.state, key);
       const pctBar = Math.min(100, Math.round(st.pct));
 
@@ -807,7 +969,7 @@
       mainVal.textContent = `${val.toLocaleString('fr-FR')} `;
       const tgtVal = document.createElement('span');
       tgtVal.className = 'text-[10px] font-normal text-slate-400';
-      tgtVal.textContent = `/ ${Math.round(tgt).toLocaleString('fr-FR')} ${cfg.unit}`;
+      tgtVal.textContent = rule ? `(${formatRuleLabelShort(rule, tgt, cfg.unit)})` : `/ ${Math.round(tgt).toLocaleString('fr-FR')} ${cfg.unit}`;
       mainVal.appendChild(tgtVal);
 
       const remEl = document.createElement('span');
@@ -846,4 +1008,5 @@
   window.selectMacroGoalDays = selectMacroGoalDays;
   window.syncTodayIntoMacroGoalsHistory = syncTodayIntoMacroGoalsHistory;
   window.renderJournalDayMacroBars = renderJournalDayMacroBars;
+  window.evaluateNutrientStatus = evaluateNutrientStatus;
 })();

@@ -111,8 +111,14 @@ async def get_dashboard_data(
 
     # Calcul dynamique du budget calorique et glucidique du jour
     goal_id = profile.get("goal_profile_id") or "weight_loss"
-    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0}
+    goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0, "muscle_gain": 300.0}
     goal_delta = goal_delta_map.get(goal_id, -500.0)
+
+    effective_weight_kg = (
+        latest_weight.weight_kg
+        if latest_weight
+        else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
+    )
 
     dynamic_tdee = calculate_dynamic_tdee_target(
         bmr_kcal=energy_balance["bmr_kcal"],
@@ -120,13 +126,14 @@ async def get_dashboard_data(
         workout_calories_kcal=today_workout_calories,
         goal_delta=goal_delta,
     )
-    effective_target_calories = dynamic_tdee["target_calories_intake"]
     daily_targets = get_daily_nutrition_targets(
         db,
         user_id=user_id,
-        target_calories_override=effective_target_calories,
-        carbs_target_override=dynamic_tdee["daily_carbs_target_g"]
+        target_calories_override=dynamic_tdee["target_calories_intake"],
+        carbs_target_override=dynamic_tdee["daily_carbs_target_g"],
+        weight_kg=effective_weight_kg,
     )
+    effective_target_calories = daily_targets["calories"]
     metabolic_plateau = detect_metabolic_plateau(
         weights=weights,
         meals=meals,
@@ -160,17 +167,13 @@ async def get_dashboard_data(
             day_dict["fiber_g"] = round(day_dict["fiber_g"] + float(m.fiber_g or 0.0), 1)
         meals_by_day[d_str] = day_dict
 
-    effective_weight_kg = (
-        latest_weight.weight_kg
-        if latest_weight
-        else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
-    )
     daily_goals_history = compute_daily_macro_goals_history(
         meals=meals,
         targets=daily_targets,
         today=today,
         days=30,
         weight_kg=effective_weight_kg,
+        rules=daily_targets.get("rules"),
     )
 
     device_statuses = []

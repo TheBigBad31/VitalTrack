@@ -95,7 +95,7 @@ class UsersRepository(BaseRepository):
 
             cursor.execute("""
                 INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, preferred_ring, preferred_scale, is_demo_profile, google_email, google_name, google_picture, google_sub, updated_at)
-                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', 0, ?, ?, ?, ?, ?)
+                VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, NULL, NULL, NULL, 2000.0, 'weight_loss', 'moderately_active', 'ringconn', 'withings', 0, ?, ?, ?, ?, ?)
             """, (user_dict["id"], user_dict["name"] or "Utilisateur", user_dict["email"], user_dict["name"], user_dict["picture"], google_sub, now_str))
             conn.commit()
 
@@ -137,13 +137,22 @@ class UsersRepository(BaseRepository):
                 now_str = datetime.now(timezone.utc).isoformat()
                 cursor.execute("""
                     INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, is_demo_profile, updated_at)
-                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, 140.0, 220.0, 65.0, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', 0, ?)
+                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, NULL, NULL, NULL, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', 0, ?)
                 """, (user_id, now_str))
                 conn.commit()
                 cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
                 row = cursor.fetchone()
 
-        return dict(row)
+        prof = dict(row)
+        raw_cfg = prof.get("nutrition_goals_config")
+        if isinstance(raw_cfg, str) and raw_cfg.strip():
+            try:
+                prof["nutrition_goals_config"] = json.loads(raw_cfg)
+            except Exception:
+                prof["nutrition_goals_config"] = None
+        elif raw_cfg == "":
+            prof["nutrition_goals_config"] = None
+        return prof
 
     def update_user_profile(self, data: Dict[str, Any], user_id: int = 1) -> Dict[str, Any]:
         """Met à jour le profil de l'utilisateur."""
@@ -154,6 +163,11 @@ class UsersRepository(BaseRepository):
             v = data.get(key)
             if v is not None:
                 return v
+            return current.get(key, default)
+
+        def _nullable_val(key, default=None):
+            if key in data:
+                return data[key]
             return current.get(key, default)
 
         name = _val("name", "Sébastien")
@@ -172,13 +186,13 @@ class UsersRepository(BaseRepository):
         google_picture = _val("google_picture", None)
         google_sub = _val("google_sub", None)
 
-        daily_protein = _val("daily_protein_target_g", None)
+        daily_protein = _nullable_val("daily_protein_target_g", None)
         if daily_protein is not None:
             daily_protein = float(daily_protein)
-        daily_carbs = _val("daily_carbs_target_g", None)
+        daily_carbs = _nullable_val("daily_carbs_target_g", None)
         if daily_carbs is not None:
             daily_carbs = float(daily_carbs)
-        daily_fat = _val("daily_fat_target_g", None)
+        daily_fat = _nullable_val("daily_fat_target_g", None)
         if daily_fat is not None:
             daily_fat = float(daily_fat)
         daily_water = _val("daily_water_target_ml", 2000.0)
@@ -186,13 +200,16 @@ class UsersRepository(BaseRepository):
             daily_water = float(daily_water)
         goal_type = _val("goal_type", "weight_loss")
         activity_level = _val("activity_level", "moderately_active")
-        birth_date = _val("birth_date", None)
-        current_weight = _val("current_weight_kg", None)
+        birth_date = _nullable_val("birth_date", None)
+        current_weight = _nullable_val("current_weight_kg", None)
         if current_weight is not None:
             current_weight = float(current_weight)
-        meal_distribution = _val("meal_distribution", None)
+        meal_distribution = _nullable_val("meal_distribution", None)
         if isinstance(meal_distribution, (dict, list)):
             meal_distribution = json.dumps(meal_distribution)
+        nutrition_goals_config = _nullable_val("nutrition_goals_config", None)
+        if isinstance(nutrition_goals_config, (dict, list)):
+            nutrition_goals_config = json.dumps(nutrition_goals_config)
         is_demo_profile = 1 if _val("is_demo_profile", 0) else 0
 
         with self.get_connection() as conn:
@@ -206,6 +223,7 @@ class UsersRepository(BaseRepository):
                     daily_protein_target_g = ?, daily_carbs_target_g = ?, daily_fat_target_g = ?,
                     daily_water_target_ml = ?, goal_type = ?, activity_level = ?,
                     birth_date = ?, current_weight_kg = ?, meal_distribution = ?,
+                    nutrition_goals_config = ?,
                     is_demo_profile = ?,
                     updated_at = ?
                 WHERE user_id = ?
@@ -213,7 +231,8 @@ class UsersRepository(BaseRepository):
                 name, gender, age, height_cm, target_weight, goal_id, steps, cal_intake,
                 prot, ring, scale, google_email, google_name, google_picture, google_sub,
                 daily_protein, daily_carbs, daily_fat, daily_water, goal_type, activity_level,
-                birth_date, current_weight, meal_distribution, is_demo_profile, now_str, user_id
+                birth_date, current_weight, meal_distribution, nutrition_goals_config,
+                is_demo_profile, now_str, user_id
             ))
             conn.commit()
 

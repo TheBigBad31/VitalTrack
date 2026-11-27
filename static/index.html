@@ -1468,7 +1468,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="goals-presets-buttons">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" id="goals-presets-buttons">
           <!-- Bouton 1 : Perte de Poids -->
           <button onclick="selectGoalProfile('weight_loss')" id="btn-goal-weight_loss" class="goal-btn text-left p-3.5 rounded-xl border-2 border-brand-500 bg-brand-500/10 transition-all flex flex-col justify-between space-y-2">
             <div class="flex items-center justify-between">
@@ -1479,7 +1479,7 @@
               <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 font-semibold border border-brand-500/30">-0,5 kg/sem</span>
             </div>
             <div class="text-[11px] text-slate-300">
-              Déficit : <span class="font-bold text-brand-400">-500 kcal/j</span> • Protéines : <span class="font-bold text-white">1,8 g/kg</span>
+              Déficit : <span class="font-bold text-brand-400">-500 kcal/j</span> • Protéines : <span class="font-bold text-white">≥ 1,8 g/kg</span>
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
               <span>Objectif : 10 000 pas/j</span>
@@ -1497,7 +1497,7 @@
               <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold border border-slate-700">0 kcal</span>
             </div>
             <div class="text-[11px] text-slate-300">
-              Équilibre : <span class="font-bold text-sky-400">0 kcal</span> • Répartition P/G/L équilibrée
+              Équilibre : <span class="font-bold text-sky-400">0 kcal</span> • Protéines : <span class="font-bold text-white">≥ 1,4 g/kg</span>
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
               <span>Objectif : 8 500 pas/j</span>
@@ -1515,23 +1515,82 @@
               <span class="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 font-semibold border border-orange-500/20">-200 kcal</span>
             </div>
             <div class="text-[11px] text-slate-300">
-              Léger déficit : <span class="font-bold text-amber-400">-200 kcal</span> • Protéines : <span class="font-bold text-white">2,2 g/kg</span>
+              Léger déficit : <span class="font-bold text-amber-400">-200 kcal</span> • Protéines : <span class="font-bold text-white">≥ 2,2 g/kg</span>
             </div>
             <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
-              <span>Muscle & Force</span>
+              <span>Objectif : 10 000 pas/j</span>
+              <span class="text-slate-400">Choisir</span>
+            </div>
+          </button>
+
+          <!-- Bouton 4 : Prise de Masse -->
+          <button onclick="selectGoalProfile('muscle_gain')" id="btn-goal-muscle_gain" class="goal-btn text-left p-3.5 rounded-xl border border-[#25254A] bg-[#0B0F17] hover:border-slate-600 transition-all flex flex-col justify-between space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-slate-200 flex items-center space-x-1.5">
+                <span>🏋️</span>
+                <span>Prise de Masse</span>
+              </span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30">+300 kcal</span>
+            </div>
+            <div class="text-[11px] text-slate-300">
+              Surplus : <span class="font-bold text-emerald-400">+300 kcal/j</span> • Protéines : <span class="font-bold text-white">≥ 2,0 g/kg</span>
+            </div>
+            <div class="text-[10px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-700/40">
+              <span>Objectif : 8 500 pas/j</span>
               <span class="text-slate-400">Choisir</span>
             </div>
           </button>
         </div>
 
-        <!-- Nouveau : Champ de poids cible -->
-        <div class="mt-4 p-3 rounded-xl bg-[#0B0F17] border border-[#25254A]">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-sm text-slate-400">Poids Cible (kg)</span>
-            <span class="text-xs text-brand-400 font-medium" id="goal-target-weight-value">77 kg</span>
+        <!-- Objectifs généraux : Poids cible, Pas, Hydratation -->
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A]">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="text-xs font-semibold text-slate-400">🎯 Poids Cible (kg)</span>
+              <span class="text-xs text-brand-400 font-medium" id="goal-target-weight-value">77 kg</span>
+            </div>
+            <input type="number" id="goal-target-weight-input" min="30" max="300" step="0.1" value="77" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-3 py-2 text-white font-bold text-lg focus:outline-none focus:border-brand-500 transition-colors">
           </div>
-          <input type="number" id="goal-target-weight-input" min="30" max="300" step="0.1" value="77" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-lg px-3 py-2 text-white font-bold text-xl focus:outline-none focus:border-brand-500 transition-colors">
-          <p class="text-xs text-slate-400 mt-1">Appuyez sur Entrée ou cliquez en dehors pour sauver</p>
+          <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A]">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="text-xs font-semibold text-slate-400">👟 Objectif Pas / jour</span>
+              <span class="text-xs text-cyan-400 font-medium" id="goal-target-steps-value">10 000 pas</span>
+            </div>
+            <input type="number" id="goal-target-steps-input" min="1000" max="50000" step="500" value="10000" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-3 py-2 text-white font-bold text-lg focus:outline-none focus:border-cyan-500 transition-colors">
+          </div>
+          <div class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A]">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="text-xs font-semibold text-slate-400">💧 Hydratation (ml / jour)</span>
+              <span class="text-xs text-sky-400 font-medium" id="goal-target-water-value">2 000 ml</span>
+            </div>
+            <input type="number" id="goal-target-water-input" min="500" max="10000" step="100" value="2000" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-3 py-2 text-white font-bold text-lg focus:outline-none focus:border-sky-500 transition-colors">
+          </div>
+        </div>
+      </div>
+
+      <!-- Configuration avancée des cibles & règles par nutriment (BALI-303) -->
+      <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-4 sm:p-5 shadow-lg space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">Seuils & Fourchettes</span>
+              <span class="text-xs text-slate-400" id="goals-ref-weight-badge">Poids de référence : -- kg</span>
+            </div>
+            <h3 class="text-base font-bold text-white mt-1">Personnalisation des Objectifs Nutritionnels</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Définissez pour chaque nutriment un seuil plancher (≥), un plafond (≤) ou une fourchette cible ([min – max]). Ces règles s'appliquent instantanément à tous les onglets.</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" onclick="resetGoalsToActivePreset()" class="px-3 py-2 rounded-xl bg-[#0B0F17] border border-[#25254A] hover:border-slate-500 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer">
+              Réinitialiser au préréglage
+            </button>
+            <button type="button" id="btn-save-nutrition-goals" onclick="saveNutritionGoalsConfig()" class="px-4 py-2 rounded-xl gradient-brand text-white text-xs font-bold shadow-md shadow-violet-600/20 hover:opacity-90 transition-all cursor-pointer">
+              Enregistrer les objectifs
+            </button>
+          </div>
+        </div>
+
+        <div id="goals-nutrients-config-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Généré dynamiquement par static/modules/views/goals.js -->
         </div>
       </div>
 

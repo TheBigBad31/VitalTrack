@@ -145,10 +145,14 @@
       const targetCals = s.target_calories_intake || targets.calories || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 2000;
       const intakeCals = Math.round(s.calories_intake_kcal || 0);
 
-      // Calcul cibles de macronutriments (fallback propre si targets non renseigné)
-      const protTarget = targets.protein_g || profile.daily_protein_target_g || (profile.protein_target_per_kg && (profile.current_weight_kg || profile.target_weight_kg) ? Math.round(profile.protein_target_per_kg * (profile.current_weight_kg || profile.target_weight_kg)) : Math.round((targetCals * 0.25) / 4));
-      const carbsTarget = targets.carbs_g || profile.daily_carbs_target_g || Math.round((targetCals * 0.45) / 4);
-      const fatTarget = targets.fat_g || profile.daily_fat_target_g || Math.round((targetCals * 0.30) / 9);
+      // Calcul cibles de macronutriments (source unique de vérité alignée sur Objectifs)
+      const resolvedFallback = (typeof resolveNutritionTargetsFromConfig === 'function')
+        ? resolveNutritionTargetsFromConfig(null, { profile, summary: s })
+        : null;
+      const effWeight = s.current_weight_kg || profile.current_weight_kg || profile.target_weight_kg;
+      const protTarget = targets.protein_g || (resolvedFallback && resolvedFallback.protein_g) || (profile.protein_target_per_kg && effWeight ? Math.round(profile.protein_target_per_kg * effWeight) : (profile.daily_protein_target_g || Math.round((targetCals * 0.25) / 4)));
+      const carbsTarget = targets.carbs_g || (resolvedFallback && resolvedFallback.carbs_g) || profile.daily_carbs_target_g || Math.round((targetCals * 0.45) / 4);
+      const fatTarget = targets.fat_g || (resolvedFallback && resolvedFallback.fat_g) || profile.daily_fat_target_g || Math.round((targetCals * 0.30) / 9);
 
       // 1. Centre du donut
       const elRatio = document.getElementById('donut-cals-ratio');

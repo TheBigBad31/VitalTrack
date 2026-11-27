@@ -40,6 +40,7 @@ class UserProfileInput(BaseModel):
     birth_date: Optional[str] = None
     current_weight_kg: Optional[float] = Field(None, ge=30.0, le=300.0)
     meal_distribution: Optional[Any] = None
+    nutrition_goals_config: Optional[Dict[str, Any]] = None
     preferred_ring: Optional[str] = "ringconn"
     preferred_scale: Optional[str] = "withings"
     google_email: Optional[str] = None
@@ -91,7 +92,7 @@ def get_user_profile(
 def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(app_module.get_current_user)):
     """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
     db = get_db()
-    updated = db.update_user_profile(profile_in.model_dump(), user_id=current_user.id)
+    updated = db.update_user_profile(profile_in.model_dump(exclude_unset=True), user_id=current_user.id)
     app_module.invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
