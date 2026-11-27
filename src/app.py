@@ -30,6 +30,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("vitaltrack.observability")
 
 from src.db import Database, DatabaseServiceUnavailableError, get_db_path
+from src.crypto import MissingEncryptionKeyError
 from src.dependencies import set_db
 from src.nutrition_engine import NutritionEngine
 from src.vision_nutrition import PhotoCalorieEstimator
@@ -199,6 +200,19 @@ async def database_service_unavailable_handler(request: Request, exc: DatabaseSe
             "error": "Service Unavailable",
             "detail": "Base de données Neon PostgreSQL temporairement inaccessible en production. Sauvegarde sur SQLite désactivée pour éviter toute perte de données.",
             "technical_error": str(exc),
+        },
+    )
+
+
+@app.exception_handler(MissingEncryptionKeyError)
+async def missing_encryption_key_handler(request: Request, exc: MissingEncryptionKeyError):
+    """Intercepte l'absence de clé de chiffrement persistante en production (fail-closed) et renvoie 503."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "error",
+            "error": "Service Unavailable",
+            "detail": "Chiffrement indisponible en production : configurez DATA_ENCRYPTION_KEYS ou DATA_ENCRYPTION_KEY.",
         },
     )
 

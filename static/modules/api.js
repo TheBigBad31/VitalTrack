@@ -2,9 +2,85 @@
 // Handles JWT authentication, automatic token injection, 401 interception and unified HTTP requests.
 
 const JWT_STORAGE_KEY = 'vitaltrack_jwt_token';
+const REFRESH_TOKEN_STORAGE_KEY = 'vitaltrack_refresh_token';
 const GOOGLE_SESSION_KEY = 'vitaltrack_google_session';
 const OFFLINE_QUEUE_DB = 'vitaltrack_offline_queue';
 const OFFLINE_QUEUE_STORE = 'mutations';
+
+let _refreshInFlight = null;
+
+function isAuthRefreshBypassUrl(url) {
+  const str = String(url || '');
+  return /\/api\/auth\/(refresh|login|register|google|logout)(\?|$)/.test(str)
+    || /\/api\/(login|register)(\?|$)/.test(str);
+}
+
+/**
+ * Rafraîchit automatiquement l'access token via POST /api/auth/refresh (avec déduplication single-flight).
+ * Retourne le nouvel access token en cas de succès, ou null sinon.
+ * @returns {Promise<string|null>}
+ */
+async function refreshAccessToken() {
+  if (_refreshInFlight) {
+    return _refreshInFlight;
+  }
+  const refreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
+    : null;
+  if (!refreshToken) {
+    return null;
+  }
+
+  _refreshInFlight = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      if (!res || !res.ok) {
+        return null;
+      }
+      const data = await res.json();
+      if (data && data.access_token) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
+          if (data.refresh_token) {
+            localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, data.refresh_token);
+          }
+        }
+        return data.access_token;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      _refreshInFlight = null;
+    }
+  })();
+
+  return _refreshInFlight;
+}
+
+function clearSessionAfterAuthFailure() {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(JWT_STORAGE_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(GOOGLE_SESSION_KEY);
+  }
+  if (typeof currentUnifiedSession !== 'undefined') {
+    currentUnifiedSession = { is_authenticated: false };
+  }
+  if (typeof renderUnifiedAuthState === 'function') {
+    renderUnifiedAuthState(
+      (typeof currentUnifiedSession !== 'undefined' && currentUnifiedSession) || { is_authenticated: false },
+      null
+    );
+  }
+  if (typeof openAuthModal === 'function') {
+    openAuthModal();
+  }
+}
 
 function isQueueableOfflineMutation(url, method) {
   if (String(method || 'GET').toUpperCase() !== 'POST') return false;
@@ -114,15 +190,24 @@ async function flushOfflineQueue() {
       if (currentToken) {
         headers['Authorization'] = `Bearer ${currentToken}`;
       }
-      const res = await fetch(item.url, {
+      let res = await fetch(item.url, {
         method: item.method || 'POST',
         headers,
         body: item.body
       });
       if (res.status === 401) {
-        if (typeof openAuthModal === 'function') {
-          openAuthModal();
+        const refreshedToken = await refreshAccessToken();
+        if (refreshedToken) {
+          headers['Authorization'] = `Bearer ${refreshedToken}`;
+          res = await fetch(item.url, {
+            method: item.method || 'POST',
+            headers,
+            body: item.body
+          });
         }
+      }
+      if (res.status === 401) {
+        clearSessionAfterAuthFailure();
         break;
       }
       if (res.ok || (res.status >= 400 && res.status < 500)) {
@@ -167,17 +252,19 @@ if (typeof window !== 'undefined') {
  * @returns {Promise<Response>}
  */
 async function apiFetch(url, options = {}) {
-  window.showGlobalLoading(true);
+  if (typeof window !== 'undefined' && typeof window.showGlobalLoading === 'function') {
+    window.showGlobalLoading(true);
+  }
   const opts = Object.assign({}, options);
   opts.headers = Object.assign({}, opts.headers || {});
 
-  const token = localStorage.getItem(JWT_STORAGE_KEY);
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem(JWT_STORAGE_KEY) : null;
   if (token && !opts.headers['Authorization']) {
     opts.headers['Authorization'] = `Bearer ${token}`;
   }
 
   try {
-    const response = await fetch(url, opts);
+    let response = await fetch(url, opts);
     if (response.status === 503 && isQueueableOfflineMutation(url, opts.method)) {
       await enqueueOfflineMutation(url, opts);
       return new Response(
@@ -185,18 +272,17 @@ async function apiFetch(url, options = {}) {
         { status: 202, headers: { 'Content-Type': 'application/json' } }
       );
     }
-    if (response.status === 401) {
-      console.warn(`[apiFetch 401] Session expirée ou non autorisée sur ${url}. Réinitialisation session.`);
-      localStorage.removeItem(JWT_STORAGE_KEY);
-      localStorage.removeItem(GOOGLE_SESSION_KEY);
-      if (typeof currentUnifiedSession !== 'undefined') {
-        currentUnifiedSession = { is_authenticated: false };
+    if (response.status === 401 && !isAuthRefreshBypassUrl(url)) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        const retryOpts = Object.assign({}, opts, {
+          headers: Object.assign({}, opts.headers, { Authorization: `Bearer ${newToken}` })
+        });
+        response = await fetch(url, retryOpts);
       }
-      if (typeof renderUnifiedAuthState === 'function') {
-        renderUnifiedAuthState(currentUnifiedSession || { is_authenticated: false }, null);
-      }
-      if (typeof openAuthModal === 'function') {
-        openAuthModal();
+      if (response.status === 401) {
+        console.warn(`[apiFetch 401] Session expirée ou non autorisée sur ${url}. Réinitialisation session.`);
+        clearSessionAfterAuthFailure();
       }
     }
     return response;
@@ -210,7 +296,9 @@ async function apiFetch(url, options = {}) {
     }
     throw err;
   } finally {
-    window.showGlobalLoading(false);
+    if (typeof window !== 'undefined' && typeof window.showGlobalLoading === 'function') {
+      window.showGlobalLoading(false);
+    }
   }
 }
 
@@ -233,10 +321,14 @@ const API = {
 };
 
 // Make apiFetch and API globally accessible
-window.apiFetch = apiFetch;
-window.API = API;
-window.JWT_STORAGE_KEY = JWT_STORAGE_KEY;
-window.GOOGLE_SESSION_KEY = GOOGLE_SESSION_KEY;
+if (typeof window !== 'undefined') {
+  window.apiFetch = apiFetch;
+  window.API = API;
+  window.refreshAccessToken = refreshAccessToken;
+  window.JWT_STORAGE_KEY = JWT_STORAGE_KEY;
+  window.REFRESH_TOKEN_STORAGE_KEY = REFRESH_TOKEN_STORAGE_KEY;
+  window.GOOGLE_SESSION_KEY = GOOGLE_SESSION_KEY;
+}
 
 /**
  * Nettoyage et échappement sécurisé des chaînes pour injection HTML/attributs (Anti-XSS).
@@ -271,7 +363,17 @@ function sanitizeUrl(url) {
 window.escapeHtml = escapeHtml;
 window.sanitizeUrl = sanitizeUrl;
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { apiFetch, API, refreshIcons, escapeHtml, sanitizeUrl };
+  module.exports = {
+    apiFetch,
+    API,
+    refreshAccessToken,
+    JWT_STORAGE_KEY,
+    REFRESH_TOKEN_STORAGE_KEY,
+    GOOGLE_SESSION_KEY,
+    refreshIcons,
+    escapeHtml,
+    sanitizeUrl
+  };
 }
 
 /**

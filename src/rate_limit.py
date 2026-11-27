@@ -490,6 +490,10 @@ def get_register_rate_limit() -> str:
     return os.getenv("RATE_LIMIT_REGISTER", "15/minute")
 
 
+def get_refresh_rate_limit() -> str:
+    return os.getenv("RATE_LIMIT_REFRESH", "30/minute")
+
+
 def get_photo_analysis_rate_limit() -> str:
     return os.getenv("RATE_LIMIT_PHOTO_ANALYSIS", "15/minute")
 
@@ -504,6 +508,7 @@ limiter = RateLimiter(key_func=get_remote_address)
 # Dépendances prêtes à l'emploi pour les routeurs FastAPI
 rate_limit_login = limiter.dependency("auth_login", get_login_rate_limit)
 rate_limit_register = limiter.dependency("auth_register", get_register_rate_limit)
+rate_limit_refresh = limiter.dependency("auth_refresh", get_refresh_rate_limit)
 rate_limit_photo_analysis = limiter.dependency("meals_analyze_photo", get_photo_analysis_rate_limit)
 rate_limit_webhook = limiter.dependency("webhook_health", get_webhook_rate_limit)
 
@@ -521,10 +526,12 @@ __all__ = [
     "limiter",
     "get_login_rate_limit",
     "get_register_rate_limit",
+    "get_refresh_rate_limit",
     "get_photo_analysis_rate_limit",
     "get_webhook_rate_limit",
     "rate_limit_login",
     "rate_limit_register",
+    "rate_limit_refresh",
     "rate_limit_photo_analysis",
     "rate_limit_webhook",
 ]

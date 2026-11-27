@@ -60,7 +60,8 @@ def _resolve_jwt_secret() -> str:
 
 JWT_SECRET = _resolve_jwt_secret()
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(30 * 24 * 3600)))  # 30 jours par défaut
+JWT_EXPIRE_SECONDS = int(os.getenv("JWT_EXPIRE_SECONDS", str(30 * 60)))  # 30 minutes par défaut (access token court)
+REFRESH_TOKEN_EXPIRE_SECONDS = int(os.getenv("REFRESH_TOKEN_EXPIRE_SECONDS", str(30 * 24 * 3600)))  # 30 jours par défaut
 
 DEFAULT_GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v3/certs"
@@ -106,6 +107,17 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    """Requête de renouvellement d'access token via refresh token révocable."""
+    refresh_token: str = Field(..., min_length=16, description="Refresh token opaque")
+
+
+class LogoutRequest(BaseModel):
+    """Requête optionnelle de déconnexion permettant de révoquer un ou tous les refresh tokens."""
+    refresh_token: Optional[str] = Field(None, description="Refresh token courant à révoquer")
+    revoke_all: bool = Field(False, description="Révoquer l'ensemble des sessions actives de l'utilisateur")
 
 
 class AuthUser(BaseModel):
@@ -225,6 +237,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             return False
 
     return False
+
+
+def generate_refresh_token() -> str:
+    """Génère un refresh token opaque à haute entropie (384 bits)."""
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    """Calcule le hash SHA-256 hexadécimal d'un refresh token (seul le hash est persisté en DB)."""
+    return hashlib.sha256((raw_token or "").strip().encode("utf-8")).hexdigest()
 
 
 def create_access_token(user_id: int, user_uuid: str, email: str, name: Optional[str] = None, expires_delta_seconds: Optional[int] = None) -> str:

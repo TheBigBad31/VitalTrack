@@ -572,6 +572,38 @@ class Database:
     def delete_demo_users(self) -> int:
         return self.users.delete_demo_users()
 
+    def create_refresh_token(
+        self,
+        user_id: int,
+        expires_in_seconds: Optional[int] = None,
+        family_id: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self.users.create_refresh_token(
+            user_id=user_id,
+            expires_in_seconds=expires_in_seconds,
+            family_id=family_id,
+            user_agent=user_agent,
+        )
+
+    def rotate_refresh_token(
+        self,
+        raw_token: str,
+        expires_in_seconds: Optional[int] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        return self.users.rotate_refresh_token(
+            raw_token=raw_token,
+            expires_in_seconds=expires_in_seconds,
+            user_agent=user_agent,
+        )
+
+    def revoke_refresh_token(self, raw_token: str, user_id: Optional[int] = None) -> bool:
+        return self.users.revoke_refresh_token(raw_token=raw_token, user_id=user_id)
+
+    def revoke_all_user_refresh_tokens(self, user_id: int) -> int:
+        return self.users.revoke_all_user_refresh_tokens(user_id=user_id)
+
     # -------------------------------------------------------------------------
     # Façade : Pesées & Activités Physiques (WeightsRepository)
     # -------------------------------------------------------------------------
