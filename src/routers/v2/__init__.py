@@ -7,13 +7,23 @@ Nouvelle génération d'API :
 """
 
 from fastapi import APIRouter, Depends, Query
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 import datetime as dt_module
 
 from pydantic import BaseModel, Field
-import src.app as app_module
+
 from src.auth import AuthUser
+from src.connectors.registry import DeviceConnectorRegistry
+from src.db import Database
+from src.dependencies import (
+    get_current_user,
+    get_db,
+    get_device_registry,
+    get_nutrition_engine,
+    invalidate_dashboard_cache,
+)
 from src.models import WeightEntry
+from src.nutrition_engine import NutritionEngine
 
 router = APIRouter(prefix="/api/v2", tags=["v2 - Core"])
 
@@ -51,10 +61,10 @@ def get_v2_health():
 @router.get("/weights", response_model=V2Response)
 def get_v2_weights(
     limit: int = Query(30, ge=1, le=180),
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Liste v2 des pesées enveloppées avec métadonnées."""
-    db = app_module.db
     weights = db.get_weights(limit=limit, user_id=current_user.id)
     return V2Response(
         data=[w.model_dump() for w in weights],
@@ -69,10 +79,10 @@ def get_v2_weights(
 @router.post("/weights", response_model=V2Response)
 def create_v2_weight(
     entry_in: V2WeightInput,
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Enregistrement d'une pesée via v2 avec calcul automatique de l'IMC et enveloppe v2."""
-    db = app_module.db
     target_date = entry_in.date or dt_module.date.today()
     profile = db.get_user_profile(user_id=current_user.id) or {}
     height_m = float(profile.get("height_cm") or 178.0) / 100.0
@@ -89,7 +99,7 @@ def create_v2_weight(
         notes=entry_in.notes,
     )
     saved = db.insert_weight(entry, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return V2Response(
         data=saved.model_dump(),
         meta={"created": True, "user_id": current_user.id},
@@ -98,12 +108,22 @@ def create_v2_weight(
 
 @router.get("/dashboard", response_model=V2Response)
 async def get_v2_dashboard(
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    nutrition_engine: NutritionEngine = Depends(get_nutrition_engine),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
 ):
     """Dashboard agrégé v2 avec enveloppe standardisée."""
     from src.routers.dashboard import get_dashboard_data
 
-    raw_dashboard = await get_dashboard_data(current_user=current_user)
+    raw_dashboard = await get_dashboard_data(
+        include_simulation=False,
+        user_id=None,
+        current_user=current_user,
+        db=db,
+        nutrition_engine=nutrition_engine,
+        device_registry=device_registry,
+    )
     return V2Response(
         data=raw_dashboard,
         meta={"version": "2.0.0", "user_id": current_user.id},

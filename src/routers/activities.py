@@ -7,14 +7,15 @@ Endpoints :
 """
 
 import datetime as dt_module
-from typing import Any, Dict, List, Literal, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
+from src.dependencies import get_current_user, get_db, invalidate_dashboard_cache
+from src.domain.nutrition import calculate_bmr_mifflin_st_jeor
 from src.models import ActivityEntry, ActivitySource
 
 
@@ -33,20 +34,15 @@ class ActivityInput(BaseModel):
     source: ActivitySource = "health_connect"
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 @router.get("/api/activities")
 @router.get("/api/activity")
 def get_activities(
     limit: int = Query(30, ge=1, le=180),
     include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne la série chronologique de l'activité quotidienne pour l'utilisateur connecté."""
-    db = get_db()
     profile = db.get_user_profile(user_id=current_user.id)
     is_demo = bool(profile.get("is_demo_profile"))
     effective_exclude = not include_simulation if include_simulation is not None else not is_demo
@@ -55,14 +51,16 @@ def get_activities(
 
 
 @router.post("/api/activities")
-def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(app_module.get_current_user)):
+def create_activity(
+    act_in: ActivityInput,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Ajoute ou synchronise une entrée d'activité physique quotidienne pour l'utilisateur connecté."""
-    db = get_db()
     target_date = act_in.date or dt_module.date.today()
     profile = db.get_user_profile(user_id=current_user.id)
     weights = db.get_weights(limit=1, user_id=current_user.id, exclude_simulation=not bool(profile.get("is_demo_profile")))
     latest_weight_kg = weights[-1].weight_kg if weights else float(profile.get("current_weight_kg") or profile.get("target_weight_kg") or 79.5)
-    from src.domain.nutrition import calculate_bmr_mifflin_st_jeor
     bmr = calculate_bmr_mifflin_st_jeor(
         weight_kg=latest_weight_kg,
         height_cm=float(profile.get("height_cm", 178.0) or 178.0),
@@ -86,19 +84,22 @@ def create_activity(act_in: ActivityInput, current_user: AuthUser = Depends(app_
         resting_hr_bpm=act_in.resting_hr_bpm,
         hrv_ms=act_in.hrv_ms,
         sleep_score=act_in.sleep_score,
-        source=act_in.source
+        source=act_in.source,
     )
     saved = db.insert_activity(entry, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
 
 @router.delete("/api/activities/{activity_id}")
-def delete_activity(activity_id: int, current_user: AuthUser = Depends(app_module.get_current_user)):
+def delete_activity(
+    activity_id: int,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Supprime une entrée d'activité physique pour l'utilisateur connecté."""
-    db = get_db()
     deleted = db.delete_activity(activity_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Activité introuvable")
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {"status": "success", "message": f"Activité #{activity_id} supprimée avec succès"}

@@ -9,14 +9,14 @@ Endpoints :
 """
 
 import datetime as dt_module
-from typing import Any, Dict, List, Literal, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
+from src.dependencies import get_current_user, get_db, invalidate_dashboard_cache
 from src.models import WeightEntry, WeightSource
 from src.otel import record_weight_log_metric
 from src.routers.friends import verify_view_access
@@ -36,21 +36,16 @@ class WeightInput(BaseModel):
     source: WeightSource = "manual"
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 @router.get("/api/weights")
 @router.get("/api/weight")
 def get_weights(
     limit: int = Query(60, ge=1, le=365),
     include_simulation: Optional[bool] = Query(None, description="Inclure les données simulées (défaut False hors profil démo)"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne la série chronologique des pesées pour l'utilisateur connecté ou un ami autorisé."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     profile = db.get_user_profile(user_id=target_uid)
@@ -61,9 +56,12 @@ def get_weights(
 
 
 @router.post("/api/weights")
-def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_module.get_current_user)):
+def create_weight(
+    entry_in: WeightInput,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Enregistre une nouvelle pesée manuelle ou connectée pour l'utilisateur connecté."""
-    db = get_db()
     target_date = entry_in.date or dt_module.date.today()
 
     # Estimation BMI si non fourni (sur base de la taille du profil utilisateur)
@@ -85,7 +83,7 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_mo
     )
     saved = db.insert_weight(entry, user_id=current_user.id)
     record_weight_log_metric(source=entry_in.source or "manual", status="success")
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
 
@@ -93,10 +91,10 @@ def create_weight(entry_in: WeightInput, current_user: AuthUser = Depends(app_mo
 def update_weight(
     weight_id: int,
     entry_in: WeightInput,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Met à jour une pesée existante pour l'utilisateur connecté."""
-    db = get_db()
     target_date = entry_in.date or dt_module.date.today()
     bmi_val = entry_in.bmi
     if bmi_val is None and entry_in.weight_kg > 0:
@@ -117,16 +115,19 @@ def update_weight(
     updated = db.update_weight(weight_id, entry, user_id=current_user.id)
     if not updated:
         raise HTTPException(status_code=404, detail="Pesée introuvable")
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
 
 @router.delete("/api/weights/{weight_id}")
-def delete_weight(weight_id: int, current_user: AuthUser = Depends(app_module.get_current_user)):
+def delete_weight(
+    weight_id: int,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Supprime une pesée erronée pour l'utilisateur connecté."""
-    db = get_db()
     deleted = db.delete_weight(weight_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Pesée introuvable")
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {"status": "success", "message": f"Pesée #{weight_id} supprimée avec succès"}

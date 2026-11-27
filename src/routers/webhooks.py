@@ -26,6 +26,7 @@ logger = logging.getLogger("vitaltrack.webhooks")
 
 from src.connectors.webhook import MobileHealthWebhookConnector
 from src.db import Database
+from src.dependencies import get_db, invalidate_dashboard_cache
 from src.models import (
     ActivityEntry, DailyMetricsEntry, HydrationLogEntry, IntradaySampleEntry,
     SleepSessionEntry, SleepStageEntry, WeightEntry, WorkoutEntry
@@ -33,15 +34,6 @@ from src.models import (
 from src.rate_limit import limiter, get_webhook_rate_limit, get_remote_address
 
 router = APIRouter(tags=["Webhooks"])
-
-
-def get_db() -> Database:
-    """Retourne l'instance courante de la base de données (supporte le monkeypatch dans app.db)."""
-    import sys
-    app_module = sys.modules.get("src.app")
-    if app_module and hasattr(app_module, "db") and app_module.db is not None:
-        return app_module.db
-    return Database()
 
 
 def extract_auth_token(
@@ -444,7 +436,6 @@ def process_single_item(
         )
 
     try:
-        from src.app import invalidate_dashboard_cache
         invalidate_dashboard_cache(resolved_user_id)
     except Exception:
         pass
@@ -487,7 +478,8 @@ def ingest_health_webhook(
     payload: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = Body(None),
     x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
     authorization: Optional[str] = Header(None),
-    dry_run: bool = Query(False, description="Mode simulation : valide la signature, le token et le payload sans écrire en base")
+    dry_run: bool = Query(False, description="Mode simulation : valide la signature, le token et le payload sans écrire en base"),
+    db: Database = Depends(get_db),
 ):
     """Point d'entrée universel et durci pour les webhooks mobiles ou passerelles (Health Connect, RingConn, Xiaomi).
     
@@ -521,7 +513,7 @@ def ingest_health_webhook(
     # 2. Résolution du compte utilisateur et de l'appareil (sans IDOR)
     resolved_user_id, matched_device = resolve_webhook_user_and_device(
         auth_token=auth_token,
-        database=get_db()
+        database=db
     )
 
     # 3. Rate limiting par device ou IP (429 si dépassé)
@@ -565,7 +557,7 @@ def ingest_health_webhook(
             "preview": items_to_process[0] if items_to_process else {}
         }
 
-    user_consents = get_db().get_user_consents(user_id=resolved_user_id)
+    user_consents = db.get_user_consents(user_id=resolved_user_id)
 
     results = []
     try:
@@ -577,7 +569,7 @@ def ingest_health_webhook(
                     matched_device=matched_device,
                     user_consents=user_consents,
                     endpoint_path="/api/webhook/health",
-                    database=get_db()
+                    database=db
                 )
                 results.append(res)
     except HTTPException:
@@ -598,12 +590,10 @@ def ingest_health_webhook(
     # Mémoriser la date de dernière synchronisation (last_sync_at) pour l'appareil
     now_sync_iso = datetime.now(timezone.utc).isoformat()
     try:
-        db_inst = get_db()
-        db_inst.update_device_sync_status(primary_device_id, sync_status="connected", user_id=resolved_user_id, synced_at=now_sync_iso)
+        db.update_device_sync_status(primary_device_id, sync_status="connected", user_id=resolved_user_id, synced_at=now_sync_iso)
     except Exception as sync_status_err:
         logger.warning("Impossible de mettre à jour le statut de synchronisation pour l'appareil '%s': %s", primary_device_id, sync_status_err)
 
-    from src.app import invalidate_dashboard_cache
     invalidate_dashboard_cache(resolved_user_id)
 
     return {
@@ -624,6 +614,7 @@ def ingest_health_webhook(
 async def ingest_withings_webhook(
     request: Request,
     x_withings_signature: Optional[str] = Header(None, alias="X-Withings-Signature"),
+    db_inst: Database = Depends(get_db),
 ):
     """Callback Withings pour notifications temps réel (notify/subscribe).
     
@@ -634,8 +625,6 @@ async def ingest_withings_webhook(
     import hashlib
     import os
     from src.connectors.withings import WithingsScaleConnector
-    from src.db import Database
-    from src.app import db as app_db
     
     # Récupérer le secret webhook Withings depuis la config ou env
     webhook_secret = os.getenv("WITHINGS_WEBHOOK_SECRET")
@@ -668,7 +657,6 @@ async def ingest_withings_webhook(
         return {"status": "ignored", "message": "Pas de userid dans le payload Withings"}
     
     # Trouver l'utilisateur VitalTrack associé à ce userid Withings
-    db_inst = app_db if app_db else Database()
     user_device = db_inst.find_user_by_withings_id(userid)
     if not user_device:
         return {"status": "ignored", "message": "Aucun appareil Withings configuré pour cet utilisateur"}
@@ -683,7 +671,6 @@ async def ingest_withings_webhook(
             weights = connector.catchup_sync(days_back=7)
             for w in weights:
                 db_inst.insert_weight(w, user_id=target_user_id)
-            from src.app import invalidate_dashboard_cache
             invalidate_dashboard_cache(target_user_id)
             return {"status": "success", "synced_weights": len(weights), "user_id": target_user_id}
         except Exception as e:

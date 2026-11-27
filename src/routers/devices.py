@@ -22,10 +22,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 import yaml
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.connectors.registry import DeviceConnectorRegistry, get_connector
 from src.db import Database
+from src.dependencies import get_current_user, get_db, get_device_registry
 
 logger = logging.getLogger("vitaltrack.devices")
 
@@ -50,22 +50,20 @@ class DeviceConnectInput(BaseModel):
     connected: bool = True
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 @router.get("/api/devices")
 @router.post("/api/devices")
 @router.get("/api/devices/")
 @router.post("/api/devices/")
-def list_devices(current_user: AuthUser = Depends(app_module.get_current_user)):
+def list_devices(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
+):
     """Liste tous les objets connectés de l'utilisateur avec leur statut temps réel et métriques récentes."""
-    db = get_db()
     user_id = current_user.id if current_user else 1
     saved_devices = {dev["device_id"]: dev for dev in db.get_user_devices(user_id=user_id)}
     statuses = []
-    for d in app_module.device_registry.list_all():
+    for d in device_registry.list_all():
         saved_d = saved_devices.get(d.id, {})
         is_conn = bool(saved_d.get("connected"))
         sync_status = saved_d.get("sync_status", "connected" if is_conn else "disconnected")
@@ -90,7 +88,10 @@ def list_devices(current_user: AuthUser = Depends(app_module.get_current_user)):
 
 
 @router.get("/api/devices/data-map")
-def get_devices_data_map(current_user: AuthUser = Depends(app_module.get_current_user)):
+def get_devices_data_map(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Matrice complète des flux et de la cartographie des données connectées (Data Map).
     
     Retourne pour chaque source et métrique de santé :
@@ -101,7 +102,6 @@ def get_devices_data_map(current_user: AuthUser = Depends(app_module.get_current
     - Le volume collecté sur les 7 derniers jours
     - Le traçage unifié de la provenance des pesées récentes (Withings vs Santé Connect)
     """
-    db = get_db()
     user_id = current_user.id if current_user else 1
     return db.get_devices_data_map(user_id=user_id)
 
@@ -189,10 +189,14 @@ def get_devices_comparison():
 
 
 @router.post("/api/devices/connect")
-def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser = Depends(app_module.get_current_user)):
+def connect_device_wizard(
+    connect_in: DeviceConnectInput,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
+):
     """Assistant de connexion d'un objet connecté (RingConn Gen 3, Google Health Connect, Withings, Oura) pour l'utilisateur connecté avec chiffrement et test immédiat."""
-    db = get_db()
-    connector = app_module.device_registry.get(connect_in.device_id)
+    connector = device_registry.get(connect_in.device_id)
     name = connect_in.name or (getattr(connector, "name", connect_in.device_id.title()) if connector else connect_in.device_id.title())
     dev_type = connect_in.device_type or (getattr(connector, "device_type", "health_sensor") if connector else "health_sensor")
 
@@ -235,7 +239,12 @@ def connect_device_wizard(connect_in: DeviceConnectInput, current_user: AuthUser
     # Si l'appareil est connecté, déclencher une synchronisation initiale
     if connect_in.connected:
         try:
-            sync_device_targeted(connect_in.device_id, current_user=current_user)
+            sync_device_targeted(
+                connect_in.device_id,
+                current_user=current_user,
+                db=db,
+                device_registry=device_registry,
+            )
         except Exception:
             logger.exception("Échec de la synchronisation initiale lors de la connexion de l'appareil '%s'", connect_in.device_id)
 
@@ -253,10 +262,11 @@ def sync_device_targeted(
     payload: Optional[DeviceSyncRequest] = None,
     start_date: Optional[str] = Query(None, description="Date de début ISO (YYYY-MM-DD)"),
     since_last_sync: Optional[bool] = Query(False, description="Synchroniser depuis la dernière synchro"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
 ):
     """Déclenche la synchronisation ciblée d'un appareil et persiste les métriques en base."""
-    db = get_db()
     # Instancier le connecteur avec les credentials utilisateur déchiffrés si existants
     user_device = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=True)
     custom_cfg = {}
@@ -271,7 +281,7 @@ def sync_device_targeted(
         connector = get_connector(device_id, custom_config=custom_cfg)
     except (KeyError, ValueError, TypeError, OSError, yaml.YAMLError):
         logger.exception("Impossible d'instancier le connecteur '%s' avec sa configuration personnalisée, repli sur le registre", device_id)
-        connector = app_module.device_registry.get(device_id)
+        connector = device_registry.get(device_id)
 
     if not connector:
         raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
@@ -343,21 +353,28 @@ def sync_device_targeted(
 @router.post("/api/devices/sync/")
 def sync_device_legacy(
     req: Optional[DeviceSyncRequest] = None,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
 ):
     """Compatibilité rétroactive pour la synchronisation d'un appareil."""
     dev_id = req.device_id if req and req.device_id else "health_connect"
-    return sync_device_targeted(dev_id, payload=req, current_user=current_user)
+    return sync_device_targeted(
+        dev_id,
+        payload=req,
+        current_user=current_user,
+        db=db,
+        device_registry=device_registry,
+    )
 
 
 @router.get("/api/devices/health-connect/diagnostics")
 def get_health_connect_diagnostics(
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Diagnostic léger des derniers pushs Health Connect (raw_ingest) et des séances workouts reçues."""
     import json
-    from src.dependencies import get_db
-    db = get_db()
     user_id = current_user.id
 
     recent_ingests = []
@@ -418,13 +435,14 @@ def get_health_connect_diagnostics(
 def get_device_detail(
     device_id: str,
     payload: Optional[Dict[str, Any]] = None,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
 ):
     """Récupère les détails et l'état en direct d'un appareil, ou gère la synchronisation si invoqué par erreur en POST."""
-    db = get_db()
     user_id = current_user.id if current_user else 1
     dev = db.get_user_device(device_id, user_id=user_id, reveal_secrets=False)
-    connector = app_module.device_registry.get(device_id)
+    connector = device_registry.get(device_id)
     if not dev and not connector:
         raise HTTPException(status_code=404, detail=f"Appareil '{device_id}' non trouvé")
 
@@ -442,9 +460,12 @@ def get_device_detail(
 
 
 @router.delete("/api/devices/{device_id}")
-def disconnect_device(device_id: str, current_user: AuthUser = Depends(app_module.get_current_user)):
+def disconnect_device(
+    device_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Déconnecte et révoque un appareil en supprimant ses identifiants chiffrés."""
-    db = get_db()
     deleted = db.delete_user_device(device_id, user_id=current_user.id)
     return {
         "status": "success",
@@ -456,10 +477,10 @@ def disconnect_device(device_id: str, current_user: AuthUser = Depends(app_modul
 @router.get("/api/devices/{device_id}/token")
 def get_device_token_endpoint(
     device_id: str,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère le jeton webhook secret déchiffré associé à l'appareil pour l'utilisateur connecté."""
-    db = get_db()
     dev = db.get_user_device(device_id, user_id=current_user.id, reveal_secrets=True)
     if not dev:
         raise HTTPException(status_code=404, detail=f"Aucun appareil configuré pour '{device_id}'")
@@ -480,10 +501,10 @@ def get_device_token_endpoint(
 def create_device_token_endpoint(
     device_id: str,
     payload: Optional[Dict[str, Any]] = None,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Génère ou renouvelle un token secret individuel sécurisé pour un appareil/passerelle mobile."""
-    db = get_db()
     req_payload = payload or {}
     name = req_payload.get("name")
     dev_type = req_payload.get("device_type")

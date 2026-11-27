@@ -106,7 +106,7 @@ def run_daily_sync(db: Optional[Database] = None) -> bool:
                                 db.insert_weight(entry, user_id=u_id)
                         print(f"       -> {len(valid_weights)} pesee(s) enregistree(s) pour #{u_id}")
                         try:
-                            from src.app import invalidate_dashboard_cache
+                            from src.dependencies import invalidate_dashboard_cache
                             invalidate_dashboard_cache(u_id)
                         except Exception:
                             pass
@@ -133,7 +133,7 @@ def run_daily_sync(db: Optional[Database] = None) -> bool:
                                 db.insert_activity(act, user_id=u_id)
                         print(f"       -> {len(valid_acts)} activite(s) enregistree(s) pour #{u_id}")
                         try:
-                            from src.app import invalidate_dashboard_cache
+                            from src.dependencies import invalidate_dashboard_cache
                             invalidate_dashboard_cache(u_id)
                         except Exception:
                             pass

@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +30,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("vitaltrack.observability")
 
 from src.db import Database, DatabaseServiceUnavailableError, get_db_path
-from src.dependencies import set_db
+from src.dependencies import (
+    DEFAULT_STATIC_DIR,
+    get_calorie_estimator,
+    get_current_user,
+    get_db,
+    get_device_registry,
+    get_nutrition_engine,
+    get_strict_user,
+    invalidate_dashboard_cache,
+    set_calorie_estimator,
+    set_db,
+    set_device_registry,
+    set_nutrition_engine,
+)
 from src.nutrition_engine import NutritionEngine
 from src.vision_nutrition import PhotoCalorieEstimator
 from src.connectors.registry import create_device_registry
@@ -249,86 +262,14 @@ app.state.db_instance = db
 nutrition_engine = NutritionEngine(db=db)
 calorie_estimator = PhotoCalorieEstimator()
 device_registry = create_device_registry()
+set_nutrition_engine(nutrition_engine)
+set_calorie_estimator(calorie_estimator)
+set_device_registry(device_registry)
 
 
-# =====================================================================
-# Middleware & Dépendances d'Authentification JWT
-# =====================================================================
-
-def get_current_user(
-    authorization: Optional[str] = Header(None),
-    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token"),
-) -> AuthUser:
-    """Extrait et valide l'utilisateur authentifié depuis le jeton JWT Bearer ou un token d'appareil X-Webhook-Token."""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ", 1)[1].strip()
-        payload = decode_access_token(token)
-        if payload and "user_id" in payload:
-            user_data = db.get_user_by_id(int(payload["user_id"]))
-            if user_data:
-                return AuthUser(
-                    id=user_data["id"],
-                    uuid=user_data["uuid"],
-                    email=user_data["email"],
-                    name=user_data.get("name"),
-                    picture=user_data.get("picture"),
-                    auth_provider=user_data.get("auth_provider", "google"),
-                    google_sub=user_data.get("google_sub"),
-                )
-
-    if x_webhook_token and str(x_webhook_token).strip():
-        user_match = db.find_user_by_device_token(str(x_webhook_token).strip())
-        if user_match and user_match.get("user"):
-            u = user_match["user"]
-            return AuthUser(
-                id=u["id"],
-                uuid=u["uuid"],
-                email=u["email"],
-                name=u.get("name"),
-                picture=u.get("picture"),
-                auth_provider=u.get("auth_provider", "device_token"),
-                google_sub=u.get("google_sub"),
-            )
-
-    if is_strict_auth_enabled():
-        raise HTTPException(
-            status_code=401,
-            detail="Authentification requise : aucun jeton Bearer ou token d'appareil valide",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    demo_user = db.get_user_by_id(1) or db._ensure_default_user()
-    return AuthUser(
-        id=demo_user["id"],
-        uuid=demo_user["uuid"],
-        email=demo_user["email"],
-        name=demo_user.get("name"),
-        picture=demo_user.get("picture"),
-        auth_provider=demo_user.get("auth_provider", "demo"),
-        google_sub=demo_user.get("google_sub"),
-    )
-
-
-def get_strict_user(authorization: Optional[str] = Header(None)) -> AuthUser:
-    """Dépendance stricte exigeant un jeton Bearer JWT valide."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Jeton d'authentification Bearer manquant ou invalide")
-    token = authorization.split("Bearer ", 1)[1].strip()
-    payload = decode_access_token(token)
-    if not payload or "user_id" not in payload:
-        raise HTTPException(status_code=401, detail="Jeton JWT expiré ou signature invalide")
-    user_data = db.get_user_by_id(int(payload["user_id"]))
-    if not user_data:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-    return AuthUser(
-        id=user_data["id"],
-        uuid=user_data["uuid"],
-        email=user_data["email"],
-        name=user_data.get("name"),
-        picture=user_data.get("picture"),
-        auth_provider=user_data.get("auth_provider", "google"),
-        google_sub=user_data.get("google_sub"),
-    )
+# Les dépendances d'authentification (`get_current_user`, `get_strict_user`) sont
+# centralisées dans `src.dependencies` et ré-exportées ici pour rétrocompatibilité
+# (notamment `app.dependency_overrides[src.app.get_current_user]`).
 
 
 # =====================================================================
@@ -417,7 +358,7 @@ from src.routers.webhooks import router as webhooks_router
 from src.routers.friends import router as friends_router
 from src.routers.profile import router as profile_router, UserProfileInput
 from src.routers.system import router as system_router, GITHUB_LATEST_RELEASE_APK_URL, KCAL_PER_KG
-from src.routers.dashboard import router as dashboard_router, DASHBOARD_CACHE, invalidate_dashboard_cache
+from src.routers.dashboard import router as dashboard_router, DASHBOARD_CACHE
 from src.routers.v1 import create_v1_router
 from src.routers.v2 import router as v2_router
 
