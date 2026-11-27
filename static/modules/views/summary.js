@@ -50,6 +50,10 @@
 
       renderWeightSummaryChart();
 
+      if (typeof renderMacroGoalsPanel === 'function') {
+        renderMacroGoalsPanel('summary');
+      }
+
     }
 
 
@@ -280,6 +284,10 @@
       s.weekly_projected_weight_change_kg = kcalPerKg > 0 ? Math.round(((net * 7.0) / kcalPerKg) * 1000) / 1000 : null;
 
 
+
+      if (typeof syncTodayIntoMacroGoalsHistory === 'function') {
+        syncTodayIntoMacroGoalsHistory(daySummary);
+      }
 
       // Rafraîchissement ciblé : compteurs si la Synthèse est visible, sinon
 

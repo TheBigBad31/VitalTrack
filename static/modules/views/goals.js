@@ -89,6 +89,10 @@
 
         renderSummaryView();
 
+        if (typeof renderAllMacroGoalsPanels === 'function') {
+          renderAllMacroGoalsPanels();
+        }
+
       }
 
       const isReadOnly = Boolean(window.currentReadOnlyFriend && window.currentReadOnlyFriend.active);

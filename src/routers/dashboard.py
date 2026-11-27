@@ -20,7 +20,10 @@ from src.analytics import detect_metabolic_plateau
 from src.cache import dashboard_cache, DEFAULT_TTL_SECONDS
 from src.meal_recommendations import get_daily_nutrition_targets
 from src.nutrition_engine import NutritionEngine
-from src.domain.nutrition import calculate_dynamic_tdee_target
+from src.domain.nutrition import (
+    calculate_dynamic_tdee_target,
+    compute_daily_macro_goals_history,
+)
 
 router = APIRouter(tags=["dashboard"])
 
@@ -59,7 +62,7 @@ async def get_dashboard_data(
 
     profile, meals, daily_metrics_rows, saved_devices_raw, user_workouts = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, user_id=user_id),
-        asyncio.to_thread(db.get_meals, limit=60, user_id=user_id),
+        asyncio.to_thread(db.get_meals, limit=200, user_id=user_id),
         asyncio.to_thread(db.get_daily_metrics, limit=5, user_id=user_id),
         asyncio.to_thread(db.get_user_devices, user_id=user_id),
         asyncio.to_thread(db.get_workouts, limit=30, user_id=user_id),
@@ -137,11 +140,38 @@ async def get_dashboard_data(
     for d_str in seven_days:
         d_date = date.fromisoformat(d_str)
         day_meals = [m for m in meals if m.date == d_date]
-        day_dict = {"breakfast": 0.0, "lunch": 0.0, "dinner": 0.0, "snack": 0.0, "total": 0.0}
+        day_dict = {
+            "breakfast": 0.0,
+            "lunch": 0.0,
+            "dinner": 0.0,
+            "snack": 0.0,
+            "total": 0.0,
+            "protein_g": 0.0,
+            "carbs_g": 0.0,
+            "fat_g": 0.0,
+            "fiber_g": 0.0,
+        }
         for m in day_meals:
             day_dict[m.meal_type] = round(day_dict[m.meal_type] + m.total_calories_kcal, 1)
             day_dict["total"] = round(day_dict["total"] + m.total_calories_kcal, 1)
+            day_dict["protein_g"] = round(day_dict["protein_g"] + float(m.protein_g or 0.0), 1)
+            day_dict["carbs_g"] = round(day_dict["carbs_g"] + float(m.carbs_g or 0.0), 1)
+            day_dict["fat_g"] = round(day_dict["fat_g"] + float(m.fat_g or 0.0), 1)
+            day_dict["fiber_g"] = round(day_dict["fiber_g"] + float(m.fiber_g or 0.0), 1)
         meals_by_day[d_str] = day_dict
+
+    effective_weight_kg = (
+        latest_weight.weight_kg
+        if latest_weight
+        else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
+    )
+    daily_goals_history = compute_daily_macro_goals_history(
+        meals=meals,
+        targets=daily_targets,
+        today=today,
+        days=30,
+        weight_kg=effective_weight_kg,
+    )
 
     device_statuses = []
     for d in device_registry.list_all():
@@ -203,6 +233,7 @@ async def get_dashboard_data(
         "activities_history": [a.model_dump() for a in activities],
         "recent_meals": [m.model_dump() for m in meals],
         "meals_by_day_7d": meals_by_day,
+        "daily_goals_history": daily_goals_history,
         "devices": device_statuses,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

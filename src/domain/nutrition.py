@@ -3,6 +3,7 @@
 Ne contient aucune dépendance vers des entrées/sorties (base de données, réseau, fichiers).
 """
 
+from datetime import date, timedelta
 from typing import Any, Dict, List, Literal, Optional
 from src.models import FoodItem, MealEntry
 
@@ -191,4 +192,203 @@ def compute_energy_balance(
         "weekly_projected_weight_change_kg": weekly_projected_weight_change_kg,
         "recommendation": recommendation,
         "macros": macros,
+    }
+
+
+def evaluate_nutrient_day_status(
+    nutrient: Literal["protein", "calories", "carbs", "fat"],
+    value: float,
+    target: float,
+) -> Dict[str, Any]:
+    """Évalue l'atteinte d'un objectif quotidien selon la sémantique propre à chaque nutriment.
+
+    - Protéines : objectif plancher prioritaire (>= 95 % atteint, 80-95 % proche, < 80 % insuffisant).
+    - Calories : fourchette cible [90 %, 108 %], proche [75 %, 90 %[ ou ]108 %, 115 %], sinon insuffisant/dépassé.
+    - Glucides : fourchette cible [85 %, 115 %], proche [70 %, 85 %[ ou ]115 %, 125 %], sinon insuffisant/dépassé.
+    - Lipides : fourchette cible [80 %, 110 %], proche [65 %, 80 %[ ou ]110 %, 120 %], sinon insuffisant/dépassé.
+    """
+    val = round(max(0.0, float(value or 0.0)), 1)
+    tgt = round(max(0.0, float(target or 0.0)), 1)
+    diff = round(val - tgt, 1)
+
+    if val <= 0.0:
+        return {"pct": 0.0, "diff": diff, "state": "empty"}
+
+    pct = round((val / tgt) * 100.0, 1) if tgt > 0.0 else 0.0
+
+    if nutrient == "protein":
+        if pct >= 95.0:
+            state = "reached"
+        elif pct >= 80.0:
+            state = "close"
+        else:
+            state = "below"
+    elif nutrient == "calories":
+        if 90.0 <= pct <= 108.0:
+            state = "reached"
+        elif 75.0 <= pct < 90.0 or 108.0 < pct <= 115.0:
+            state = "close"
+        elif pct > 115.0:
+            state = "over"
+        else:
+            state = "below"
+    elif nutrient == "carbs":
+        if 85.0 <= pct <= 115.0:
+            state = "reached"
+        elif 70.0 <= pct < 85.0 or 115.0 < pct <= 125.0:
+            state = "close"
+        elif pct > 125.0:
+            state = "over"
+        else:
+            state = "below"
+    else:  # fat
+        if 80.0 <= pct <= 110.0:
+            state = "reached"
+        elif 65.0 <= pct < 80.0 or 110.0 < pct <= 120.0:
+            state = "close"
+        elif pct > 120.0:
+            state = "over"
+        else:
+            state = "below"
+
+    return {"pct": pct, "diff": diff, "state": state}
+
+
+def compute_daily_macro_goals_history(
+    meals: List[MealEntry],
+    targets: Dict[str, float],
+    today: Optional[date] = None,
+    days: int = 30,
+    weight_kg: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Construit l'historique quotidien des objectifs (protéines, calories, glucides, lipides) et leurs KPIs."""
+    ref_day = today or date.today()
+    safe_days = max(1, min(int(days or 30), 90))
+
+    target_protein = round(float(targets.get("protein_g") or 140.0), 1)
+    target_calories = round(float(targets.get("calories") or 2000.0), 1)
+    target_carbs = round(float(targets.get("carbs_g") or 225.0), 1)
+    target_fat = round(float(targets.get("fat_g") or 67.0), 1)
+
+    target_map: Dict[str, float] = {
+        "protein": target_protein,
+        "calories": target_calories,
+        "carbs": target_carbs,
+        "fat": target_fat,
+    }
+
+    totals_by_date: Dict[str, Dict[str, float]] = {}
+    for m in meals or []:
+        d_iso = m.date.isoformat() if isinstance(m.date, date) else str(m.date)[:10]
+        bucket = totals_by_date.setdefault(
+            d_iso,
+            {"calories_kcal": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0, "fiber_g": 0.0},
+        )
+        bucket["calories_kcal"] += float(m.total_calories_kcal or 0.0)
+        bucket["protein_g"] += float(m.protein_g or 0.0)
+        bucket["carbs_g"] += float(m.carbs_g or 0.0)
+        bucket["fat_g"] += float(m.fat_g or 0.0)
+        bucket["fiber_g"] += float(m.fiber_g or 0.0)
+
+    date_keys = [(ref_day - timedelta(days=i)).isoformat() for i in range(safe_days - 1, -1, -1)]
+    daily_rows: List[Dict[str, Any]] = []
+
+    for d_iso in date_keys:
+        b = totals_by_date.get(d_iso) or {
+            "calories_kcal": 0.0,
+            "protein_g": 0.0,
+            "carbs_g": 0.0,
+            "fat_g": 0.0,
+            "fiber_g": 0.0,
+        }
+        cals = round(b["calories_kcal"], 1)
+        prot = round(b["protein_g"], 1)
+        carbs = round(b["carbs_g"], 1)
+        fat = round(b["fat_g"], 1)
+        fiber = round(b["fiber_g"], 1)
+        prot_per_kg = round(prot / float(weight_kg), 2) if (weight_kg and weight_kg > 0 and prot > 0) else None
+
+        daily_rows.append(
+            {
+                "date": d_iso,
+                "calories_kcal": cals,
+                "protein_g": prot,
+                "carbs_g": carbs,
+                "fat_g": fat,
+                "fiber_g": fiber,
+                "protein_per_kg": prot_per_kg,
+                "status": {
+                    "protein": evaluate_nutrient_day_status("protein", prot, target_protein),
+                    "calories": evaluate_nutrient_day_status("calories", cals, target_calories),
+                    "carbs": evaluate_nutrient_day_status("carbs", carbs, target_carbs),
+                    "fat": evaluate_nutrient_day_status("fat", fat, target_fat),
+                },
+            }
+        )
+
+    value_field_map = {
+        "protein": "protein_g",
+        "calories": "calories_kcal",
+        "carbs": "carbs_g",
+        "fat": "fat_g",
+    }
+
+    metrics: Dict[str, Dict[str, Any]] = {}
+    for nutrient, field in value_field_map.items():
+        tgt = target_map[nutrient]
+        today_row = daily_rows[-1]
+        today_val = today_row[field]
+        today_st = today_row["status"][nutrient]
+
+        logged = [r for r in daily_rows if r[field] > 0.0]
+        reached = [r for r in logged if r["status"][nutrient]["state"] == "reached"]
+        logged_days = len(logged)
+        days_reached = len(reached)
+        avg_logged = round(sum(r[field] for r in logged) / logged_days, 1) if logged_days > 0 else 0.0
+        adherence_pct = round((days_reached / logged_days) * 100.0, 1) if logged_days > 0 else 0.0
+
+        # Série en cours : compte les jours consécutifs atteints en remontant depuis aujourd'hui
+        # (si aujourd'hui est encore vide ou en cours non atteint, démarre depuis hier)
+        streak = 0
+        start_idx = len(daily_rows) - 1
+        if start_idx >= 0 and daily_rows[start_idx]["status"][nutrient]["state"] != "reached":
+            start_idx -= 1
+        while start_idx >= 0 and daily_rows[start_idx]["status"][nutrient]["state"] == "reached":
+            streak += 1
+            start_idx -= 1
+
+        entry_metric: Dict[str, Any] = {
+            "target": tgt,
+            "today": today_val,
+            "today_pct": today_st["pct"],
+            "today_remaining": round(max(0.0, tgt - today_val), 1),
+            "today_diff": today_st["diff"],
+            "today_state": today_st["state"],
+            "avg_logged_days": avg_logged,
+            "logged_days": logged_days,
+            "days_reached": days_reached,
+            "adherence_pct": adherence_pct,
+            "current_streak": streak,
+        }
+        if nutrient == "protein":
+            entry_metric["today_per_kg"] = today_row["protein_per_kg"]
+            entry_metric["avg_per_kg"] = (
+                round(avg_logged / float(weight_kg), 2) if (weight_kg and weight_kg > 0 and avg_logged > 0) else None
+            )
+            entry_metric["target_per_kg"] = (
+                round(tgt / float(weight_kg), 2) if (weight_kg and weight_kg > 0 and tgt > 0) else None
+            )
+        metrics[nutrient] = entry_metric
+
+    return {
+        "days": safe_days,
+        "weight_kg": round(float(weight_kg), 1) if weight_kg else None,
+        "targets": {
+            "protein_g": target_protein,
+            "calories": target_calories,
+            "carbs_g": target_carbs,
+            "fat_g": target_fat,
+        },
+        "daily": daily_rows,
+        "metrics": metrics,
     }

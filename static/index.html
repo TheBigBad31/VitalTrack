@@ -541,6 +541,77 @@
         </div>
       </div>
 
+      <!-- Suivi Quotidien des Objectifs Nutritionnels (Protéines en avant + Calories, Glucides, Lipides) -->
+      <div id="summary-macro-goals-card" class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 shadow-sm space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-white text-base flex items-center gap-2 flex-wrap">
+              <span>🎯 Objectifs Quotidiens — Protéines &amp; Macronutriments</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/40 font-bold">Focus Protéines</span>
+            </h3>
+            <p id="summary-macro-goals-hint" class="text-xs text-slate-400 mt-0.5">Suivi jour par jour par rapport à vos objectifs nutritionnels</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sélection du nutriment">
+              <button type="button" id="summary-macro-tab-protein" onclick="selectMacroGoalNutrient('summary', 'protein')" class="px-3 py-1.5 rounded-xl text-xs font-bold border bg-brand-600 text-white border-brand-400 cursor-pointer">💪 Protéines</button>
+              <button type="button" id="summary-macro-tab-calories" onclick="selectMacroGoalNutrient('summary', 'calories')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">🔥 Calories</button>
+              <button type="button" id="summary-macro-tab-carbs" onclick="selectMacroGoalNutrient('summary', 'carbs')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">⚡ Glucides</button>
+              <button type="button" id="summary-macro-tab-fat" onclick="selectMacroGoalNutrient('summary', 'fat')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">🥑 Lipides</button>
+            </div>
+            <div class="flex items-center gap-1 p-1 bg-[#0B0F17] border border-[#25254A] rounded-xl" role="group" aria-label="Période d'affichage">
+              <button type="button" id="summary-macro-days-7" onclick="selectMacroGoalDays('summary', 7)" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-600 text-white cursor-pointer">7j</button>
+              <button type="button" id="summary-macro-days-14" onclick="selectMacroGoalDays('summary', 14)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white cursor-pointer">14j</button>
+              <button type="button" id="summary-macro-days-30" onclick="selectMacroGoalDays('summary', 30)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white cursor-pointer">30j</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cartes rapides des 4 objectifs du jour -->
+        <div id="summary-macro-goals-overview" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+
+        <!-- 4 KPIs du nutriment sélectionné -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Aujourd'hui</div>
+            <div id="summary-macro-kpi-today" class="text-base font-extrabold text-white mt-0.5">--</div>
+            <div id="summary-macro-kpi-today-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Jours dans la cible</div>
+            <div id="summary-macro-kpi-reached" class="text-base font-extrabold text-emerald-400 mt-0.5">--</div>
+            <div id="summary-macro-kpi-reached-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Série en cours</div>
+            <div id="summary-macro-kpi-streak" class="text-base font-extrabold text-amber-400 mt-0.5">0 j</div>
+            <div id="summary-macro-kpi-streak-sub" class="text-[11px] text-slate-400 mt-0.5">Jours consécutifs atteints</div>
+          </div>
+          <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Moyenne quotidienne</div>
+            <div id="summary-macro-kpi-avg" class="text-base font-extrabold text-white mt-0.5">--</div>
+            <div id="summary-macro-kpi-avg-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+          </div>
+        </div>
+
+        <!-- Graphique quotidien vs Objectif -->
+        <div class="h-64">
+          <canvas id="chart-summary-macro-goals"></canvas>
+        </div>
+
+        <!-- Frise d'indicateurs par jour -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span class="font-medium">Indicateurs par jour (cliquer sur un jour pour ouvrir son journal)</span>
+            <span class="flex items-center gap-2 text-[10px]">
+              <span class="text-emerald-400">✓ Atteint</span>
+              <span class="text-amber-400">~ Proche</span>
+              <span class="text-rose-400">↓/↑ Hors cible</span>
+            </span>
+          </div>
+          <div id="summary-macro-goals-days-strip" class="flex items-center gap-1.5 overflow-x-auto pb-1"></div>
+        </div>
+      </div>
+
       <!-- Widget Hydratation Journalière (BALI-293) -->
       <div class="bg-[#151D2A] border border-[#1F2A3C] rounded-2xl p-5 shadow-sm space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -878,6 +949,9 @@
             </div>
           </div>
 
+          <!-- Jauges d'objectifs du jour (Protéines en priorité + Calories, Glucides, Lipides) -->
+          <div id="journal-day-macro-goals-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2.5"></div>
+
           <!-- Synthèse Métabolique & Bienfaits Santé de la Journée (Stage 13) -->
           <div id="journal-day-benefits-summary" class="bg-[#13132B] border border-[#25254A] rounded-2xl p-3.5 sm:p-4 space-y-2 shadow-sm">
             <div class="flex items-center justify-between">
@@ -904,12 +978,79 @@
 
       <!-- Blocs analytiques & historique liés au Journal des Repas -->
       <div id="nutrition-journal-analytics" class="space-y-6">
-        <!-- Tableau Récapitulatif : Calories par Jour & par Repas -->
+        <!-- Suivi Quotidien des Objectifs Nutritionnels (Protéines, Calories, Glucides, Lipides) -->
+        <div id="nutrition-macro-goals-card" class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div>
+              <h3 class="font-bold text-white text-base flex items-center gap-2 flex-wrap">
+                <span>🎯 Suivi des Objectifs par Jour — Protéines, Calories, Glucides &amp; Lipides</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/40 font-bold">Focus Protéines</span>
+              </h3>
+              <p id="nutrition-macro-goals-hint" class="text-xs text-slate-400 mt-0.5">Comparaison quotidienne par rapport à vos objectifs personnalisés</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sélection du nutriment">
+                <button type="button" id="nutrition-macro-tab-protein" onclick="selectMacroGoalNutrient('nutrition', 'protein')" class="px-3 py-1.5 rounded-xl text-xs font-bold border bg-brand-600 text-white border-brand-400 cursor-pointer">💪 Protéines</button>
+                <button type="button" id="nutrition-macro-tab-calories" onclick="selectMacroGoalNutrient('nutrition', 'calories')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">🔥 Calories</button>
+                <button type="button" id="nutrition-macro-tab-carbs" onclick="selectMacroGoalNutrient('nutrition', 'carbs')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">⚡ Glucides</button>
+                <button type="button" id="nutrition-macro-tab-fat" onclick="selectMacroGoalNutrient('nutrition', 'fat')" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-[#25254A] bg-[#0B0F17] text-slate-300 cursor-pointer">🥑 Lipides</button>
+              </div>
+              <div class="flex items-center gap-1 p-1 bg-[#0B0F17] border border-[#25254A] rounded-xl" role="group" aria-label="Période d'affichage">
+                <button type="button" id="nutrition-macro-days-7" onclick="selectMacroGoalDays('nutrition', 7)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white cursor-pointer">7j</button>
+                <button type="button" id="nutrition-macro-days-14" onclick="selectMacroGoalDays('nutrition', 14)" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-600 text-white cursor-pointer">14j</button>
+                <button type="button" id="nutrition-macro-days-30" onclick="selectMacroGoalDays('nutrition', 30)" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white cursor-pointer">30j</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="nutrition-macro-goals-overview" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+              <div class="text-[11px] text-slate-400">Aujourd'hui</div>
+              <div id="nutrition-macro-kpi-today" class="text-base font-extrabold text-white mt-0.5">--</div>
+              <div id="nutrition-macro-kpi-today-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+            </div>
+            <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+              <div class="text-[11px] text-slate-400">Jours dans la cible</div>
+              <div id="nutrition-macro-kpi-reached" class="text-base font-extrabold text-emerald-400 mt-0.5">--</div>
+              <div id="nutrition-macro-kpi-reached-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+            </div>
+            <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+              <div class="text-[11px] text-slate-400">Série en cours</div>
+              <div id="nutrition-macro-kpi-streak" class="text-base font-extrabold text-amber-400 mt-0.5">0 j</div>
+              <div id="nutrition-macro-kpi-streak-sub" class="text-[11px] text-slate-400 mt-0.5">Jours consécutifs atteints</div>
+            </div>
+            <div class="bg-[#0B0F17] border border-[#25254A] rounded-xl p-3">
+              <div class="text-[11px] text-slate-400">Moyenne quotidienne</div>
+              <div id="nutrition-macro-kpi-avg" class="text-base font-extrabold text-white mt-0.5">--</div>
+              <div id="nutrition-macro-kpi-avg-sub" class="text-[11px] text-slate-400 mt-0.5">--</div>
+            </div>
+          </div>
+
+          <div class="h-72">
+            <canvas id="chart-nutrition-macro-goals"></canvas>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span class="font-medium">Indicateurs par jour (cliquer sur un jour pour ouvrir son journal)</span>
+              <span class="flex items-center gap-2 text-[10px]">
+                <span class="text-emerald-400">✓ Atteint</span>
+                <span class="text-amber-400">~ Proche</span>
+                <span class="text-rose-400">↓/↑ Hors cible</span>
+              </span>
+            </div>
+            <div id="nutrition-macro-goals-days-strip" class="flex items-center gap-1.5 overflow-x-auto pb-1"></div>
+          </div>
+        </div>
+
+        <!-- Tableau Récapitulatif : Calories & Protéines par Jour & par Repas -->
         <div class="bg-[#13132B] border border-[#25254A] rounded-2xl p-5 space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h3 class="font-bold text-white text-base">Tableau des Calories Journalières & par Repas</h3>
-              <p class="text-xs text-slate-400">Suivi direct des calories consommées par repas vs cible de 2 000 kcal</p>
+              <h3 class="font-bold text-white text-base">Tableau des Apports Journaliers (Calories &amp; Protéines)</h3>
+              <p class="text-xs text-slate-400">Suivi direct des calories par repas et des protéines consommées vs vos objectifs quotidiens</p>
             </div>
             <span id="calories-table-today-badge" class="text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto">
               Aujourd'hui : 0 kcal
@@ -925,6 +1066,7 @@
                   <th class="py-2.5 px-3">🥗 Déjeuner</th>
                   <th class="py-2.5 px-3">🍎 Goûter</th>
                   <th class="py-2.5 px-3">🍲 Dîner</th>
+                  <th class="py-2.5 px-3 font-bold text-brand-300">💪 Protéines</th>
                   <th class="py-2.5 px-3 font-bold text-white">Total Calories</th>
                   <th class="py-2.5 px-3">Cible (kcal)</th>
                   <th class="py-2.5 px-3">Statut</th>
@@ -3296,6 +3438,7 @@
   <script src="/static/modules/api.js?v=1.0.0"></script>
   <script src="/static/modules/lazy.js?v=1.0.0"></script>
   <script src="/static/modules/dashboard.js?v=1.0.0"></script>
+  <script src="/static/modules/macro_goals.js?v=1.0.0"></script>
   <script src="/static/modules/views/summary.js?v=1.0.0"></script>
   <script src="/static/modules/views/weight.js?v=1.0.0"></script>
   <script src="/static/modules/views/activity.js?v=1.0.0"></script>

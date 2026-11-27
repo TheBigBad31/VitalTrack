@@ -60,7 +60,10 @@ from src.meal_recommendations import (
     get_historical_meal_averages,
     get_historical_meal_candidates,
 )
-from src.domain.nutrition import calculate_dynamic_tdee_target
+from src.domain.nutrition import (
+    calculate_dynamic_tdee_target,
+    compute_daily_macro_goals_history,
+)
 from src.nutrition_rules import evaluate_dish_benefits
 from src.otel import record_photo_analysis_metric
 from src.rate_limit import rate_limit_photo_analysis
@@ -1251,3 +1254,34 @@ def save_meal_as_dish(
         "message": f"Repas transformé en plat '{created_dish.name}' dans votre catalogue !",
         "dish": created_dish.model_dump()
     }
+
+
+@router.get("/api/nutrition/goals-history")
+def get_nutrition_goals_history(
+    days: int = Query(14, ge=1, le=90, description="Nombre de jours d'historique (1 à 90)"),
+    user_id: Optional[int] = Query(None, description="ID utilisateur ami en lecture seule"),
+    current_user: AuthUser = Depends(app_module.get_current_user),
+):
+    """Retourne l'historique quotidien des objectifs (protéines, calories, glucides, lipides) et leurs KPIs d'adhérence."""
+    db = get_db()
+    target_uid = current_user.id if user_id is None else user_id
+    verify_view_access(target_uid, current_user, database=db)
+
+    profile = db.get_user_profile(user_id=target_uid)
+    meals = db.get_meals(limit=max(200, days * 6), user_id=target_uid)
+    weights = db.get_weights(limit=5, user_id=target_uid, exclude_simulation=not bool(profile.get("is_demo_profile")))
+    latest_weight = weights[-1] if weights else None
+    effective_weight_kg = (
+        latest_weight.weight_kg
+        if latest_weight
+        else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
+    )
+
+    daily_targets = get_daily_nutrition_targets(db, user_id=target_uid)
+    return compute_daily_macro_goals_history(
+        meals=meals,
+        targets=daily_targets,
+        today=dt_module.date.today(),
+        days=days,
+        weight_kg=effective_weight_kg,
+    )

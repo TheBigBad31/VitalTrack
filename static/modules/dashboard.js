@@ -341,6 +341,10 @@
 
       const meals = currentData.recent_meals || [];
 
+      if (typeof renderMacroGoalsPanel === 'function') {
+        renderMacroGoalsPanel('nutrition');
+      }
+
       const badge = document.getElementById('meals-count-badge');
 
       if (badge) badge.innerText = `${meals.length} repas récents`;
@@ -371,13 +375,15 @@
 
       const snack = [];
 
+      const protByDay = [];
+
 
 
       days.forEach(day => {
 
         const dayMeals = meals.filter(m => m.date === day);
 
-        let b = 0, l = 0, d = 0, s = 0;
+        let b = 0, l = 0, d = 0, s = 0, pDay = 0;
 
         dayMeals.forEach(m => {
 
@@ -389,11 +395,13 @@
 
           else if (m.meal_type === 'snack') s += m.total_calories_kcal;
 
+          pDay += Number(m.protein_g || 0);
+
         });
 
 
 
-        bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s);
+        bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s); protByDay.push(pDay);
 
       });
 
@@ -514,6 +522,10 @@
 
           const d = dinner[idx] || 0;
 
+          const p = Math.round(protByDay[idx] || 0);
+
+          const protTarget = Math.round((currentData && currentData.summary && currentData.summary.targets && currentData.summary.targets.protein_g) || 140);
+
           const total = Math.round(b + l + s + d);
 
           const isToday = day === todayStr;
@@ -571,6 +583,14 @@
               <td class="py-2.5 px-3 text-pink-400 font-semibold">${s > 0 ? Math.round(s) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
 
               <td class="py-2.5 px-3 text-indigo-400 font-semibold">${d > 0 ? Math.round(d) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
+
+              <td class="py-2.5 px-3">
+
+                <span class="font-bold ${p >= Math.round(protTarget * 0.95) ? 'text-emerald-400' : (p > 0 ? 'text-brand-300' : 'text-slate-600')}">${p > 0 ? p + ' g' : '-'}</span>
+
+                ${p > 0 ? `<span class="text-[10px] text-slate-400"> / ${Math.round(protTarget)}g</span>` : ''}
+
+              </td>
 
               <td class="py-2.5 px-3">
 

@@ -14,6 +14,7 @@ const STATIC_ASSETS = [
   '/static/modules/api.js',
   '/static/modules/lazy.js',
   '/static/modules/dashboard.js',
+  '/static/modules/macro_goals.js',
   '/static/modules/nutrition.js',
   '/static/modules/friends.js'
 ];

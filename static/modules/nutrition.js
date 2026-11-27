@@ -2325,6 +2325,10 @@ function renderMealsJournal() {
   if (elFat) elFat.textContent = `${Math.round(sum.total_fat_g || 0)}g L`;
   if (elFiber) elFiber.textContent = `${Math.round(sum.total_fiber_g || 0)}g F`;
 
+  if (typeof renderJournalDayMacroBars === 'function') {
+    renderJournalDayMacroBars(sum);
+  }
+
   const bonusPill = document.getElementById('journal-workout-bonus-pill');
   if (bonusPill) {
     const workoutBonus = Math.round(currentJournalData.workout_calories_kcal || 0);
