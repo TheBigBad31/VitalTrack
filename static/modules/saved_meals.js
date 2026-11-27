@@ -126,6 +126,36 @@
           </div>
         </div>
       `).join('');
+
+      const scoreBox = document.getElementById('est-nutritionscore-box');
+      const qualityEl = document.getElementById('est-nutritional-quality');
+      const benefitsWrap = document.getElementById('est-key-benefits-wrapper');
+      const benefitsEl = document.getElementById('est-key-benefits');
+
+      const qualityText = currentEstimatedMeal.nutritional_quality || currentEstimatedMeal.dietary_advice || '';
+      const keyBenefits = Array.isArray(currentEstimatedMeal.key_benefits) ? currentEstimatedMeal.key_benefits : [];
+
+      if (scoreBox && qualityEl) {
+        if (qualityText || keyBenefits.length > 0) {
+          scoreBox.classList.remove('hidden');
+          qualityEl.textContent = qualityText;
+        } else {
+          scoreBox.classList.add('hidden');
+        }
+      }
+      if (benefitsWrap && benefitsEl) {
+        if (keyBenefits.length > 0) {
+          benefitsWrap.classList.remove('hidden');
+          benefitsEl.innerHTML = keyBenefits.map(b => {
+            const tag = typeof b === 'string' ? b : (b.tag || '');
+            const desc = typeof b === 'string' ? '' : (b.description || '');
+            return `<span title="${escapeHtml(desc)}" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">${escapeHtml(tag)}</span>`;
+          }).join('');
+        } else {
+          benefitsWrap.classList.add('hidden');
+          benefitsEl.innerHTML = '';
+        }
+      }
     }
 
     async function saveMealToJournal() {

@@ -19,6 +19,12 @@ from urllib.parse import quote
 import httpx
 
 from src.models import FoodItem, MealType
+from src.nutrition_benefits import (
+    NUTRITION_BENEFITS_REFERENTIAL,
+    evaluate_nutrition_benefits,
+    generate_nutritional_quality,
+    validate_and_normalize_benefits,
+)
 
 logger = logging.getLogger(__name__)
 _HTTP_CLIENT = httpx.Client(
@@ -297,17 +303,23 @@ class PhotoCalorieEstimator:
 
             client = genai.Client(api_key=self.api_key)
 
+            allowed_tags = ", ".join(NUTRITION_BENEFITS_REFERENTIAL.keys())
             system_prompt = (
-                "Tu es un nutritionniste expert en vision par ordinateur. "
-                "Analyse la photo de ce repas et renvoie UNIQUEMENT un objet JSON valide avec cette structure exacte :\n"
+                "Tu es un expert en nutrition clinique et biochimie alimentaire. "
+                "Ton rôle est d'analyser la photo du repas, d'estimer des poids standards réalistes (légèrement généreux) "
+                "pour chaque aliment identifié, et de fournir une synthèse ultra-concise et directe "
+                "(zéro bavardage, pas de formule d'accueil ni de conclusion, pas de conseil médical générique).\n"
+                "Renvoie UNIQUEMENT un objet JSON valide avec cette structure exacte :\n"
                 "{\n"
                 '  "items": [\n'
                 '    {"name": "Nom aliment", "portion_g": 150, "calories_kcal": 220, "protein_g": 25, "carbs_g": 10, "fat_g": 4, "fiber_g": 2, "confidence_score": 0.88}\n'
                 "  ],\n"
-                '  "dietary_advice": "Conseil nutritionnel court et bienveillant",\n'
+                '  "nutritional_quality": "1 à 2 phrases directes max sur la qualité globale des macronutriments et l\'impact métabolique.",\n'
+                '  "key_benefits": ["1 à 4 tags sélectionnés STRICTEMENT dans la liste autorisée"],\n'
+                '  "dietary_advice": "Synthèse nutritionnelle directe",\n'
                 '  "overall_confidence": 0.85\n'
                 "}\n"
-                "Sois précis sur l'estimation des portions en grammes et la décomposition en macronutriments."
+                f"Tags autorisés pour key_benefits (uniquement ceux réellement impactés) : {allowed_tags}."
             )
 
             prompt_text = "Analyse cette assiette."
@@ -351,6 +363,13 @@ class PhotoCalorieEstimator:
             res = self._format_analysis_result(items, portion_scale, source="gemini_vision", meal_type=meal_type)
             if data.get("dietary_advice"):
                 res["dietary_advice"] = data["dietary_advice"]
+            if data.get("nutritional_quality"):
+                res["nutritional_quality"] = str(data["nutritional_quality"]).strip()
+            if data.get("key_benefits"):
+                res["key_benefits"] = validate_and_normalize_benefits(
+                    data.get("key_benefits"),
+                    res["key_benefits"],
+                )
             return res
 
         except Exception as e:
@@ -430,8 +449,26 @@ class PhotoCalorieEstimator:
             sum((i.confidence_score or 0.8) for i in items) / len(items), 2
         ) if items else 0.8
 
-        # Conseil nutritionnel automatique
+        # Conseil nutritionnel automatique & référentiel NutritionScore (EFSA/ANSES)
         advice = self._generate_nutrition_advice(total_prot, total_carbs, total_fat, total_fiber, meal_type)
+        nutritional_quality = generate_nutritional_quality(
+            total_calories=total_cal,
+            protein_g=total_prot,
+            carbs_g=total_carbs,
+            fat_g=total_fat,
+            fiber_g=total_fiber,
+            pct_prot=pct_prot,
+            pct_carbs=pct_carbs,
+            pct_fat=pct_fat,
+        )
+        key_benefits = evaluate_nutrition_benefits(
+            items=items,
+            total_calories=total_cal,
+            protein_g=total_prot,
+            carbs_g=total_carbs,
+            fat_g=total_fat,
+            fiber_g=total_fiber,
+        )
 
         return {
             "meal_type": meal_type,
@@ -450,6 +487,8 @@ class PhotoCalorieEstimator:
             "items": items,
             "confidence_score": avg_confidence,
             "dietary_advice": advice,
+            "nutritional_quality": nutritional_quality,
+            "key_benefits": key_benefits,
         }
 
     def _generate_nutrition_advice(
