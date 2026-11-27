@@ -19,7 +19,7 @@ jobs:
     uses: ./.github/workflows/reusable-frontend-check.yml
     with:
       node-version: '20'
-      js-glob: 'static/modules/*.js'
+      js-glob: 'static/sw.js static/modules/*.js static/modules/views/*.js'
 
   lighthouse-audit:
     name: Lighthouse Performance Budget

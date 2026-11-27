@@ -10,7 +10,7 @@ on:
         type: string
       js-glob:
         description: 'Globs to check for JavaScript syntax and assets'
-        default: 'static/modules/*.js'
+        default: 'static/sw.js static/modules/*.js static/modules/views/*.js'
         required: false
         type: string
 
@@ -47,3 +47,8 @@ jobs:
             echo "ERROR: static/manifest.json not found"
             exit 1
           fi
+
+      - name: Run frontend unit tests (Vitest)
+        run: |
+          npm --prefix static install --no-audit --no-fund
+          npm --prefix static test
