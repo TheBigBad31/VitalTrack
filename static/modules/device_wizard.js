@@ -581,6 +581,15 @@ function openBridgeFromDateSyncModal() {
     showToast('Ouverture du bridge Android VitalTrack (' + (startDate || 'dernière synchro') + ')...', 'info');
   }
 }
+window.openConnectWizardModal = openConnectWizardModal;
+window.closeConnectWizardModal = closeConnectWizardModal;
+window.selectWizardDevice = selectWizardDevice;
+window.submitDeviceConnection = submitDeviceConnection;
+window.generateDeviceToken = generateDeviceToken;
+window.toggleTokenVisibility = toggleTokenVisibility;
+window.copyTokenToClipboard = copyTokenToClipboard;
+window.fetchOrInitDeviceToken = fetchOrInitDeviceToken;
+window.testHealthConnectIngestion = testHealthConnectIngestion;
 window.openDateSyncModal = openDateSyncModal;
 window.closeDateSyncModal = closeDateSyncModal;
 window.submitDateSync = submitDateSync;

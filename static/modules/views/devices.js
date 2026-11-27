@@ -696,3 +696,4 @@
 
 window.renderDevicesView = renderDevicesView;
 window.renderLiveSyncBanner = renderLiveSyncBanner;
+window.triggerSyncFromBanner = triggerSyncFromBanner;

@@ -240,13 +240,6 @@ if (document.readyState === 'loading') {
   loadMealsJournal();
 }
 
-window.handleCatItemTypeChange = handleCatItemTypeChange;
-window.handleDishIngredientSelectChange = handleDishIngredientSelectChange;
-window.addIngredientToDish = addIngredientToDish;
-window.removeDishIngredient = removeDishIngredient;
-window.updateDishIngredientQuantity = updateDishIngredientQuantity;
-
-
 async function refreshNutritionWithMetricsSync() {
   const btn = document.getElementById('btn-sync-nutrition-metrics');
   const icon = btn ? btn.querySelector('i') : null;
@@ -270,14 +263,4 @@ async function refreshNutritionWithMetricsSync() {
   }
 }
 
-window.openBarcodeScannerModal = openBarcodeScannerModal;
-window.closeBarcodeScannerModal = closeBarcodeScannerModal;
-window.resetBarcodeScannerStep = resetBarcodeScannerStep;
-window.startCameraBarcodeScanner = startCameraBarcodeScanner;
-window.stopCameraBarcodeScanner = stopCameraBarcodeScanner;
-window.lookupManualBarcode = lookupManualBarcode;
-window.lookupBarcode = lookupBarcode;
-window.updateBarcodeLivePortionMacros = updateBarcodeLivePortionMacros;
-window.addScannedProductToCatalog = addScannedProductToCatalog;
-window.addScannedProductToActiveMeal = addScannedProductToActiveMeal;
 window.refreshNutritionWithMetricsSync = refreshNutritionWithMetricsSync;

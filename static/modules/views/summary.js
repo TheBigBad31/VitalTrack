@@ -46,7 +46,8 @@
 
       renderLiveSyncBanner();
 
-
+      // Charger les données d'hydratation journalière (BALI-293)
+      loadHydrationWidget();
 
       renderWeightSummaryChart();
 
@@ -695,5 +696,87 @@
 
 
 
+    // Rendu et gestion de l'hydratation journalière (BALI-293)
+    let currentHydrationData = null;
+
+    async function loadHydrationWidget(targetDate = null) {
+      try {
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const dateQuery = targetDate ? `?date=${targetDate}${readOnlyParam}` : (readOnlyParam ? `?${readOnlyParam.slice(1)}` : '');
+        const resp = await apiFetch(`/api/metrics/hydration${dateQuery}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          currentHydrationData = data;
+          renderHydrationWidget(data);
+          return data;
+        }
+      } catch (err) {
+        console.warn("[Hydration] Impossible de charger l'hydratation:", err);
+      }
+      return null;
+    }
+
+    function renderHydrationWidget(data) {
+      if (!data) return;
+      const totalMl = Math.round(data.total_ml || 0);
+      const targetMl = Math.round(data.target_ml || 2000);
+      const glassesCount = data.glasses_count !== undefined ? data.glasses_count : Math.round((totalMl / 250) * 10) / 10;
+      const targetGlasses = data.target_glasses || 8;
+      const pct = Math.min(100, Math.round((totalMl / (targetMl || 2000)) * 100));
+
+      const curEl = document.getElementById('val-hydration-current');
+      const targetEl = document.getElementById('val-hydration-target');
+      const glassesEl = document.getElementById('val-hydration-glasses');
+      const barEl = document.getElementById('bar-hydration');
+      const badgeEl = document.getElementById('hydration-badge-status');
+      const visualEl = document.getElementById('hydration-glasses-visual');
+
+      if (curEl) curEl.innerText = totalMl.toLocaleString();
+      if (targetEl) targetEl.innerText = targetMl.toLocaleString();
+      if (glassesEl) glassesEl.innerText = `${glassesCount} / ${targetGlasses} verres (${pct}%)`;
+      if (barEl) barEl.style.width = `${pct}%`;
+      if (badgeEl) badgeEl.innerText = `${pct}%`;
+
+      if (visualEl) {
+        const fullGlasses = Math.floor(totalMl / 250);
+        let html = '';
+        for (let i = 1; i <= 8; i++) {
+          const isFilled = i <= fullGlasses;
+          const glassColor = isFilled ? 'bg-cyan-500 text-white shadow-sm shadow-cyan-500/30' : 'bg-[#0B0F17] text-slate-600 border border-[#1F2A3C]';
+          html += `<div class="w-6 h-7 rounded-md flex items-center justify-center text-[10px] font-bold transition-all ${glassColor}" title="Verre ${i} (250ml)">${i}</div>`;
+        }
+        visualEl.innerHTML = html;
+      }
+    }
+
+    async function quickAddWater(volumeMl = 250) {
+      try {
+        if (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active) {
+          if (typeof showToast === 'function') showToast("Action impossible en mode consultation d'ami.", "warning");
+          return;
+        }
+        const resp = await apiFetch('/api/metrics/hydration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume_ml: volumeMl, source: 'manual_quick_add' })
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          renderHydrationWidget(res);
+          if (typeof showToast === 'function') {
+            showToast(`+${volumeMl} ml d'eau ajoutés ! Total : ${Math.round(res.total_ml)} ml 💧`, 'success');
+          }
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          if (typeof showToast === 'function') showToast(err.detail || "Erreur lors de l'enregistrement de l'hydratation", 'error');
+        }
+      } catch (err) {
+        console.error("[Hydration] Erreur réseau quickAddWater:", err);
+        if (typeof showToast === 'function') showToast("Erreur réseau lors de l'ajout d'eau", 'error');
+      }
+    }
+
 window.renderSummaryView = renderSummaryView;
 window.renderSummaryRings = renderSummaryRings;
+window.loadHydrationWidget = loadHydrationWidget;
+window.quickAddWater = quickAddWater;

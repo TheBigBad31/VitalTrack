@@ -1160,11 +1160,34 @@
 
 
 
+    // Gestion du changement de date sur le sélecteur FC Intraday (BALI-293)
+    async function handleActivityDateChange(event) {
+      const selectedDate = event && event.target ? event.target.value : (document.getElementById('activity-hr-date-input')?.value);
+      if (!selectedDate) return;
+      try {
+        const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
+        const resp = await apiFetch(`/api/metrics?days=${currentTrendsDays}&date=${selectedDate}${readOnlyParam}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && Array.isArray(data.intraday_hr)) {
+            renderIntradayHRChart(data.intraday_hr);
+            if (data.intraday_hr.length === 0) {
+              if (typeof showToast === 'function') showToast(`Aucun échantillon FC pour le ${selectedDate}`, 'info');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Metrics] Erreur lors du rechargement de la FC intraday pour la date", selectedDate, err);
+      }
+    }
+
     window.changeTrendsRange = changeTrendsRange;
 
     window.switchCorrelationMode = switchCorrelationMode;
 
     window.renderSummaryRings = renderSummaryRings;
+
+    window.handleActivityDateChange = handleActivityDateChange;
 
 
 window.renderActivityView = renderActivityView;

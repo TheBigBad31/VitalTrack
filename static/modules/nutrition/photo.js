@@ -335,3 +335,15 @@ async function addScannedProductToActiveMeal() {
   }
 }
 
+window.openBarcodeScannerModal = openBarcodeScannerModal;
+window.closeBarcodeScannerModal = closeBarcodeScannerModal;
+window.resetBarcodeScannerStep = resetBarcodeScannerStep;
+window.startCameraBarcodeScanner = startCameraBarcodeScanner;
+window.stopCameraBarcodeScanner = stopCameraBarcodeScanner;
+window.lookupManualBarcode = lookupManualBarcode;
+window.lookupBarcode = lookupBarcode;
+window.updateBarcodeLivePortionMacros = updateBarcodeLivePortionMacros;
+window.addScannedProductToCatalog = addScannedProductToCatalog;
+window.addScannedProductToActiveMeal = addScannedProductToActiveMeal;
+
+

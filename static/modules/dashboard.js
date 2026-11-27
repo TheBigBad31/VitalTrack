@@ -880,3 +880,11 @@
       }, duration);
     }
 
+    // Exposition globale explicite des handlers définis dans dashboard.js
+    window.openProfileModal = openProfileModal;
+    window.closeProfileModal = closeProfileModal;
+    window.saveUserProfile = saveUserProfile;
+    window.formatRelativeTime = formatRelativeTime;
+    window.triggerDeviceSync = triggerDeviceSync;
+
+

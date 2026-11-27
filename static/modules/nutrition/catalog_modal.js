@@ -655,3 +655,10 @@ async function deleteCatalogItem(itemId) {
   }
 }
 
+window.handleCatItemTypeChange = handleCatItemTypeChange;
+window.handleDishIngredientSelectChange = handleDishIngredientSelectChange;
+window.addIngredientToDish = addIngredientToDish;
+window.removeDishIngredient = removeDishIngredient;
+window.updateDishIngredientQuantity = updateDishIngredientQuantity;
+
+

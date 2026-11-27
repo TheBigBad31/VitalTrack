@@ -218,8 +218,8 @@ async function flushOfflineQueue() {
     }
   }
   await refreshOfflineQueueBadge(false);
-  if (typeof loadDashboard === 'function') {
-    loadDashboard();
+  if (typeof loadDashboardData === 'function') {
+    loadDashboardData();
   }
 }
 

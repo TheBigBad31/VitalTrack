@@ -522,25 +522,9 @@
       renderUnifiedAuthState(session, profile);
     }
 
-    // Exposition globale explicite des handlers d'interface
-    window.openProfileModal = openProfileModal;
-    window.closeProfileModal = closeProfileModal;
-    window.saveUserProfile = saveUserProfile;
-    window.openConnectWizardModal = openConnectWizardModal;
-    window.closeConnectWizardModal = closeConnectWizardModal;
-    window.selectWizardDevice = selectWizardDevice;
-    window.submitDeviceConnection = submitDeviceConnection;
+    // Exposition globale explicite des handlers d'interface définis dans auth.js
     window.openAuthModal = openAuthModal;
     window.closeAuthModal = closeAuthModal;
-    window.switchTab = switchTab;
-    window.generateDeviceToken = generateDeviceToken;
-    window.toggleTokenVisibility = toggleTokenVisibility;
-    window.copyTokenToClipboard = copyTokenToClipboard;
-    window.fetchOrInitDeviceToken = fetchOrInitDeviceToken;
-    window.testHealthConnectIngestion = testHealthConnectIngestion;
-    window.formatRelativeTime = formatRelativeTime;
-    window.renderLiveSyncBanner = renderLiveSyncBanner;
-    window.triggerSyncFromBanner = triggerSyncFromBanner;
 
     function syncGoogleAccountStorage(email) {
       if (!email) return;
