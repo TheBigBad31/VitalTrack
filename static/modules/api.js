@@ -109,11 +109,22 @@ async function flushOfflineQueue() {
   await refreshOfflineQueueBadge(true);
   for (const item of items) {
     try {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, item.headers || {});
+      const currentToken = typeof localStorage !== 'undefined' ? localStorage.getItem(JWT_STORAGE_KEY) : null;
+      if (currentToken) {
+        headers['Authorization'] = `Bearer ${currentToken}`;
+      }
       const res = await fetch(item.url, {
         method: item.method || 'POST',
-        headers: item.headers || { 'Content-Type': 'application/json' },
+        headers,
         body: item.body
       });
+      if (res.status === 401) {
+        if (typeof openAuthModal === 'function') {
+          openAuthModal();
+        }
+        break;
+      }
       if (res.ok || (res.status >= 400 && res.status < 500)) {
         await removeOfflineMutation(item.id);
       }
@@ -251,7 +262,7 @@ function escapeHtml(str) {
 function sanitizeUrl(url) {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
-  if (/^(?:https?:\/\/|\/|blob:|data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,)/i.test(trimmed)) {
+  if (/^(?:https?:\/\/|\/|blob:|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(trimmed)) {
     return escapeHtml(trimmed);
   }
   return '';

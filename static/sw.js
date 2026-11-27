@@ -1,7 +1,8 @@
 // static/sw.js - Service Worker VitalTrack PWA
 // Cache offline et stratégie réseau pour les données biométriques et nutritionnelles
 
-const CACHE_NAME = 'vitaltrack-cache-v1';
+const CACHE_NAME = 'vitaltrack-cache-v2';
+const API_CACHE_NAME = 'vitaltrack-api-v2';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
@@ -16,8 +17,21 @@ const STATIC_ASSETS = [
   '/static/modules/dashboard.js',
   '/static/modules/macro_goals.js',
   '/static/modules/nutrition.js',
-  '/static/modules/friends.js'
+  '/static/modules/friends.js',
+  '/static/modules/views/summary.js',
+  '/static/modules/views/weight.js',
+  '/static/modules/views/activity.js',
+  '/static/modules/views/devices.js',
+  '/static/modules/views/goals.js'
 ];
+
+function isSensitiveApiPath(pathname) {
+  return (
+    pathname.startsWith('/api/auth/') ||
+    /^\/api\/devices\/[^/]+\/token(?:\/|$)/.test(pathname) ||
+    pathname.startsWith('/api/backup/')
+  );
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -32,7 +46,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key !== API_CACHE_NAME) {
             return caches.delete(key);
           }
         })
@@ -41,25 +55,41 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CLEAR_API_CACHE') {
+    event.waitUntil(caches.delete(API_CACHE_NAME));
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Pour les requêtes API : Stratégie Network-First
+  // Pour les requêtes API : ne jamais cacher les endpoints sensibles
   if (url.pathname.startsWith('/api/')) {
+    if (isSensitiveApiPath(url.pathname)) {
+      event.respondWith(
+        fetch(request).catch(() => new Response(
+          JSON.stringify({ offline: true, error: 'Connexion réseau indisponible.' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        ))
+      );
+      return;
+    }
+
     event.respondWith(
       fetch(request)
         .then((response) => {
           if (request.method === 'GET' && response && response.status === 200) {
             const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
+            caches.open(API_CACHE_NAME).then((cache) => {
               cache.put(request, responseClone);
             });
           }
           return response;
         })
         .catch(() => {
-          return caches.match(request).then((cachedResponse) => {
+          return caches.open(API_CACHE_NAME).then((cache) => cache.match(request)).then((cachedResponse) => {
             if (cachedResponse) {
               return cachedResponse;
             }
@@ -90,24 +120,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Pour les fichiers statiques (scripts, styles, polices, images) : Cache-First
+  // Pour les fichiers statiques : Stale-While-Revalidate en respectant la query (?v=...)
   event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(request).then((networkResponse) => {
-        if (
-          networkResponse &&
-          networkResponse.status === 200 &&
-          (url.pathname.startsWith('/static/') || url.origin === self.location.origin)
-        ) {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-        }
-        return networkResponse;
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(request).then((cachedResponse) => {
+        const networkFetch = fetch(request).then((networkResponse) => {
+          if (
+            networkResponse &&
+            networkResponse.status === 200 &&
+            (url.pathname.startsWith('/static/') || url.origin === self.location.origin)
+          ) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        });
+        return cachedResponse || networkFetch;
       });
     })
   );

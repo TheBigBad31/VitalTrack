@@ -4299,6 +4299,12 @@
 
       try {
 
+        if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_API_CACHE' });
+        }
+        if (typeof caches !== 'undefined') {
+          caches.delete('vitaltrack-api-v2').catch(() => {});
+        }
         if (localStorage.getItem(JWT_STORAGE_KEY)) {
 
           await apiFetch('/api/auth/logout', { method: 'POST' });
