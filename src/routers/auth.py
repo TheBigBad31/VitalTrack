@@ -10,6 +10,7 @@ Endpoints :
 - POST /api/auth/logout     : déconnexion de la session active Google
 """
 
+import os
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -22,9 +23,11 @@ from src.auth import (
     LoginRequest,
     RegisterRequest,
     UserPublicResponse,
+    _is_production,
     create_access_token,
     decode_access_token,
     hash_password,
+    is_strict_auth_enabled,
     parse_google_identity,
     validate_password_strength,
     verify_password
@@ -67,6 +70,44 @@ def get_current_user(
     raise HTTPException(status_code=401, detail="Authentification requise")
 
 
+def get_strict_user(authorization: Optional[str] = Header(None)) -> AuthUser:
+    """Exige un jeton Bearer JWT valide (sans fallback dev ni session globale)."""
+    import sys
+    app_module = sys.modules.get("src.app")
+    if app_module and hasattr(app_module, "get_strict_user"):
+        return app_module.get_strict_user(authorization=authorization)
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Jeton d'authentification Bearer manquant ou invalide")
+    token = authorization.split("Bearer ", 1)[1].strip()
+    payload = decode_access_token(token)
+    if not payload or "user_id" not in payload:
+        raise HTTPException(status_code=401, detail="Jeton JWT expiré ou signature invalide")
+    db = get_db()
+    user_data = db.get_user_by_id(int(payload["user_id"]))
+    if not user_data:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    return AuthUser(
+        id=user_data["id"],
+        uuid=user_data["uuid"],
+        email=user_data["email"],
+        name=user_data.get("name"),
+        picture=user_data.get("picture"),
+        auth_provider=user_data.get("auth_provider", "google"),
+        google_sub=user_data.get("google_sub"),
+    )
+
+
+def _is_admin_user(user: AuthUser) -> bool:
+    """Vérifie si l'utilisateur dispose des privilèges d'administration."""
+    raw_admins = os.getenv("ADMIN_EMAIL", "").strip()
+    if raw_admins:
+        admin_emails = {e.strip().lower() for e in raw_admins.split(",") if e.strip()}
+        if user.email.strip().lower() in admin_emails:
+            return True
+    return user.id == 1
+
+
 @router.get("/api/auth/config")
 def get_auth_config():
     """Retourne la configuration Google OAuth/GIS (Client ID, scopes et statut)."""
@@ -75,8 +116,21 @@ def get_auth_config():
 
 
 @router.put("/api/auth/config")
-def update_auth_config(payload: GoogleConfigUpdate):
-    """Enregistre ou met à jour le Google Client ID depuis l'interface."""
+def update_auth_config(
+    payload: GoogleConfigUpdate,
+    current_user: AuthUser = Depends(get_strict_user),
+):
+    """Enregistre ou met à jour le Google Client ID (Bearer admin requis, désactivé en prod)."""
+    if _is_production():
+        raise HTTPException(
+            status_code=403,
+            detail="En production, GOOGLE_CLIENT_ID est configuré uniquement via variable d'environnement.",
+        )
+    if not _is_admin_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Droits administrateur requis pour modifier la configuration Google OAuth.",
+        )
     db = get_db()
     res = db.set_google_client_id(payload.google_client_id)
     return {
@@ -95,9 +149,9 @@ def register_user(payload: RegisterRequest):
     if not validate_password_strength(payload.password):
         raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au minimum 8 caractères")
 
-    # Vérification de doublon d'email
+    # Vérification stricte de doublon d'email (y compris comptes OAuth Google sans password_hash)
     existing = db.get_user_by_email(payload.email)
-    if existing and existing.get("password_hash"):
+    if existing:
         raise HTTPException(status_code=400, detail="Un compte avec cet email existe déjà")
 
     pwd_hash = hash_password(payload.password, method="bcrypt")
@@ -168,23 +222,36 @@ def login_user(payload: LoginRequest):
 
 @router.post("/api/auth/google")
 def authenticate_google_user(payload: GoogleAuthPayload):
-    """Authentifie l'utilisateur via Google GIS (ID Token JWT) ou connexion directe 1-clic.
+    """Authentifie l'utilisateur via Google GIS (ID Token JWT vérifié cryptographiquement).
 
     Associe automatiquement le compte Google au profil utilisateur et génère un jeton JWT d'accès.
     """
+    if not payload.credential or not payload.credential.strip():
+        raise HTTPException(
+            status_code=401,
+            detail="ID Token Google (credential) requis pour l'authentification.",
+        )
+
     db = get_db()
     cfg = db.get_google_config()
-    client_id = cfg.get("google_client_id")
-    user_info = parse_google_identity(payload, verify_signature=True, client_id=client_id)
+    client_id = (cfg.get("google_client_id") or "").strip() or None
+    try:
+        user_info = parse_google_identity(payload, verify_signature=True, client_id=client_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
     session = db.login_google_user(
         email=user_info["email"],
         name=user_info["name"],
         picture=user_info.get("picture", ""),
         google_sub=user_info.get("google_sub", ""),
-        auth_method=user_info.get("auth_method", "google")
+        auth_method=user_info.get("auth_method", "google_gis_jwt")
     )
-    user_id = session.get("user_id") or 1
-    user_uuid = session.get("uuid") or "00000000-0000-4000-8000-000000000001"
+    user_id = session.get("user_id")
+    user_uuid = session.get("uuid")
+    if not user_id or not user_uuid:
+        raise HTTPException(status_code=500, detail="Impossible d'initialiser la session utilisateur Google")
+
     user_profile = db.get_user_profile(user_id=user_id)
 
     # Générer le token JWT Bearer pour les requêtes futures
@@ -215,7 +282,7 @@ def authenticate_google_user(payload: GoogleAuthPayload):
 def get_current_google_session(current_user: AuthUser = Depends(get_current_user)):
     """Retourne la session active, le jeton JWT et le profil associé."""
     db = get_db()
-    session = db.get_google_session()
+    session = db.get_google_session(email=current_user.email)
     profile = db.get_user_profile(user_id=current_user.id)
     token = create_access_token(current_user.id, current_user.uuid, current_user.email, current_user.name)
     return {
@@ -227,8 +294,8 @@ def get_current_google_session(current_user: AuthUser = Depends(get_current_user
 
 
 @router.post("/api/auth/logout")
-def logout_google_session():
-    """Déconnecte la session active Google."""
+def logout_google_session(current_user: AuthUser = Depends(get_current_user)):
+    """Déconnecte la session active Google de l'utilisateur authentifié."""
     db = get_db()
-    res = db.logout_google_user()
+    res = db.logout_google_user(email=current_user.email)
     return res

@@ -34,7 +34,7 @@ from src.dependencies import set_db
 from src.nutrition_engine import NutritionEngine
 from src.vision_nutrition import PhotoCalorieEstimator
 from src.connectors.registry import create_device_registry
-from src.auth import AuthUser, decode_access_token
+from src.auth import AuthUser, decode_access_token, is_strict_auth_enabled
 from src.otel import get_tracer, record_http_metric, setup_otel
 from src.rate_limit import (
     RateLimitExceeded,
@@ -288,27 +288,10 @@ def get_current_user(
                 google_sub=u.get("google_sub"),
             )
 
-    sess = db.get_google_session()
-    if sess.get("is_authenticated") and sess.get("user_id"):
-        user_data = db.get_user_by_id(int(sess["user_id"]))
-        if user_data:
-            return AuthUser(
-                id=user_data["id"],
-                uuid=user_data["uuid"],
-                email=user_data["email"],
-                name=user_data.get("name"),
-                picture=user_data.get("picture"),
-                auth_provider=user_data.get("auth_provider", "google"),
-                google_sub=user_data.get("google_sub"),
-            )
-
-    is_prod_env = os.getenv("VERCEL") == "1" or os.getenv("ENV") == "production" or os.getenv("ENVIRONMENT") == "production"
-    require_strict = os.getenv("REQUIRE_STRICT_AUTH") == "1" or (is_prod_env and os.getenv("REQUIRE_STRICT_AUTH") != "0")
-
-    if require_strict:
+    if is_strict_auth_enabled():
         raise HTTPException(
             status_code=401,
-            detail="Authentification requise : aucun jeton Bearer, token d'appareil ou session Google valide",
+            detail="Authentification requise : aucun jeton Bearer ou token d'appareil valide",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

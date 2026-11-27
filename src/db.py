@@ -533,11 +533,11 @@ class Database:
         return self.users.login_google_user(email=email, name=name, picture=picture,
                                             google_sub=google_sub, auth_method=auth_method)
 
-    def get_google_session(self) -> Dict[str, Any]:
-        return self.users.get_google_session()
+    def get_google_session(self, email: Optional[str] = None) -> Dict[str, Any]:
+        return self.users.get_google_session(email=email)
 
-    def logout_google_user(self) -> Dict[str, Any]:
-        return self.users.logout_google_user()
+    def logout_google_user(self, email: Optional[str] = None) -> Dict[str, Any]:
+        return self.users.logout_google_user(email=email)
 
     def set_user_consent(self, category: str, consented: bool, user_id: int = 1) -> UserConsentItem:
         return self.users.set_user_consent(category, consented, user_id=user_id)

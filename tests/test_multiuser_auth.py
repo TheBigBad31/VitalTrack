@@ -381,3 +381,42 @@ def test_webhook_security_fail_closed_and_no_fallback(isolated_app, monkeypatch)
     # Sécurité P0 : l'ingestion via WEBHOOK_SECRET est attachée au compte système principal (1), pas au payload arbitraire
     assert res_with_global_secret.json()["user_id"] == 1
 
+
+def test_no_global_google_session_leak_between_users(isolated_app, monkeypatch):
+    """Vérifie qu'une session Google active d'un utilisateur ne fuit jamais vers un autre utilisateur ou un anonyme."""
+    client, test_db = isolated_app
+
+    # 1. Alice dispose d'une session Google active
+    sess_alice = test_db.login_google_user(
+        email="alice.google@vitaltrack.test",
+        name="Alice Google",
+        google_sub="google_sub_alice_multi",
+        auth_method="google_gis_jwt",
+    )
+    assert sess_alice["is_authenticated"] is True
+
+    # 2. Bob s'inscrit par email/mot de passe et consulte /api/auth/me
+    res_bob = client.post(
+        "/api/auth/register",
+        json={
+            "email": "bob.email@vitaltrack.test",
+            "password": "BobSecurePassword2026!",
+            "name": "Bob Email",
+        },
+    )
+    assert res_bob.status_code == 200
+    token_bob = res_bob.json()["access_token"]
+
+    me_bob = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token_bob}"})
+    assert me_bob.status_code == 200
+    me_bob_data = me_bob.json()
+    assert me_bob_data["current_user"]["email"] == "bob.email@vitaltrack.test"
+    assert me_bob_data["session"]["is_authenticated"] is False
+    assert me_bob_data["session"]["email"] is None
+
+    # 3. En mode strict, un client anonyme sans Bearer obtient 401 même si Alice a une session Google active
+    monkeypatch.setenv("REQUIRE_STRICT_AUTH", "1")
+    res_anon = client.get("/api/dashboard")
+    assert res_anon.status_code == 401
+
+

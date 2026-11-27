@@ -388,11 +388,11 @@ def test_user_profile_crud(client):
     assert res.status_code == 200
     data = res.json()
     assert "profile" in data
-    assert data["profile"]["name"] == "Sébastien"
+    assert data["profile"]["name"] == "Utilisateur"
 
     # 2. Mise à jour profil
     payload = {
-        "name": "Sébastien L.",
+        "name": "Utilisateur Test",
         "gender": "male",
         "age": 36,
         "height_cm": 178.0,
@@ -404,7 +404,7 @@ def test_user_profile_crud(client):
     assert update_res.status_code == 200
     up_data = update_res.json()
     assert up_data["status"] == "success"
-    assert up_data["profile"]["name"] == "Sébastien L."
+    assert up_data["profile"]["name"] == "Utilisateur Test"
     assert up_data["profile"]["target_weight_kg"] == 76.5
 
 
@@ -593,68 +593,98 @@ def test_daily_sync_execution(monkeypatch):
 # =====================================================================
 
 def test_google_auth_config(client):
-    """Vérifie la récupération et la mise à jour de la configuration Google OAuth."""
-    # 1. Lecture de la config initiale
+    """Vérifie la récupération et la mise à jour protégée de la configuration Google OAuth."""
+    from src.auth import create_access_token
+    import src.app as app_module
+
+    # 1. Lecture de la config initiale (aucun compte personnel exposé)
     res = client.get("/api/auth/config")
     assert res.status_code == 200
     cfg = res.json()
     assert "google_client_id" in cfg
     assert "scopes" in cfg
     assert len(cfg["scopes"]) >= 3
-    assert cfg["demo_fallback_account"] == "sebastienlamoliate@gmail.com"
+    assert "demo_fallback_account" not in cfg
 
-    # 2. Mise à jour du client_id
+    # 2. Mise à jour refusée sans Bearer (401)
     test_id = "test-client-id-12345.apps.googleusercontent.com"
-    put_res = client.put("/api/auth/config", json={"google_client_id": test_id})
+    unauth_res = client.put("/api/auth/config", json={"google_client_id": test_id})
+    assert unauth_res.status_code == 401
+
+    # 3. Mise à jour autorisée avec Bearer admin
+    admin_user = app_module.db._ensure_default_user()
+    admin_token = create_access_token(
+        admin_user["id"], admin_user["uuid"], admin_user["email"], admin_user.get("name")
+    )
+    put_res = client.put(
+        "/api/auth/config",
+        json={"google_client_id": test_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert put_res.status_code == 200
     updated_cfg = put_res.json()["config"]
     assert updated_cfg["google_client_id"] == test_id
     assert updated_cfg["is_configured"] is True
 
 
-def test_google_auth_and_profile_binding(client):
-    """Vérifie l'authentification Google, la session active /api/auth/me et la liaison avec /api/profile."""
+def test_google_auth_and_profile_binding(client, monkeypatch):
+    """Vérifie l'authentification Google via ID Token GIS vérifié, /api/auth/me et /api/profile."""
+    import src.auth as auth_module
+
     # 1. État non-authentifié au départ
     me_init = client.get("/api/auth/me").json()
     assert me_init["session"]["is_authenticated"] is False
 
-    # 2. Authentification Google (avec compte Sébastien LAMOLIATE)
-    auth_payload = {
-        "email": "sebastienlamoliate@gmail.com",
-        "name": "Sébastien LAMOLIATE",
-        "picture": "https://lh3.googleusercontent.com/a/test-avatar=s96-c",
-        "sub": "google_sub_1092837465"
-    }
-    auth_res = client.post("/api/auth/google", json=auth_payload)
+    # 2. Rejet si credential manquant (pas de bypass 1-clic)
+    bad_res = client.post(
+        "/api/auth/google",
+        json={"email": "google.user@vitaltrack.test", "name": "Utilisateur Test"},
+    )
+    assert bad_res.status_code == 401
+
+    # 3. Authentification Google avec ID Token GIS vérifié (JWKS mocké)
+    monkeypatch.setattr(
+        auth_module,
+        "verify_google_id_token",
+        lambda token, expected_client_id=None: {
+            "email": "google.user@vitaltrack.test",
+            "email_verified": True,
+            "name": "Utilisateur Google Test",
+            "picture": "https://lh3.googleusercontent.com/a/test-avatar=s96-c",
+            "sub": "google_sub_1092837465",
+        },
+    )
+    auth_res = client.post("/api/auth/google", json={"credential": "mock.valid.gis.idtoken"})
     assert auth_res.status_code == 200
     auth_data = auth_res.json()
     assert auth_data["status"] == "success"
     assert auth_data["session"]["is_authenticated"] is True
-    assert auth_data["session"]["email"] == "sebastienlamoliate@gmail.com"
+    assert auth_data["session"]["email"] == "google.user@vitaltrack.test"
+    bearer_headers = {"Authorization": f"Bearer {auth_data['access_token']}"}
 
-    # 3. Vérification de la session active via /api/auth/me
-    me_res = client.get("/api/auth/me")
+    # 4. Vérification de la session active via /api/auth/me avec Bearer
+    me_res = client.get("/api/auth/me", headers=bearer_headers)
     assert me_res.status_code == 200
     me_data = me_res.json()
     assert me_data["session"]["is_authenticated"] is True
-    assert me_data["session"]["email"] == "sebastienlamoliate@gmail.com"
-    assert me_data["profile"]["google_email"] == "sebastienlamoliate@gmail.com"
+    assert me_data["session"]["email"] == "google.user@vitaltrack.test"
+    assert me_data["profile"]["google_email"] == "google.user@vitaltrack.test"
 
-    # 4. Vérification de la liaison automatique dans /api/profile
-    prof_res = client.get("/api/profile")
+    # 5. Vérification de la liaison automatique dans /api/profile avec Bearer
+    prof_res = client.get("/api/profile", headers=bearer_headers)
     assert prof_res.status_code == 200
     prof_data = prof_res.json()
-    assert prof_data["profile"]["google_email"] == "sebastienlamoliate@gmail.com"
-    assert prof_data["profile"]["google_name"] == "Sébastien LAMOLIATE"
+    assert prof_data["profile"]["google_email"] == "google.user@vitaltrack.test"
+    assert prof_data["profile"]["google_name"] == "Utilisateur Google Test"
 
-    # 5. Déconnexion
-    logout_res = client.post("/api/auth/logout")
+    # 6. Déconnexion authentifiée
+    logout_res = client.post("/api/auth/logout", headers=bearer_headers)
     assert logout_res.status_code == 200
     logout_data = logout_res.json()
     assert logout_data["status"] == "success"
 
     # Vérifier que la session active est désactivée
-    me_after = client.get("/api/auth/me").json()
+    me_after = client.get("/api/auth/me", headers=bearer_headers).json()
     assert me_after["session"]["is_authenticated"] is False
 
 
@@ -716,12 +746,14 @@ def test_production_neon_failure_returns_503(monkeypatch):
         assert "Connexion PostgreSQL Neon impossible en environnement de production" in str(exc_info.value)
         assert broken_db.is_postgres is True  # Ne doit pas avoir basculé à False
 
-        # Vérifier que l'API FastAPI renvoie bien HTTP 503 sans écriture orpheline
+        # Vérifier que l'API FastAPI renvoie bien HTTP 503 sans écriture orpheline pour une requête authentifiée
+        from src.auth import create_access_token
+        prod_token = create_access_token(1, "00000000-0000-4000-8000-000000000001", "prod@vitaltrack.test", "Prod User")
         old_db = app_module.db
         app_module.db = broken_db
         try:
             prod_client = TestClient(app, raise_server_exceptions=False)
-            res = prod_client.get("/api/dashboard")
+            res = prod_client.get("/api/dashboard", headers={"Authorization": f"Bearer {prod_token}"})
             assert res.status_code == 503
             err_data = res.json()
             assert err_data["status"] == "error"

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from src.auth import _is_production
 from src.models import UserConsentItem
 from src.repositories.base import BaseRepository
 
@@ -14,10 +15,10 @@ class UsersRepository(BaseRepository):
     """Gestion des comptes utilisateurs, profils personnalisés, sessions Google, RGPD et amitiés."""
 
     def _ensure_default_user(self) -> Dict[str, Any]:
-        """Crée ou retourne le compte principal par défaut (Sébastien LAMOLIATE)."""
+        """Crée ou retourne le compte local par défaut (configurable via DEFAULT_USER_EMAIL / DEFAULT_USER_NAME)."""
         now_str = datetime.now(timezone.utc).isoformat()
-        default_email = "sebastienlamoliate@gmail.com"
-        default_name = "Sébastien LAMOLIATE"
+        default_email = os.getenv("DEFAULT_USER_EMAIL", "demo@vitaltrack.local").strip().lower()
+        default_name = os.getenv("DEFAULT_USER_NAME", "Utilisateur VitalTrack").strip()
         default_uuid = "00000000-0000-4000-8000-000000000001"
 
         with self.get_connection() as conn:
@@ -135,10 +136,11 @@ class UsersRepository(BaseRepository):
 
             if not row:
                 now_str = datetime.now(timezone.utc).isoformat()
+                default_profile_name = os.getenv("DEFAULT_USER_NAME", "Utilisateur").strip() or "Utilisateur"
                 cursor.execute("""
                     INSERT INTO user_profile (user_id, name, gender, age, height_cm, target_weight_kg, goal_profile_id, target_steps, target_calories_intake, protein_target_per_kg, daily_protein_target_g, daily_carbs_target_g, daily_fat_target_g, daily_water_target_ml, goal_type, activity_level, birth_date, current_weight_kg, meal_distribution, preferred_ring, preferred_scale, is_demo_profile, updated_at)
-                    VALUES (?, 'Sébastien', 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, NULL, NULL, NULL, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', 0, ?)
-                """, (user_id, now_str))
+                    VALUES (?, ?, 'male', 35, 178.0, 77.0, 'weight_loss', 10000, 2000.0, 1.8, NULL, NULL, NULL, 2000.0, 'weight_loss', 'moderately_active', NULL, 79.5, NULL, 'ringconn', 'withings', 0, ?)
+                """, (user_id, default_profile_name, now_str))
                 conn.commit()
                 cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
                 row = cursor.fetchone()
@@ -170,7 +172,7 @@ class UsersRepository(BaseRepository):
                 return data[key]
             return current.get(key, default)
 
-        name = _val("name", "Sébastien")
+        name = _val("name", os.getenv("DEFAULT_USER_NAME", "Utilisateur").strip() or "Utilisateur")
         gender = _val("gender", "male")
         age = int(_val("age", 35))
         height_cm = float(_val("height_cm", 178.0))
@@ -239,14 +241,15 @@ class UsersRepository(BaseRepository):
         return self.get_user_profile(user_id=user_id)
 
     def get_google_config(self) -> Dict[str, Any]:
-        """Récupère la configuration Google Client ID."""
-        client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT google_client_id FROM google_auth_config ORDER BY id DESC LIMIT 1")
-            row = cursor.fetchone()
-            if row and row.get("google_client_id"):
-                client_id = row["google_client_id"]
+        """Récupère la configuration Google Client ID (env seule en production)."""
+        client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+        if not _is_production():
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT google_client_id FROM google_auth_config ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+                if row and row.get("google_client_id"):
+                    client_id = row["google_client_id"]
 
         return {
             "google_client_id": client_id,
@@ -257,8 +260,7 @@ class UsersRepository(BaseRepository):
                 "profile",
                 "https://www.googleapis.com/auth/fitness.activity.read",
                 "https://www.googleapis.com/auth/fitness.body.read"
-            ],
-            "demo_fallback_account": "sebastienlamoliate@gmail.com"
+            ]
         }
 
     def set_google_client_id(self, client_id: str) -> Dict[str, Any]:
@@ -294,7 +296,6 @@ class UsersRepository(BaseRepository):
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE google_sessions SET is_active = 0")
             if self.is_postgres:
                 cursor.execute("""
                     INSERT INTO google_sessions (email, name, picture, google_sub, auth_method, is_active, last_login)
@@ -328,16 +329,22 @@ class UsersRepository(BaseRepository):
             "google_sub": google_sub
         }, user_id=user["id"])
 
-        sess = self.get_google_session()
+        sess = self.get_google_session(email=email)
         sess["user_id"] = user["id"]
         sess["uuid"] = user["uuid"]
         return sess
 
-    def get_google_session(self) -> Dict[str, Any]:
-        """Récupère la session active Google."""
+    def get_google_session(self, email: Optional[str] = None) -> Dict[str, Any]:
+        """Récupère la session active Google (scopée à un email si fourni)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM google_sessions WHERE is_active = 1 ORDER BY last_login DESC LIMIT 1")
+            if email:
+                cursor.execute(
+                    "SELECT * FROM google_sessions WHERE is_active = 1 AND LOWER(email) = ? ORDER BY last_login DESC LIMIT 1",
+                    (email.strip().lower(),),
+                )
+            else:
+                cursor.execute("SELECT * FROM google_sessions WHERE is_active = 1 ORDER BY last_login DESC LIMIT 1")
             row = cursor.fetchone()
 
         if row:
@@ -345,20 +352,21 @@ class UsersRepository(BaseRepository):
             user_row = None
             with self.get_connection() as conn2:
                 cur2 = conn2.cursor()
-                cur2.execute("SELECT id, uuid FROM users WHERE email = ?", (session_data["email"],))
+                cur2.execute("SELECT id, uuid FROM users WHERE LOWER(email) = ?", (session_data["email"].strip().lower(),))
                 user_row = cur2.fetchone()
 
-            return {
-                "is_authenticated": True,
-                "user_id": user_row["id"] if user_row else 1,
-                "uuid": user_row["uuid"] if user_row else "00000000-0000-4000-8000-000000000001",
-                "email": session_data["email"],
-                "name": session_data["name"],
-                "picture": session_data["picture"],
-                "google_sub": session_data["google_sub"],
-                "auth_method": session_data["auth_method"],
-                "last_login": session_data["last_login"]
-            }
+            if user_row:
+                return {
+                    "is_authenticated": True,
+                    "user_id": user_row["id"],
+                    "uuid": user_row["uuid"],
+                    "email": session_data["email"],
+                    "name": session_data["name"],
+                    "picture": session_data["picture"],
+                    "google_sub": session_data["google_sub"],
+                    "auth_method": session_data["auth_method"],
+                    "last_login": session_data["last_login"]
+                }
 
         return {
             "is_authenticated": False,
@@ -370,11 +378,14 @@ class UsersRepository(BaseRepository):
             "google_sub": None
         }
 
-    def logout_google_user(self) -> Dict[str, Any]:
-        """Déconnecte la session active Google."""
+    def logout_google_user(self, email: Optional[str] = None) -> Dict[str, Any]:
+        """Déconnecte la session active Google (scopée à l'email de l'utilisateur courant si fourni)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE google_sessions SET is_active = 0")
+            if email:
+                cursor.execute("UPDATE google_sessions SET is_active = 0 WHERE LOWER(email) = ?", (email.strip().lower(),))
+            else:
+                cursor.execute("UPDATE google_sessions SET is_active = 0")
             conn.commit()
         return {"status": "success", "message": "Session Google fermée avec succès"}
 

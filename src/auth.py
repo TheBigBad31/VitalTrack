@@ -36,6 +36,15 @@ def _is_production() -> bool:
     return env_name.lower() in ("production", "prod", "staging")
 
 
+def is_strict_auth_enabled() -> bool:
+    """Indique si l'authentification stricte est active (prod ou REQUIRE_STRICT_AUTH=1)."""
+    if os.getenv("REQUIRE_STRICT_AUTH") == "1":
+        return True
+    if _is_production() and os.getenv("REQUIRE_STRICT_AUTH") != "0":
+        return True
+    return False
+
+
 def _resolve_jwt_secret() -> str:
     """Résout JWT_SECRET depuis l'environnement, échoue en production ou génère une clé aléatoire en dev."""
     secret = os.getenv("JWT_SECRET", "").strip()
@@ -268,14 +277,18 @@ def decode_jwt_unverified(token: str) -> Dict[str, Any]:
 def verify_google_id_token(token: str, expected_client_id: Optional[str] = None) -> Dict[str, Any]:
     """Valide cryptographiquement un token Google GIS via les certificats publics JWKS."""
     try:
+        clean_client_id = (expected_client_id or "").strip()
+        if not clean_client_id and (_is_production() or is_strict_auth_enabled()):
+            raise ValueError("GOOGLE_CLIENT_ID requis pour valider l'audience du jeton Google en production")
+
         jwk_client = get_google_jwk_client()
         signing_key = jwk_client.get_signing_key_from_jwt(token)
         decode_kwargs: Dict[str, Any] = {
             "algorithms": ["RS256"],
             "options": {"verify_exp": True}
         }
-        if expected_client_id:
-            decode_kwargs["audience"] = expected_client_id
+        if clean_client_id:
+            decode_kwargs["audience"] = clean_client_id
         else:
             decode_kwargs["options"]["verify_aud"] = False
 
@@ -283,6 +296,10 @@ def verify_google_id_token(token: str, expected_client_id: Optional[str] = None)
         issuer = payload.get("iss", "")
         if issuer not in ["accounts.google.com", "https://accounts.google.com"]:
             raise ValueError(f"Émetteur Google invalide : {issuer}")
+        if payload.get("email_verified") is False:
+            raise ValueError("Adresse email Google non vérifiée")
+        if not payload.get("email"):
+            raise ValueError("Le jeton Google ne contient pas d'adresse email")
         return payload
     except Exception as e:
         raise ValueError(f"Validation cryptographique Google échouée : {str(e)}")
@@ -293,36 +310,29 @@ def parse_google_identity(
     verify_signature: bool = True,
     client_id: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Extrait et normalise les informations de l'utilisateur Google à partir du token ou du payload."""
-    if payload.credential:
-        if verify_signature:
-            claims = verify_google_id_token(payload.credential, expected_client_id=client_id)
-        else:
-            claims = decode_jwt_unverified(payload.credential)
+    """Extrait et valide cryptographiquement l'identité Google à partir d'un ID Token GIS."""
+    credential = (payload.credential or "").strip()
+    if not credential:
+        raise ValueError("ID Token Google (credential) requis pour l'authentification.")
 
-        email = claims.get("email") or payload.email or "sebastienlamoliate@gmail.com"
-        name = claims.get("name") or payload.name or "Sébastien LAMOLIATE"
-        picture = claims.get("picture") or payload.picture or ""
-        sub = claims.get("sub") or payload.sub or f"google_{hash(email)}"
-        return {
-            "email": email.strip().lower(),
-            "name": name,
-            "picture": picture,
-            "google_sub": str(sub),
-            "is_authenticated": True,
-            "auth_method": "google_gis_jwt"
-        }
+    if verify_signature:
+        claims = verify_google_id_token(credential, expected_client_id=client_id)
+    else:
+        claims = decode_jwt_unverified(credential)
 
-    email = payload.email or "sebastienlamoliate@gmail.com"
-    name = payload.name or "Sébastien LAMOLIATE"
-    picture = payload.picture or "https://lh3.googleusercontent.com/a/default-user=s96-c"
-    sub = payload.sub or f"google_sub_{abs(hash(email))}"
+    email = (claims.get("email") or "").strip().lower()
+    if not email:
+        raise ValueError("Le jeton Google ne contient pas d'adresse email valide.")
+
+    name = (claims.get("name") or email.split("@")[0]).strip()
+    picture = claims.get("picture") or ""
+    sub = claims.get("sub") or f"google_{hashlib.sha256(email.encode('utf-8')).hexdigest()[:24]}"
 
     return {
-        "email": email.strip().lower(),
+        "email": email,
         "name": name,
         "picture": picture,
         "google_sub": str(sub),
         "is_authenticated": True,
-        "auth_method": "google_quick_signin"
+        "auth_method": "google_gis_jwt"
     }

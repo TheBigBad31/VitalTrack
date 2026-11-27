@@ -3118,8 +3118,8 @@
             <span id="auth-user-initials">VT</span>
           </div>
           <div class="overflow-hidden">
-            <div id="auth-user-name" class="font-bold text-white text-sm truncate">Sébastien LAMOLIATE</div>
-            <div id="auth-user-email" class="text-xs text-brand-300 truncate">sebastienlamoliate@gmail.com</div>
+            <div id="auth-user-name" class="font-bold text-white text-sm truncate">Utilisateur</div>
+            <div id="auth-user-email" class="text-xs text-brand-300 truncate">Non connecté</div>
             <div class="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-0.5">
               <span id="auth-provider-badge" class="px-1.5 py-0.2 rounded bg-brand-500/20 text-brand-300 font-medium">Google</span>
               <span>• Session active sécurisée</span>
@@ -3192,81 +3192,22 @@
         <!-- SOUS-VUE 1 : GOOGLE -->
         <!-- ======================= -->
         <div id="auth-panel-google" class="space-y-4">
-          <!-- Conteneur GIS officiel (si Client ID configuré) -->
-          <div id="gsi-button-container" class="flex justify-center my-1"></div>
-
-          <!-- En-tête Google Account Chooser -->
           <div class="text-center pt-1 pb-1">
-            <h4 class="text-sm font-semibold text-white">Connexion rapide Google</h4>
-            <p class="text-xs text-slate-400 mt-0.5">Pour synchroniser vos balances et bagues avec <span class="text-brand-400 font-semibold">VitalTrack</span></p>
+            <h4 class="text-sm font-semibold text-white">Connexion sécurisée Google</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Authentification vérifiée Google Identity Services pour <span class="text-brand-400 font-semibold">VitalTrack</span></p>
           </div>
 
-          <!-- Liste des comptes Google : Vue Sélecteur -->
-          <div id="google-chooser-list" class="space-y-2">
-            <!-- Compte 1-clic principal : Sébastien LAMOLIATE -->
-            <button type="button" onclick="selectGoogleAccount('sebastienlamoliate@gmail.com', 'Sébastien LAMOLIATE', 'https://lh3.googleusercontent.com/a/default-user=s96-c')" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-slate-600 transition-all flex items-center justify-between text-left group">
-              <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
-                  S
-                </div>
-                <div class="overflow-hidden">
-                  <div class="text-sm font-semibold text-white group-hover:text-brand-400 transition-colors">Sébastien LAMOLIATE</div>
-                  <div class="text-xs text-slate-400 truncate">sebastienlamoliate@gmail.com</div>
-                </div>
-              </div>
-              <span class="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20 font-medium shrink-0">1-Clic</span>
-            </button>
+          <!-- Conteneur GIS officiel (si Client ID configuré) -->
+          <div id="gsi-button-container" class="flex justify-center my-2"></div>
 
-            <!-- Option : Utiliser un autre compte -->
-            <button type="button" onclick="showOtherGoogleAccountForm()" class="w-full p-3 rounded-xl bg-[#0B0F17] hover:bg-[#1a2332] border border-[#25254A] hover:border-slate-600 transition-all flex items-center space-x-3 text-left group">
-              <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 shrink-0">
-                <i data-lucide="user-plus" class="w-5 h-5 text-slate-300"></i>
-              </div>
-              <div>
-                <div class="text-sm font-medium text-slate-200 group-hover:text-white transition-colors">Autre compte Google</div>
-                <div class="text-[11px] text-slate-400">Saisir une autre adresse Gmail</div>
-              </div>
+          <!-- Avis si Google Client ID non configuré côté serveur -->
+          <div id="gsi-unconfigured-notice" class="p-3 rounded-xl bg-[#0B0F17] border border-[#25254A] text-center space-y-2">
+            <p class="text-xs text-slate-300">
+              Google Sign-In nécessite un <code class="text-brand-300">GOOGLE_CLIENT_ID</code> configuré côté serveur.
+            </p>
+            <button type="button" onclick="switchAuthTab('email')" class="w-full py-2 rounded-lg bg-brand-600/20 hover:bg-brand-600/30 border border-brand-500/40 text-brand-300 font-semibold text-xs transition-colors">
+              Utiliser Email &amp; Mot de passe
             </button>
-          </div>
-
-          <!-- Formulaire de saisie d'un autre compte Google -->
-          <div id="google-other-account-form" class="space-y-3 p-3.5 rounded-xl bg-[#0B0F17] border border-[#25254A] hidden">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-white">Autre compte Google</span>
-              <button type="button" onclick="hideOtherGoogleAccountForm()" class="text-[11px] text-slate-400 hover:text-white underline">
-                Retour
-              </button>
-            </div>
-            <div>
-              <label class="block text-[10px] text-slate-400 mb-0.5">Adresse email Google :</label>
-              <input type="email" id="google-custom-email" placeholder="nom.prenom@gmail.com" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
-            </div>
-            <div>
-              <label class="block text-[10px] text-slate-400 mb-0.5">Nom d'affichage :</label>
-              <input type="text" id="google-custom-name" placeholder="Votre nom" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
-            </div>
-            <button type="button" onclick="submitOtherGoogleAccount()" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-md active:scale-95">
-              <span>Valider et se connecter</span>
-            </button>
-          </div>
-
-          <!-- Configuration Google Cloud Client ID (Optionnelle) -->
-          <div class="pt-2 border-t border-[#25254A]">
-            <details class="text-xs text-slate-400 group">
-              <summary class="cursor-pointer font-semibold text-slate-300 hover:text-white flex items-center justify-between py-1">
-                <span>⚙️ Configurer Google Client ID (Optionnel)</span>
-                <span class="group-open:rotate-180 transition-transform">▼</span>
-              </summary>
-              <div class="mt-2 space-y-2 p-2.5 rounded-lg bg-[#0B0F17] border border-[#25254A]">
-                <p class="text-[11px] text-slate-400">
-                  Entrez votre <strong>Google OAuth 2.0 Client ID</strong> pour le bouton officiel Google GIS.
-                </p>
-                <input type="text" id="google-input-client-id" placeholder="123456789-xxxx.apps.googleusercontent.com" class="w-full bg-[#13132B] border border-[#25254A] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
-                <button type="button" onclick="saveGoogleClientId()" class="w-full py-1.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-300 font-semibold text-xs transition-colors">
-                  Enregistrer le Client ID
-                </button>
-              </div>
-            </details>
           </div>
         </div>
 
@@ -3297,7 +3238,7 @@
           <div class="space-y-1">
             <label class="block text-[11px] font-medium text-slate-300">Adresse email :</label>
             <div class="relative">
-              <input type="email" id="auth-email-input" placeholder="sebastien@exemple.com" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
+              <input type="email" id="auth-email-input" placeholder="prenom.nom@exemple.com" class="w-full bg-[#0B0F17] border border-[#25254A] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-brand-500">
               <i data-lucide="at-sign" class="w-4 h-4 text-slate-400 absolute right-3 top-2.5"></i>
             </div>
           </div>

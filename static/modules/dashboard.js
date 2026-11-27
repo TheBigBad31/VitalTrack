@@ -2781,7 +2781,7 @@
 
               <label class="block text-[11px] text-slate-400 mb-1">Identifiant Compte Withings (Email) :</label>
 
-              <input type="email" id="wiz-input-withings-email" placeholder="sebastienlamoliate@gmail.com" value="sebastienlamoliate@gmail.com" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
+              <input type="email" id="wiz-input-withings-email" placeholder="votre.email@exemple.com" value="${escapeHtml((currentUnifiedSession && currentUnifiedSession.email) || '')}" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
 
             </div>
 
@@ -3519,7 +3519,7 @@
 
         const inp = document.getElementById('wiz-input-withings-email');
 
-        email = inp ? inp.value : 'sebastienlamoliate@gmail.com';
+        email = (inp && inp.value) ? inp.value.trim() : ((currentUnifiedSession && currentUnifiedSession.email) || '');
 
         authType = 'withings_oauth';
 
@@ -4075,41 +4075,15 @@
 
     async function loadUnifiedAuthState() {
 
-      // 1. Détection SSO direct depuis AppHub (?google_user=...)
-
-      try {
-
-        const urlParams = new URLSearchParams(window.location.search);
-
-        const ssoEmail = urlParams.get('google_user');
-
-        if (ssoEmail) {
-
-          const ssoName = (ssoEmail.toLowerCase() === 'sebastienlamoliate@gmail.com') ? 'Sébastien LAMOLIATE' : ssoEmail.split('@')[0];
-
-          await selectGoogleAccount(ssoEmail, ssoName, 'https://lh3.googleusercontent.com/a/default-user=s96-c');
-
-          try {
-
-            window.history.replaceState({}, document.title, window.location.pathname);
-
-          } catch (e) {}
-
-          return;
-
-        }
-
-      } catch (e) {}
-
-
-
-      // 2. Lecture immédiate du cache local
+      // 1. Lecture immédiate du cache local (si JWT Bearer présent)
 
       try {
 
         const cached = localStorage.getItem(GOOGLE_SESSION_KEY);
 
-        if (cached) {
+        const hasToken = Boolean(localStorage.getItem(JWT_STORAGE_KEY));
+
+        if (cached && hasToken) {
 
           const parsed = JSON.parse(cached);
 
@@ -4127,7 +4101,7 @@
 
 
 
-      // 3. Appel backend pour synchronisation avec transmission automatique du Bearer Token
+      // 2. Appel backend pour synchronisation avec transmission automatique du Bearer Token
 
       try {
 
@@ -4163,7 +4137,27 @@
 
             renderUnifiedAuthState(currentUnifiedSession, data.profile);
 
-          } else if (!localStorage.getItem(GOOGLE_SESSION_KEY)) {
+          } else if (data.current_user && localStorage.getItem(JWT_STORAGE_KEY)) {
+
+            currentUnifiedSession = {
+
+              is_authenticated: true,
+
+              email: data.current_user.email,
+
+              name: data.current_user.name,
+
+              picture: data.current_user.picture || '',
+
+              auth_method: data.current_user.auth_provider || 'email'
+
+            };
+
+            localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(currentUnifiedSession));
+
+            renderUnifiedAuthState(currentUnifiedSession, data.profile);
+
+          } else {
 
             currentUnifiedSession = { is_authenticated: false };
 
@@ -4179,21 +4173,23 @@
 
       }
 
-
-
-      // 4. L'application démarre directement sur les dashboards sans bloquer l'utilisateur par une modale
-
     }
 
 
 
     function initGoogleIdentityServices() {
 
+      const noticeEl = document.getElementById('gsi-unconfigured-notice');
+
       if (!currentGoogleConfig.google_client_id || typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+
+        if (noticeEl) noticeEl.classList.remove('hidden');
 
         return;
 
       }
+
+      if (noticeEl) noticeEl.classList.add('hidden');
 
       try {
 
@@ -4281,6 +4277,12 @@
 
           alert(`Bienvenue ${data.session.name} ! Votre compte Google et vos données sont synchronisés.`);
 
+        } else {
+
+          const errData = await res.json().catch(() => ({}));
+
+          alert(errData.detail || "Authentification Google refusée.");
+
         }
 
       } catch (e) {
@@ -4293,181 +4295,25 @@
 
 
 
-    async function selectGoogleAccount(email, name, picture) {
-
-      const accountEmail = email || 'sebastienlamoliate@gmail.com';
-
-      const accountName = name || 'Sébastien LAMOLIATE';
-
-      const accountPicture = picture || 'https://lh3.googleusercontent.com/a/default-user=s96-c';
-
-
-
-      const instantSession = {
-
-        is_authenticated: true,
-
-        email: accountEmail,
-
-        name: accountName,
-
-        picture: accountPicture,
-
-        auth_method: 'google_account_chooser',
-
-        last_login: new Date().toISOString()
-
-      };
-
-      currentUnifiedSession = instantSession;
-
-      localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(instantSession));
-
-      if (currentData && currentData.profile) {
-
-        currentData.profile.google_email = accountEmail;
-
-        currentData.profile.google_name = accountName;
-
-        currentData.profile.google_picture = accountPicture;
-
-      }
-
-      renderUnifiedAuthState(instantSession, currentData ? currentData.profile : null);
-
-      syncGoogleAccountStorage(accountEmail);
-
-      closeAuthModal();
-
-
-
-      try {
-
-        const res = await fetch('/api/auth/google', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({
-
-            email: accountEmail,
-
-            name: accountName,
-
-            picture: accountPicture
-
-          })
-
-        });
-
-
-
-        if (res.ok) {
-
-          const data = await res.json();
-
-          if (data.access_token) {
-
-            localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
-
-          }
-
-          currentUnifiedSession = data.session || instantSession;
-
-          localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(currentUnifiedSession));
-
-          renderUnifiedAuthState(currentUnifiedSession, data.profile);
-
-        }
-
-      } catch (err) {
-
-        console.warn("Backend API en cold start, session maintenue via cache local :", err);
-
-      }
-
-
-
-      await loadDashboardData();
-
-      showToast("✓ Connecté avec succès en tant que " + accountName + " (" + accountEmail + ") !", "success");
-
-    }
-
-
-
-    function showOtherGoogleAccountForm() {
-
-      const chooserList = document.getElementById('google-chooser-list');
-
-      const otherForm = document.getElementById('google-other-account-form');
-
-      if (chooserList) chooserList.classList.add('hidden');
-
-      if (otherForm) otherForm.classList.remove('hidden');
-
-    }
-
-
-
-    function hideOtherGoogleAccountForm() {
-
-      const chooserList = document.getElementById('google-chooser-list');
-
-      const otherForm = document.getElementById('google-other-account-form');
-
-      if (otherForm) otherForm.classList.add('hidden');
-
-      if (chooserList) chooserList.classList.remove('hidden');
-
-    }
-
-
-
-    function submitOtherGoogleAccount() {
-
-      const emailInput = document.getElementById('google-custom-email');
-
-      const nameInput = document.getElementById('google-custom-name');
-
-      const email = emailInput ? emailInput.value.trim() : '';
-
-      const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : (email.split('@')[0] || 'Utilisateur Google');
-
-
-
-      if (!email || !email.includes('@')) {
-
-        alert("Veuillez renseigner une adresse email Google valide.");
-
-        return;
-
-      }
-
-
-
-      selectGoogleAccount(email, name, 'https://lh3.googleusercontent.com/a/default-user=s96-c');
-
-    }
-
-
-
     async function logoutSession() {
 
       try {
 
-        localStorage.removeItem(JWT_STORAGE_KEY);
+        if (localStorage.getItem(JWT_STORAGE_KEY)) {
 
-        localStorage.removeItem(GOOGLE_SESSION_KEY);
+          await apiFetch('/api/auth/logout', { method: 'POST' });
 
-        await apiFetch('/api/auth/logout', { method: 'POST' });
+        }
 
       } catch (e) {
 
         console.warn("Déconnexion backend différée :", e);
 
       } finally {
+
+        localStorage.removeItem(JWT_STORAGE_KEY);
+
+        localStorage.removeItem(GOOGLE_SESSION_KEY);
 
         currentUnifiedSession = { is_authenticated: false };
 

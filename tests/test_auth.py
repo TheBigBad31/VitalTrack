@@ -177,21 +177,20 @@ def test_google_jwk_client_initialization():
     assert "googleapis.com" in jwk_client.uri
 
 
-def test_parse_google_identity_with_and_without_credential():
-    """Vérifie l'extraction et normalisation de l'identité Google."""
+def test_parse_google_identity_with_and_without_credential(monkeypatch):
+    """Vérifie le rejet strict sans credential et la validation cryptographique du jeton Google GIS."""
     from src.auth import GoogleAuthPayload
+    import src.auth as auth_module
 
-    # 1. Connexion directe 1-clic
+    # 1. Absence de credential (tentative 1-clic non signée) -> rejet strict
     payload_direct = GoogleAuthPayload(
-        email="sebastienlamoliate@gmail.com",
-        name="Sébastien LAMOLIATE",
+        email="spoofed@vitaltrack.test",
+        name="Spoofed User",
         picture="https://lh3.googleusercontent.com/avatar.jpg",
         sub="google_sub_987654321"
     )
-    identity_direct = parse_google_identity(payload_direct)
-    assert identity_direct["is_authenticated"] is True
-    assert identity_direct["email"] == "sebastienlamoliate@gmail.com"
-    assert identity_direct["google_sub"] == "google_sub_987654321"
+    with pytest.raises(ValueError, match="credential"):
+        parse_google_identity(payload_direct)
 
     # 2. Token avec signature invalide -> Rejet strict par exception ValueError
     payload_invalid = GoogleAuthPayload(
@@ -201,6 +200,30 @@ def test_parse_google_identity_with_and_without_credential():
     )
     with pytest.raises(ValueError, match="Validation cryptographique Google échouée"):
         parse_google_identity(payload_invalid, verify_signature=True)
+
+    # 3. Token validé cryptographiquement -> utilise uniquement les claims signés (ignore payload.email/name)
+    monkeypatch.setattr(
+        auth_module,
+        "verify_google_id_token",
+        lambda token, expected_client_id=None: {
+            "email": "verified.user@vitaltrack.test",
+            "email_verified": True,
+            "name": "Verified User",
+            "picture": "https://lh3.googleusercontent.com/verified.jpg",
+            "sub": "google_sub_verified_123",
+        },
+    )
+    payload_valid = GoogleAuthPayload(
+        credential="valid.signed.idtoken",
+        email="attacker@evil.test",
+        name="Attacker",
+    )
+    identity = parse_google_identity(payload_valid, verify_signature=True, client_id="client-id.apps.googleusercontent.com")
+    assert identity["is_authenticated"] is True
+    assert identity["email"] == "verified.user@vitaltrack.test"
+    assert identity["name"] == "Verified User"
+    assert identity["google_sub"] == "google_sub_verified_123"
+    assert identity["auth_method"] == "google_gis_jwt"
 
 
 # =====================================================================
@@ -350,3 +373,208 @@ def test_strict_auth_enforced_in_production_and_strict_mode(monkeypatch):
 
     res_friends_prod = client.get("/api/friends")
     assert res_friends_prod.status_code == 401
+
+
+# =====================================================================
+# Tests de non-régression Sécurité P0 (BALI-308)
+# =====================================================================
+
+def test_google_auth_rejects_missing_credential_and_forged_token(auth_client, monkeypatch):
+    """POST /api/auth/google sans credential ou avec jeton falsifié renvoie 401 (dev et prod)."""
+    import src.auth as auth_module
+
+    # 1. Sans credential en prod -> 401
+    monkeypatch.setenv("VERCEL", "1")
+    res_prod_no_cred = auth_client.post(
+        "/api/auth/google",
+        json={"email": "victim@vitaltrack.test", "name": "Victim"},
+    )
+    assert res_prod_no_cred.status_code == 401
+
+    # 2. Sans credential hors prod -> 401 également (aucun bypass 1-clic)
+    monkeypatch.delenv("VERCEL", raising=False)
+    res_dev_no_cred = auth_client.post(
+        "/api/auth/google",
+        json={"email": "victim@vitaltrack.test", "name": "Victim"},
+    )
+    assert res_dev_no_cred.status_code == 401
+
+    # 3. Credential falsifié -> 401 (jamais 500)
+    res_forged = auth_client.post(
+        "/api/auth/google",
+        json={"credential": "forged.jwt.signature"},
+    )
+    assert res_forged.status_code == 401
+
+    # 4. En prod sans GOOGLE_CLIENT_ID -> 401 (refuse verify_aud=False)
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    res_no_aud = auth_client.post(
+        "/api/auth/google",
+        json={"credential": "some.jwt.token"},
+    )
+    assert res_no_aud.status_code == 401
+
+    # 5. Avec ID Token Google vérifié et GOOGLE_CLIENT_ID configuré -> 200
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "valid-client-id.apps.googleusercontent.com")
+    monkeypatch.setattr(
+        auth_module,
+        "verify_google_id_token",
+        lambda token, expected_client_id=None: {
+            "email": "gis.valid@vitaltrack.test",
+            "email_verified": True,
+            "name": "GIS Valid User",
+            "picture": "https://lh3.googleusercontent.com/pic.jpg",
+            "sub": "google_sub_valid_42",
+        },
+    )
+    res_ok = auth_client.post(
+        "/api/auth/google",
+        json={"credential": "valid.signed.gis.token"},
+    )
+    assert res_ok.status_code == 200
+    body = res_ok.json()
+    assert body["access_token"]
+    assert body["session"]["email"] == "gis.valid@vitaltrack.test"
+
+
+def test_strict_auth_rejects_anonymous_even_with_active_google_session(auth_client, monkeypatch):
+    """Une ligne google_sessions.is_active=1 ne doit jamais contourner l'auth Bearer en mode strict/prod."""
+    # Créer une session Google active dans la table globale google_sessions
+    sess = app_module.db.login_google_user(
+        email="active.session@vitaltrack.test",
+        name="Active Google User",
+        google_sub="google_sub_active_99",
+        auth_method="google_gis_jwt",
+    )
+    assert sess["is_authenticated"] is True
+
+    # Activer le mode strict / prod
+    monkeypatch.setenv("REQUIRE_STRICT_AUTH", "1")
+    monkeypatch.setenv("VERCEL", "1")
+
+    # Sans Bearer : /api/dashboard, /api/auth/me et /api/auth/logout doivent renvoyer 401
+    assert auth_client.get("/api/dashboard").status_code == 401
+    assert auth_client.get("/api/auth/me").status_code == 401
+    assert auth_client.post("/api/auth/logout").status_code == 401
+
+    # Avec Bearer valide : /api/dashboard renvoie 200
+    token = create_access_token(sess["user_id"], sess["uuid"], sess["email"], sess["name"])
+    res_auth = auth_client.get("/api/dashboard", headers={"Authorization": f"Bearer {token}"})
+    assert res_auth.status_code == 200
+
+
+def test_auth_config_requires_strict_bearer_admin_and_disabled_in_prod(auth_client, monkeypatch):
+    """PUT /api/auth/config renvoie 401 sans Bearer, 403 si non-admin ou en prod, 200 pour admin en dev."""
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    # 1. Sans Bearer (même hors mode strict) -> 401
+    res_anon = auth_client.put(
+        "/api/auth/config",
+        json={"google_client_id": "hijacked.apps.googleusercontent.com"},
+    )
+    assert res_anon.status_code == 401
+
+    # 2. Utilisateur standard (id != 1) -> 403
+    reg_std = auth_client.post(
+        "/api/auth/register",
+        json={
+            "email": "standard.user@vitaltrack.test",
+            "password": "StandardPassword2026!",
+            "name": "Standard User",
+        },
+    )
+    assert reg_std.status_code == 200
+    std_token = reg_std.json()["access_token"]
+    res_std = auth_client.put(
+        "/api/auth/config",
+        json={"google_client_id": "hijacked.apps.googleusercontent.com"},
+        headers={"Authorization": f"Bearer {std_token}"},
+    )
+    assert res_std.status_code == 403
+
+    # 3. Admin (id == 1) hors prod -> 200
+    admin_user = app_module.db._ensure_default_user()
+    admin_token = create_access_token(
+        admin_user["id"], admin_user["uuid"], admin_user["email"], admin_user.get("name")
+    )
+    res_admin = auth_client.put(
+        "/api/auth/config",
+        json={"google_client_id": "dev-admin-client.apps.googleusercontent.com"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert res_admin.status_code == 200
+    assert res_admin.json()["config"]["google_client_id"] == "dev-admin-client.apps.googleusercontent.com"
+
+    # 4. En production : PUT refusé (403) et GET lit uniquement GOOGLE_CLIENT_ID env
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "env-prod-client.apps.googleusercontent.com")
+    res_prod_put = auth_client.put(
+        "/api/auth/config",
+        json={"google_client_id": "override-attempt.apps.googleusercontent.com"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert res_prod_put.status_code == 403
+
+    cfg_prod = auth_client.get("/api/auth/config").json()
+    assert cfg_prod["google_client_id"] == "env-prod-client.apps.googleusercontent.com"
+    assert "demo_fallback_account" not in cfg_prod
+
+
+def test_register_prevents_google_account_takeover(auth_client):
+    """Un compte créé via Google (password_hash=None) ne peut pas être repris via /api/auth/register."""
+    app_module.db.login_google_user(
+        email="google.owner@vitaltrack.test",
+        name="Google Owner",
+        google_sub="google_sub_owner_777",
+        auth_method="google_gis_jwt",
+    )
+    existing = app_module.db.get_user_by_email("google.owner@vitaltrack.test")
+    assert existing is not None
+    assert existing.get("password_hash") is None
+
+    res_takeover = auth_client.post(
+        "/api/auth/register",
+        json={
+            "email": "google.owner@vitaltrack.test",
+            "password": "AttackerNewPassword2026!",
+            "name": "Attacker",
+        },
+    )
+    assert res_takeover.status_code == 400
+    assert "existe déjà" in res_takeover.json()["detail"]
+    assert "access_token" not in res_takeover.json()
+
+
+def test_logout_requires_auth_and_scoped_to_user(auth_client, monkeypatch):
+    """POST /api/auth/logout exige une auth en mode strict et ne déconnecte que l'utilisateur courant."""
+    sess_a = app_module.db.login_google_user(
+        email="logout.a@vitaltrack.test",
+        name="User A",
+        google_sub="sub_a",
+        auth_method="google_gis_jwt",
+    )
+    sess_b = app_module.db.login_google_user(
+        email="logout.b@vitaltrack.test",
+        name="User B",
+        google_sub="sub_b",
+        auth_method="google_gis_jwt",
+    )
+
+    monkeypatch.setenv("REQUIRE_STRICT_AUTH", "1")
+    assert auth_client.post("/api/auth/logout").status_code == 401
+
+    token_a = create_access_token(sess_a["user_id"], sess_a["uuid"], sess_a["email"], sess_a["name"])
+    token_b = create_access_token(sess_b["user_id"], sess_b["uuid"], sess_b["email"], sess_b["name"])
+
+    res_logout_a = auth_client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token_a}"})
+    assert res_logout_a.status_code == 200
+
+    # User A est déconnecté, User B reste actif
+    me_a = auth_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token_a}"}).json()
+    me_b = auth_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token_b}"}).json()
+    assert me_a["session"]["is_authenticated"] is False
+    assert me_b["session"]["is_authenticated"] is True
+    assert me_b["session"]["email"] == "logout.b@vitaltrack.test"
