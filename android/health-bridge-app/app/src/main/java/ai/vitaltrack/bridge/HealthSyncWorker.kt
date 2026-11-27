@@ -47,7 +47,7 @@ class HealthSyncWorker(
     override suspend fun doWork(): Result {
         val prefs = applicationContext.getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
         val rawWebhookUrl = prefs.getString("webhook_url", null)
-        val deviceToken = prefs.getString("device_token", null)
+        val deviceToken = SecurePrefs.getDeviceToken(applicationContext)
 
         if (rawWebhookUrl.isNullOrBlank() || deviceToken.isNullOrBlank()) {
             Log.w(TAG, "Paramètres webhook manquants. Configuration requise.")

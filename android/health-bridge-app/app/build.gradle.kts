@@ -19,18 +19,26 @@ android {
 
     signingConfigs {
         create("release") {
-            // Utilise la clé debug standard pour permettre l'installation directe (sideloading) sans erreur de parsing
-            val debugKey = signingConfigs.getByName("debug")
-            storeFile = debugKey.storeFile
-            storePassword = debugKey.storePassword
-            keyAlias = debugKey.keyAlias
-            keyPassword = debugKey.keyPassword
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrBlank() && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            } else {
+                // Fallback debug uniquement pour les builds locaux sans keystore release
+                val debugKey = signingConfigs.getByName("debug")
+                storeFile = debugKey.storeFile
+                storePassword = debugKey.storePassword
+                keyAlias = debugKey.keyAlias
+                keyPassword = debugKey.keyPassword
+            }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -58,4 +66,5 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

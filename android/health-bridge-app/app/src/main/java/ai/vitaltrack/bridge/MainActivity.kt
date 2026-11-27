@@ -222,7 +222,7 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
         val defaultUrl = "https://vital-track-one.vercel.app/api/webhooks/health-connect"
         val savedUrl = prefs.getString("webhook_url", null) ?: defaultUrl
-        val savedToken = prefs.getString("device_token", null) ?: ""
+        val savedToken = SecurePrefs.getDeviceToken(this) ?: ""
         val isAutoSyncActive = prefs.getBoolean("auto_sync_enabled", true)
 
         val rootScrollView = ScrollView(this).apply {
@@ -995,8 +995,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateConnectionStatus(granted: Set<String> = emptySet()) {
-        val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
-        val token = prefs.getString("device_token", "") ?: ""
+        val token = SecurePrefs.getDeviceToken(this) ?: ""
 
         val hasAllPerms = granted.containsAll(permissions)
         val hasSomePerms = granted.isNotEmpty()
@@ -1033,8 +1032,8 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
         prefs.edit()
             .putString("webhook_url", url)
-            .putString("device_token", token)
             .apply()
+        SecurePrefs.setDeviceToken(this, token)
     }
 
     private fun refreshSyncHistory() {
@@ -1159,21 +1158,159 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
+    private var pendingApkSha256: String? = null
+
     private fun handleSelectedPhoto(uri: Uri) {
         photoPreview.setImageURI(uri)
         photoPreview.visibility = View.VISIBLE
         photoPlaceholderLayout.visibility = View.GONE
         photoProgressLayout.visibility = View.VISIBLE
 
-        // Simulation visuelle de progression et notification ergonomique
-        lifecycleScope.launch {
-            kotlinx.coroutines.delay(1200)
-            photoProgressLayout.visibility = View.GONE
-            Toast.makeText(
-                this@MainActivity,
-                "Photo prête pour l'analyse nutritionnelle VitalTrack !",
-                Toast.LENGTH_SHORT
-            ).show()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val token = SecurePrefs.getDeviceToken(this@MainActivity)
+                if (token.isNullOrBlank()) {
+                    withContext(Dispatchers.Main) {
+                        photoProgressLayout.visibility = View.GONE
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Configurez votre jeton d'appareil avant d'analyser un repas.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@launch
+                }
+
+                val inputStream = contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException("Impossible de lire l'image sélectionnée")
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                if (bitmap == null) {
+                    throw IllegalStateException("Format d'image non supporté")
+                }
+
+                val maxDim = 1280
+                val scaled = if (bitmap.width > maxDim || bitmap.height > maxDim) {
+                    val ratio = minOf(maxDim.toFloat() / bitmap.width, maxDim.toFloat() / bitmap.height)
+                    android.graphics.Bitmap.createScaledBitmap(
+                        bitmap,
+                        (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                        (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                        true
+                    )
+                } else {
+                    bitmap
+                }
+
+                val baos = java.io.ByteArrayOutputStream()
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, baos)
+                val base64Str = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                val dataUrl = "data:image/jpeg;base64,$base64Str"
+
+                val payload = JSONObject().apply {
+                    put("photo_data_url", dataUrl)
+                    put("portion_scale", 1.0)
+                }
+                val baseUrl = resolveBaseUrl()
+                val reqBody = okhttp3.RequestBody.create(
+                    okhttp3.MediaType.parse("application/json; charset=utf-8"),
+                    payload.toString()
+                )
+                val request = Request.Builder()
+                    .url("$baseUrl/api/meals/analyze-photo")
+                    .addHeader("X-Webhook-Token", token)
+                    .post(reqBody)
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val bodyStr = response.body?.string() ?: ""
+                    if (!response.isSuccessful) {
+                        throw IllegalStateException("Erreur serveur (${response.code})")
+                    }
+                    val json = JSONObject(bodyStr)
+                    val mealName = json.optString("meal_name", json.optString("product_name", "Repas analysé"))
+                    val calories = json.optDouble("total_calories", 0.0)
+                    val protein = json.optDouble("total_protein_g", 0.0)
+                    val carbs = json.optDouble("total_carbs_g", 0.0)
+                    val fat = json.optDouble("total_fat_g", 0.0)
+
+                    withContext(Dispatchers.Main) {
+                        photoProgressLayout.visibility = View.GONE
+                        val summary = "🍽️ $mealName\n" +
+                            "• Calories : ${calories.toInt()} kcal\n" +
+                            "• Protéines : ${"%.1f".format(protein)} g\n" +
+                            "• Glucides : ${"%.1f".format(carbs)} g\n" +
+                            "• Lipides : ${"%.1f".format(fat)} g"
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Analyse nutritionnelle")
+                            .setMessage(summary)
+                            .setPositiveButton("Enregistrer") { _, _ ->
+                                saveAnalyzedMeal(mealName, calories, protein, carbs, fat)
+                            }
+                            .setNegativeButton("Fermer", null)
+                            .show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    photoProgressLayout.visibility = View.GONE
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Échec analyse photo : ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun saveAnalyzedMeal(
+        name: String,
+        calories: Double,
+        protein: Double,
+        carbs: Double,
+        fat: Double
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val token = SecurePrefs.getDeviceToken(this@MainActivity) ?: return@launch
+                val baseUrl = resolveBaseUrl()
+                val payload = JSONObject().apply {
+                    put("name", name)
+                    put("calories_kcal", calories)
+                    put("protein_g", protein)
+                    put("carbs_g", carbs)
+                    put("fat_g", fat)
+                }
+                val reqBody = okhttp3.RequestBody.create(
+                    okhttp3.MediaType.parse("application/json; charset=utf-8"),
+                    payload.toString()
+                )
+                val request = Request.Builder()
+                    .url("$baseUrl/api/meals")
+                    .addHeader("X-Webhook-Token", token)
+                    .post(reqBody)
+                    .build()
+                httpClient.newCall(request).execute().use { resp ->
+                    withContext(Dispatchers.Main) {
+                        if (resp.isSuccessful) {
+                            Toast.makeText(this@MainActivity, "Repas enregistré dans VitalTrack !", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@MainActivity, "Erreur enregistrement (${resp.code})", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Erreur réseau : ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -1191,23 +1328,25 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val baseUrl = resolveBaseUrl()
-                val client = OkHttpClient()
                 val request = Request.Builder()
                     .url("$baseUrl/api/bridge/version")
                     .get()
                     .build()
-                client.newCall(request).execute().use { response ->
+                httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use
                     val body = response.body?.string() ?: return@use
                     val json = JSONObject(body)
                     val remoteVersionCode = json.optInt("version_code", 0)
                     val remoteVersionName = json.optString("version_name", "")
-                    val apkPath = json.optString("apk_url", "/static/downloads/vitaltrack-health-bridge.apk")
+                    val apkPath = json.optString("apk_url", "")
+                    val expectedSha256 = json.optString("sha256", "").trim().lowercase()
                     val fullApkUrl = if (apkPath.startsWith("http")) apkPath else "$baseUrl$apkPath"
+                    if (!fullApkUrl.startsWith("https://")) return@use
 
                     if (remoteVersionCode > BuildConfig.VERSION_CODE) {
                         withContext(Dispatchers.Main) {
                             pendingApkUrl = fullApkUrl
+                            pendingApkSha256 = expectedSha256.ifBlank { null }
                             updateBannerText.text = if (remoteVersionName.isNotBlank()) {
                                 "Nouvelle version disponible (v$remoteVersionName)"
                             } else {
@@ -1224,6 +1363,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startApkDownload(apkUrl: String) {
+        if (!apkUrl.startsWith("https://")) {
+            Toast.makeText(this, "URL de mise à jour non sécurisée (HTTPS requis).", Toast.LENGTH_LONG).show()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
             Toast.makeText(
                 this,
@@ -1285,10 +1428,36 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun computeSha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            var bytesRead = input.read(buffer)
+            while (bytesRead != -1) {
+                digest.update(buffer, 0, bytesRead)
+                bytesRead = input.read(buffer)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun installDownloadedApk(apkFile: File) {
         if (!apkFile.exists()) {
             Toast.makeText(this, "Fichier APK introuvable après téléchargement.", Toast.LENGTH_SHORT).show()
             return
+        }
+        val expected = pendingApkSha256
+        if (!expected.isNullOrBlank()) {
+            val actual = computeSha256(apkFile)
+            if (!actual.equals(expected, ignoreCase = true)) {
+                apkFile.delete()
+                Toast.makeText(
+                    this,
+                    "Échec de vérification d'intégrité SHA-256 : APK rejeté.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
         }
         val apkUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
         val installIntent = Intent(Intent.ACTION_VIEW).apply {

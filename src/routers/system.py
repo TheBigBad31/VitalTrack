@@ -294,10 +294,14 @@ def get_config():
 @router.get("/api/bridge/version")
 def get_bridge_version():
     """Retourne les informations de version de l'APK VitalTrack Health Bridge."""
+    version_code = int(os.environ.get("ANDROID_BRIDGE_VERSION_CODE", "4"))
+    version_name = os.environ.get("ANDROID_BRIDGE_VERSION_NAME", "1.0.3")
+    sha256 = os.environ.get("ANDROID_BRIDGE_SHA256", "").strip()
     return {
-        "version_code": 4,
-        "version_name": "1.0.3",
-        "apk_url": "/static/downloads/vitaltrack-health-bridge.apk",
+        "version_code": version_code,
+        "version_name": version_name,
+        "apk_url": GITHUB_LATEST_RELEASE_APK_URL,
+        "sha256": sha256,
         "release_notes": "Synchronisation Health Connect, import historique et prise de photo repas.",
     }
 
