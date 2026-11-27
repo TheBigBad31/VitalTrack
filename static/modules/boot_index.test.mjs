@@ -243,3 +243,87 @@ describe('index.html sequential module boot (BALI-321)', () => {
     }
   });
 });
+
+describe('Service Worker cache sync & v3 purge (BALI-322)', () => {
+  it('precaches all local JS scripts referenced by index.html and purges v2 caches on activate', async () => {
+    const html = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+    const swPath = path.join(STATIC_DIR, 'sw.js');
+    const swCode = fs.readFileSync(swPath, 'utf8');
+
+    const localJsRegex = /<script\s+[^>]*src="(\/static\/[^"]+\.js)(?:\?[^"]*)?"[^>]*><\/script>/gi;
+    const htmlJsAssets = [];
+    let match;
+    while ((match = localJsRegex.exec(html)) !== null) {
+      htmlJsAssets.push(match[1]);
+    }
+    expect(htmlJsAssets.length).toBeGreaterThanOrEqual(20);
+
+    // Every module script tag in index.html uses ?v=1.2.0
+    const moduleScriptTagRegex = /<script\s+[^>]*src="(\/static\/modules\/[^"]+)"[^>]*><\/script>/gi;
+    while ((match = moduleScriptTagRegex.exec(html)) !== null) {
+      expect(match[1]).toMatch(/\?v=1\.2\.0$/);
+    }
+
+    const listeners = {};
+    const deletedKeys = [];
+    const existingKeys = ['vitaltrack-cache-v2', 'vitaltrack-api-v2', 'vitaltrack-cache-v3', 'vitaltrack-api-v3'];
+    let claimed = false;
+
+    const swSandbox = {
+      URL,
+      Response: class ResponseStub {},
+      fetch: async () => ({ status: 200, clone: () => ({}) }),
+      caches: {
+        open: async () => ({ addAll: async () => {}, match: async () => null, put: async () => {} }),
+        keys: async () => existingKeys,
+        delete: async (k) => {
+          deletedKeys.push(k);
+          return true;
+        },
+        match: async () => null,
+      },
+      clients: {
+        claim: async () => {
+          claimed = true;
+        },
+      },
+      skipWaiting: async () => {},
+      location: { origin: 'https://vital-track-one.vercel.app' },
+      addEventListener: (name, fn) => {
+        listeners[name] = fn;
+      },
+    };
+    swSandbox.self = swSandbox;
+
+    const swCtx = vm.createContext(swSandbox);
+    vm.runInContext(swCode, swCtx, { filename: 'static/sw.js' });
+
+    const swExports = vm.runInContext('({ CACHE_NAME, API_CACHE_NAME, STATIC_ASSETS })', swCtx);
+    expect(swExports.CACHE_NAME).toBe('vitaltrack-cache-v3');
+    expect(swExports.API_CACHE_NAME).toBe('vitaltrack-api-v3');
+
+    for (const jsAsset of htmlJsAssets) {
+      expect(
+        swExports.STATIC_ASSETS,
+        `Missing ${jsAsset} in STATIC_ASSETS of static/sw.js`
+      ).toContain(jsAsset);
+    }
+
+    // Trigger activate event and verify v2 caches are deleted while v3 caches are preserved
+    let waitPromise = Promise.resolve();
+    listeners.activate({
+      waitUntil: (p) => {
+        waitPromise = p;
+      },
+    });
+    await waitPromise;
+
+    expect(deletedKeys).toEqual(['vitaltrack-cache-v2', 'vitaltrack-api-v2']);
+    expect(claimed).toBe(true);
+
+    // auth.js references vitaltrack-api-v3
+    const authCode = fs.readFileSync(path.join(STATIC_DIR, 'modules', 'auth.js'), 'utf8');
+    expect(authCode).toContain("caches.delete('vitaltrack-api-v3')");
+    expect(authCode).not.toContain('vitaltrack-api-v2');
+  });
+});
