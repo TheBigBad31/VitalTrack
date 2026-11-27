@@ -4461,6 +4461,13 @@
 
         localStorage.removeItem(GOOGLE_SESSION_KEY);
 
+        if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_API_CACHE' });
+        }
+        if (typeof caches !== 'undefined') {
+          caches.delete('vitaltrack-api-v2').catch(() => {});
+        }
+
         await apiFetch('/api/auth/logout', { method: 'POST' });
 
       } catch (e) {
