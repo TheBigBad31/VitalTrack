@@ -50,7 +50,7 @@ class DevicesRepository(BaseRepository):
 
     def get_user_devices(self, user_id: int = 1, reveal_secrets: bool = False) -> List[Dict[str, Any]]:
         """Récupère les objets connectés associés à user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user_devices WHERE user_id = ? ORDER BY id ASC", (user_id,))
             rows = cursor.fetchall()
@@ -58,7 +58,7 @@ class DevicesRepository(BaseRepository):
 
     def get_user_device(self, device_id: str, user_id: int = 1, reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
         """Récupère un objet connecté spécifique pour un user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user_devices WHERE user_id = ? AND device_id = ? LIMIT 1", (user_id, device_id))
             row = cursor.fetchone()
@@ -115,45 +115,6 @@ class DevicesRepository(BaseRepository):
                     "device": formatted
                 }
 
-            if device_id:
-                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND device_id = ? AND encrypted_credentials IS NOT NULL", (device_id,))
-            else:
-                cursor.execute("SELECT * FROM user_devices WHERE is_active = 1 AND encrypted_credentials IS NOT NULL")
-            rows = cursor.fetchall()
-
-        for r in rows:
-            formatted = self._format_device_row(r, reveal_secrets=True)
-            if not formatted:
-                continue
-            creds = formatted.get("credentials") or {}
-            matched = False
-            for key in ["api_key", "webhook_secret", "token", "bearer_token", "webhook_token"]:
-                val = creds.get(key)
-                if val and hmac.compare_digest(str(val).strip(), token_clean):
-                    matched = True
-                    break
-
-            if matched:
-                user_id = r["user_id"] if isinstance(r, dict) else r[1]
-                try:
-                    dev_id = r["device_id"] if isinstance(r, dict) else r[2]
-                    with self.get_connection() as conn:
-                        cur = conn.cursor()
-                        cur.execute(
-                            "UPDATE user_devices SET api_key_hash = ? WHERE user_id = ? AND device_id = ?",
-                            (token_hash, user_id, dev_id)
-                        )
-                        conn.commit()
-                except Exception:
-                    pass
-
-                user = self.db.get_user_by_id(int(user_id))
-                return {
-                    "user_id": int(user_id),
-                    "user": user,
-                    "device": formatted
-                }
-
         return None
 
     def find_user_device_by_token(self, token: str) -> Optional[Dict[str, Any]]:
@@ -200,7 +161,7 @@ class DevicesRepository(BaseRepository):
 
     def delete_user_device(self, device_id: str, user_id: int = 1) -> bool:
         """Déconnecte et révoque un objet connecté pour un user_id en supprimant la ligne et les identifiants chiffrés."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM user_devices WHERE user_id = ? AND device_id = ?", (user_id, device_id))
             deleted = cursor.rowcount > 0
@@ -210,7 +171,7 @@ class DevicesRepository(BaseRepository):
     def update_device_sync_status(self, device_id: str, sync_status: str, user_id: int = 1, synced_at: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Met à jour le statut temps réel et l'horodatage de dernière synchronisation."""
         now_str = synced_at or datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_devices
@@ -253,7 +214,7 @@ class DevicesRepository(BaseRepository):
         if key_to_hash and str(key_to_hash).strip():
             api_key_hash = hashlib.sha256(str(key_to_hash).strip().encode("utf-8")).hexdigest()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -332,7 +293,7 @@ class DevicesRepository(BaseRepository):
         now_dt = datetime.now(timezone.utc)
         cutoff_7d = (now_dt - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
 
             # 1. Objets connectés de l'utilisateur
@@ -856,7 +817,7 @@ class DevicesRepository(BaseRepository):
     def delete_demo_devices(self, user_id: Optional[int] = None) -> int:
         """Supprime les appareils de démonstration résiduels."""
         demo_names = ('RingConn Gen 3 Sébastien',)
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id is not None:
                 cursor.execute("""

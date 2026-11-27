@@ -130,7 +130,7 @@ class MealsRepository(BaseRepository):
         date_str = entry.date.isoformat()
         items_json = json.dumps([item.model_dump() for item in entry.items])
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -164,7 +164,7 @@ class MealsRepository(BaseRepository):
     def get_meals_for_date(self, target_date: date, user_id: int = 1) -> List[MealEntry]:
         """Récupère tous les repas d'une date spécifique pour user_id."""
         date_str = target_date.isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM meals
@@ -194,7 +194,7 @@ class MealsRepository(BaseRepository):
 
     def get_meals(self, limit: int = 50, user_id: int = 1) -> List[MealEntry]:
         """Récupère l'historique récent des repas pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM (
@@ -224,7 +224,7 @@ class MealsRepository(BaseRepository):
 
     def get_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[MealEntry]:
         """Récupère un repas spécifique par son ID pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
             r = cursor.fetchone()
@@ -253,7 +253,7 @@ class MealsRepository(BaseRepository):
             return None
 
         items_json = json.dumps([item.model_dump() for item in entry.items])
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE meals
@@ -274,7 +274,7 @@ class MealsRepository(BaseRepository):
 
     def delete_meal(self, meal_id: int, user_id: int = 1) -> bool:
         """Supprime un repas pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
             if not cursor.fetchone():
@@ -288,7 +288,7 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -356,7 +356,7 @@ class MealsRepository(BaseRepository):
 
         query += " ORDER BY is_favorite DESC, updated_at DESC, id DESC"
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
@@ -388,7 +388,7 @@ class MealsRepository(BaseRepository):
 
     def get_saved_meal_by_id(self, meal_id: int, user_id: int = 1) -> Optional[SavedMeal]:
         """Récupère un plat réutilisable précis par son ID."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
             r = cursor.fetchone()
@@ -425,7 +425,7 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         items_json = json.dumps([item.model_dump() for item in saved_meal.items]) if saved_meal.items else "[]"
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE saved_meals
@@ -453,7 +453,7 @@ class MealsRepository(BaseRepository):
 
     def delete_saved_meal(self, meal_id: int, user_id: int = 1) -> bool:
         """Supprime un plat réutilisable de la bibliothèque."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM saved_meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
             if not cursor.fetchone():
@@ -467,7 +467,7 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         is_pub = item.is_public if self.is_postgres else (1 if item.is_public else 0)
         category = infer_food_category(item.name, item.item_type, item.category)
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -573,7 +573,7 @@ class MealsRepository(BaseRepository):
         if limit is not None and not category and not sort:
             sql += f" LIMIT {int(limit)} OFFSET {int(offset)}"
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
@@ -655,7 +655,7 @@ class MealsRepository(BaseRepository):
 
     def get_food_item_by_id(self, item_id: int, user_id: Optional[int] = None) -> Optional[CatalogItem]:
         """Récupère un élément du catalogue par son ID pour user_id ou s'il est public."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id is not None:
                 cursor.execute("""
@@ -718,7 +718,7 @@ class MealsRepository(BaseRepository):
         barcode = data.get("barcode", existing.barcode)
         nutriscore = data.get("nutriscore", existing.nutriscore)
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE food_items
@@ -763,7 +763,7 @@ class MealsRepository(BaseRepository):
 
     def delete_food_item(self, item_id: int, user_id: int = 1) -> bool:
         """Supprime un aliment ou plat du catalogue de l'utilisateur."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM food_items WHERE id = ? AND user_id = ?", (item_id, user_id))
             if not cursor.fetchone():
@@ -778,7 +778,7 @@ class MealsRepository(BaseRepository):
             raise ValueError("Impossible de s'abonner à son propre catalogue")
 
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=subscriber_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM users WHERE id = ?", (target_user_id,))
             if not cursor.fetchone():
@@ -800,7 +800,7 @@ class MealsRepository(BaseRepository):
 
     def remove_catalog_subscription(self, subscriber_id: int, target_user_id: int) -> bool:
         """Désabonne un utilisateur du catalogue d'un ami."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=subscriber_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 DELETE FROM catalog_subscriptions
@@ -820,7 +820,7 @@ class MealsRepository(BaseRepository):
             WHERE cs.subscriber_id = ?
             ORDER BY u.name ASC
         """
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=subscriber_id) as conn:
             cursor = conn.cursor()
             cursor.execute(sql, (subscriber_id,))
             rows = cursor.fetchall()
@@ -828,7 +828,7 @@ class MealsRepository(BaseRepository):
 
     def is_subscribed_to_catalog(self, subscriber_id: int, target_user_id: int) -> bool:
         """Vérifie si subscriber_id est abonné au catalogue de target_user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=subscriber_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT 1 FROM catalog_subscriptions
@@ -841,6 +841,11 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS cnt FROM food_items WHERE is_public = ?", (self._pg_bool_true(),))
+            row = cursor.fetchone()
+            cnt = row["cnt"] if isinstance(row, dict) else row[0]
+            if cnt >= len(PUBLIC_BASE_ITEMS):
+                return
             for it in PUBLIC_BASE_ITEMS:
                 cat = infer_food_category(it["name"], it["item_type"], it.get("category"))
                 cursor.execute("SELECT id, category FROM food_items WHERE name = ? AND is_public = ?", (it["name"], self._pg_bool_true()))
@@ -874,6 +879,11 @@ class MealsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS cnt FROM nutrition_benefits")
+            row = cursor.fetchone()
+            cnt = row["cnt"] if isinstance(row, dict) else row[0]
+            if cnt >= len(EXPERT_BENEFITS_CATALOG):
+                return
             for b in EXPERT_BENEFITS_CATALOG:
                 rule_cfg = json.dumps(b.get("rule_config") or {})
                 if self.is_postgres:
@@ -991,7 +1001,7 @@ class MealsRepository(BaseRepository):
         """Récupère l'instance de repas pour une date et un type, ou la crée si inexistante."""
         date_str = date_val.isoformat()
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM meal_logs
@@ -1027,7 +1037,7 @@ class MealsRepository(BaseRepository):
     def _build_meal_log(self, row: Dict[str, Any], user_id: int = 1) -> MealLog:
         """Construit un objet MealLog avec tous ses MealLogItem associés."""
         meal_log_id = row["id"]
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM meal_log_items
@@ -1073,7 +1083,7 @@ class MealsRepository(BaseRepository):
     def get_meal_logs_for_date(self, target_date: date, user_id: int = 1) -> List[MealLog]:
         """Récupère les 4 repas d'une date (avec les instances existantes et leurs items) en 1 seule requête SQL."""
         date_str = target_date.isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT
@@ -1305,7 +1315,7 @@ class MealsRepository(BaseRepository):
         date_str = date_val.isoformat()
         now_str = datetime.now(timezone.utc).isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id FROM meal_logs
@@ -1368,7 +1378,7 @@ class MealsRepository(BaseRepository):
         date_str = date_val.isoformat()
         now_str = datetime.now(timezone.utc).isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id FROM meal_logs
@@ -1434,7 +1444,7 @@ class MealsRepository(BaseRepository):
 
     def delete_meal_log_item(self, item_id: int, user_id: int = 1) -> Optional[MealLog]:
         """Supprime une ligne d'aliment consommée et recalcule le repas parent dans une seule transaction atomique."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT m.id AS meal_log_id
@@ -1459,7 +1469,7 @@ class MealsRepository(BaseRepository):
     def _recalculate_meal_log_totals(self, meal_log_id: int, user_id: int = 1):
         """Recalcule et met à jour les totaux d'un MealLog."""
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT
@@ -1504,7 +1514,7 @@ class MealsRepository(BaseRepository):
         date_str = date_val.isoformat()
         now_str = datetime.now(timezone.utc).isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id FROM meal_logs
@@ -1637,7 +1647,7 @@ class MealsRepository(BaseRepository):
     def _sync_meal_log_to_meals(self, meal_log_id: int, user_id: int = 1):
         """Synchronise un meal_log avec la table meals pour alimenter l'historique et les calories journalières."""
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT date, meal_type, total_calories, total_protein_g, total_carbs_g, total_fat_g, total_fiber_g FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
             ml = cursor.fetchone()
@@ -1708,7 +1718,7 @@ class MealsRepository(BaseRepository):
 
     def sync_all_meal_logs_to_meals(self, user_id: Optional[int] = None):
         """Synchronise l'ensemble des meal_logs existants vers la table meals."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id:
                 cursor.execute("SELECT id, user_id FROM meal_logs WHERE user_id = ?", (user_id,))
@@ -1720,7 +1730,7 @@ class MealsRepository(BaseRepository):
 
     def _get_meal_log_by_id(self, meal_log_id: int, user_id: int = 1) -> MealLog:
         """Récupère un MealLog complet par son ID."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM meal_logs WHERE id = ? AND user_id = ?", (meal_log_id, user_id))
             row = cursor.fetchone()
@@ -1729,7 +1739,7 @@ class MealsRepository(BaseRepository):
     def delete_demo_meals(self, user_id: Optional[int] = None) -> int:
         """Supprime les repas de démonstration insérés par seed_demo."""
         demo_calories = (430.0, 685.0, 195.0, 560.0)
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id is not None:
                 cursor.execute("""
