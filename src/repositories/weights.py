@@ -22,7 +22,7 @@ class WeightsRepository(BaseRepository):
         start_date = (target_date - timedelta(days=6)).isoformat()
         end_date = target_date.isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if exclude_simulation:
                 cursor.execute("""
@@ -45,7 +45,7 @@ class WeightsRepository(BaseRepository):
     def insert_weight(self, entry: WeightEntry, user_id: int = 1) -> WeightEntry:
         """Insère ou met à jour une pesée en recalculant la tendance 7j pour user_id (avec support d'idempotence)."""
         if entry.external_id:
-            with self.get_connection() as conn:
+            with self.get_connection(user_id=user_id) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT * FROM weights WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
@@ -80,7 +80,7 @@ class WeightsRepository(BaseRepository):
         measured_at_str = entry.measured_at or now_str
         idemp_key = entry.idempotency_key or (f"{entry.source}:{entry.external_id}" if entry.external_id else None)
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             # Tracer l'écrasement dans raw_ingest si une pesée préalable existe pour le même jour/source
             cursor.execute(
@@ -174,7 +174,7 @@ class WeightsRepository(BaseRepository):
         exclude_simulation: bool = False
     ) -> List[WeightEntry]:
         """Récupère l'historique des pesées ordonné par date croissante pour un utilisateur."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if exclude_simulation:
                 cursor.execute("""
@@ -216,7 +216,7 @@ class WeightsRepository(BaseRepository):
         if not entries:
             return 0
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             params_list = []
             for entry in entries:
@@ -254,7 +254,7 @@ class WeightsRepository(BaseRepository):
 
     def get_weight_by_id(self, weight_id: int, user_id: int = 1) -> Optional[WeightEntry]:
         """Récupère une pesée spécifique par son ID pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
             r = cursor.fetchone()
@@ -289,7 +289,7 @@ class WeightsRepository(BaseRepository):
         if trend is None:
             trend = self.calculate_7d_trend(target_date, entry.weight_kg, user_id=user_id)
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE weights
@@ -311,7 +311,7 @@ class WeightsRepository(BaseRepository):
 
     def delete_weight(self, weight_id: int, user_id: int = 1) -> bool:
         """Supprime une pesée pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM weights WHERE id = ? AND user_id = ?", (weight_id, user_id))
             if not cursor.fetchone():
@@ -323,7 +323,7 @@ class WeightsRepository(BaseRepository):
     def insert_activity(self, entry: ActivityEntry, user_id: int = 1) -> ActivityEntry:
         """Insère ou met à jour une entrée d'activité pour user_id (avec support d'idempotence)."""
         if entry.external_id:
-            with self.get_connection() as conn:
+            with self.get_connection(user_id=user_id) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT * FROM activities WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
@@ -358,7 +358,7 @@ class WeightsRepository(BaseRepository):
         if total_burned <= 0 and (entry.bmr_kcal > 0 or entry.active_calories_kcal > 0):
             total_burned = round(entry.bmr_kcal + entry.active_calories_kcal, 1)
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -432,7 +432,7 @@ class WeightsRepository(BaseRepository):
         exclude_simulation: bool = False
     ) -> List[ActivityEntry]:
         """Récupère l'historique d'activité ordonné par date croissante pour un utilisateur."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if exclude_simulation:
                 cursor.execute("""
@@ -475,7 +475,7 @@ class WeightsRepository(BaseRepository):
         if not entries:
             return 0
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             params_list = []
             for entry in entries:
@@ -522,7 +522,7 @@ class WeightsRepository(BaseRepository):
 
     def delete_activity(self, activity_id: int, user_id: int = 1) -> bool:
         """Supprime une activité physique spécifique par son identifiant pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM activities WHERE id = ? AND user_id = ?", (activity_id, user_id))
             deleted = cursor.rowcount > 0
@@ -531,7 +531,7 @@ class WeightsRepository(BaseRepository):
 
     def delete_demo_weights(self, user_id: Optional[int] = None) -> int:
         """Supprime les pesées de démonstration ou simulation."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id is not None:
                 cursor.execute("""
@@ -550,7 +550,7 @@ class WeightsRepository(BaseRepository):
 
     def delete_demo_activities(self, user_id: Optional[int] = None) -> int:
         """Supprime les activités physiques de démonstration ou simulation."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if user_id is not None:
                 cursor.execute("""

@@ -104,7 +104,7 @@ class UsersRepository(BaseRepository):
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Récupère un compte utilisateur par son identifiant numérique."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
@@ -129,7 +129,7 @@ class UsersRepository(BaseRepository):
 
     def get_user_profile(self, user_id: int = 1) -> Dict[str, Any]:
         """Récupère le profil personnalisé de user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user_profile WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
             row = cursor.fetchone()
@@ -214,7 +214,7 @@ class UsersRepository(BaseRepository):
             nutrition_goals_config = json.dumps(nutrition_goals_config)
         is_demo_profile = 1 if _val("is_demo_profile", 0) else 0
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_profile
@@ -394,7 +394,7 @@ class UsersRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         val = 1 if consented else 0
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -421,7 +421,7 @@ class UsersRepository(BaseRepository):
         categories = ["biometrics", "nutrition", "analytics", "devices"]
         consents = {cat: True for cat in categories}
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT category, consented FROM user_consents WHERE user_id = ?", (user_id,))
             for r in cursor.fetchall():
@@ -434,7 +434,7 @@ class UsersRepository(BaseRepository):
         if not user:
             return False
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
@@ -459,7 +459,7 @@ class UsersRepository(BaseRepository):
         if not user:
             return False
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM weights WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM activities WHERE user_id = ?", (user_id,))
@@ -493,7 +493,7 @@ class UsersRepository(BaseRepository):
         target_clean = target_identifier.strip().lower()
         now_str = datetime.now(timezone.utc).isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(name) = ? LIMIT 1", (target_clean, target_clean))
             target_user = cursor.fetchone()
@@ -547,7 +547,7 @@ class UsersRepository(BaseRepository):
 
     def get_friendships(self, user_id: int) -> Dict[str, List[Dict[str, Any]]]:
         """Récupère les amis acceptés, les demandes reçues en attente et les demandes envoyées en attente."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT f.id as request_id, f.status, f.permission, f.created_at, f.updated_at,
@@ -588,7 +588,7 @@ class UsersRepository(BaseRepository):
     def accept_friend_request(self, request_id: int, user_id: int) -> Dict[str, Any]:
         """Accepte une demande d'ami reçue."""
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM friendships WHERE id = ?", (request_id,))
             row = cursor.fetchone()
@@ -613,7 +613,7 @@ class UsersRepository(BaseRepository):
     def reject_friend_request(self, request_id: int, user_id: int) -> Dict[str, Any]:
         """Refuse une demande d'ami reçue."""
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM friendships WHERE id = ?", (request_id,))
             row = cursor.fetchone()
@@ -634,7 +634,7 @@ class UsersRepository(BaseRepository):
 
     def delete_friendship(self, target_id: int, user_id: int) -> bool:
         """Supprime ou révoque une relation d'ami ou annule une demande par id de friendship ou target_user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM friendships WHERE id = ? AND (user_id = ? OR friend_user_id = ?)",

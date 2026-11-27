@@ -44,7 +44,7 @@ class MetricsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         date_str = metric.date.isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -120,7 +120,7 @@ class MetricsRepository(BaseRepository):
         user_id: int = 1
     ) -> List[DailyMetricsEntry]:
         """Récupère l'historique des métriques journalières pour user_id."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if source:
                 cursor.execute("""
@@ -150,7 +150,7 @@ class MetricsRepository(BaseRepository):
     def insert_workout(self, workout: WorkoutEntry, user_id: int = 1) -> WorkoutEntry:
         """Insère ou déduplique une séance d'entraînement de façon idempotente."""
         if workout.external_id:
-            with self.get_connection() as conn:
+            with self.get_connection(user_id=user_id) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT * FROM workouts WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
@@ -166,7 +166,7 @@ class MetricsRepository(BaseRepository):
                     return WorkoutEntry(**d)
 
         now_str = datetime.now(timezone.utc).isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -211,7 +211,7 @@ class MetricsRepository(BaseRepository):
 
     def get_workouts(self, limit: int = 30, user_id: int = 1) -> List[WorkoutEntry]:
         """Récupère la liste des séances d'entraînement (les plus récentes en premier)."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM workouts WHERE user_id = ? ORDER BY start_time DESC LIMIT ?
@@ -231,7 +231,7 @@ class MetricsRepository(BaseRepository):
     def insert_sleep_session(self, session: SleepSessionEntry, user_id: int = 1) -> SleepSessionEntry:
         """Enregistre une session de sommeil complète et ses phases associées de façon idempotente."""
         if session.external_id:
-            with self.get_connection() as conn:
+            with self.get_connection(user_id=user_id) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT id FROM sleep_sessions WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
@@ -244,7 +244,7 @@ class MetricsRepository(BaseRepository):
         now_str = datetime.now(timezone.utc).isoformat()
         date_str = session.date.isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -305,7 +305,7 @@ class MetricsRepository(BaseRepository):
 
     def get_sleep_session_by_id(self, session_id: int, user_id: int = 1) -> Optional[SleepSessionEntry]:
         """Récupère une session de sommeil avec toutes ses phases."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM sleep_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
             row = cursor.fetchone()
@@ -324,7 +324,7 @@ class MetricsRepository(BaseRepository):
 
     def get_sleep_sessions(self, limit: int = 30, user_id: int = 1) -> List[SleepSessionEntry]:
         """Récupère l'historique des sessions de sommeil avec leurs phases détaillées (sans N+1 requêtes)."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM (
@@ -364,17 +364,18 @@ class MetricsRepository(BaseRepository):
         if not samples:
             return 0
         now_str = datetime.now(timezone.utc).isoformat()
-        count = 0
-        with self.get_connection() as conn:
+        rows = [
+            (user_id, s.source, s.metric_type, s.timestamp, s.value, s.unit, now_str)
+            for s in samples
+        ]
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
-            for s in samples:
-                cursor.execute("""
-                    INSERT INTO intraday_samples (user_id, source, metric_type, timestamp, value, unit, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, s.source, s.metric_type, s.timestamp, s.value, s.unit, now_str))
-                count += 1
+            cursor.executemany("""
+                INSERT INTO intraday_samples (user_id, source, metric_type, timestamp, value, unit, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, rows)
             conn.commit()
-        return count
+        return len(rows)
 
     def get_intraday_samples(
         self,
@@ -385,7 +386,7 @@ class MetricsRepository(BaseRepository):
         user_id: int = 1
     ) -> List[IntradaySampleEntry]:
         """Récupère les échantillons haute fréquence pour une métrique donnée."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             query = "SELECT * FROM intraday_samples WHERE user_id = ? AND metric_type = ?"
             params: List[Any] = [user_id, metric_type]
@@ -414,7 +415,7 @@ class MetricsRepository(BaseRepository):
         cutoff_date = (date.today() - timedelta(days=days)).isoformat()
         cutoff_iso = f"{cutoff_date}T00:00:00"
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             
             query_agg = """
@@ -509,7 +510,7 @@ class MetricsRepository(BaseRepository):
     def insert_hydration_log(self, entry: HydrationLogEntry, user_id: int = 1) -> HydrationLogEntry:
         """Enregistre un apport hydrique."""
         if entry.external_id:
-            with self.get_connection() as conn:
+            with self.get_connection(user_id=user_id) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT * FROM hydration_logs WHERE user_id = ? AND source = ? AND external_id = ? LIMIT 1",
@@ -525,7 +526,7 @@ class MetricsRepository(BaseRepository):
 
         now_str = datetime.now(timezone.utc).isoformat()
         date_str = entry.date.isoformat()
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 cursor.execute("""
@@ -556,7 +557,7 @@ class MetricsRepository(BaseRepository):
         user_id: int = 1
     ) -> List[HydrationLogEntry]:
         """Récupère les apports hydriques pour user_id (filtrés optionnellement par date)."""
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if target_date:
                 date_str = target_date.isoformat() if isinstance(target_date, date) else str(target_date)[:10]
@@ -587,7 +588,7 @@ class MetricsRepository(BaseRepository):
     ) -> float:
         """Calcule le volume total consommé en millilitres pour une date donnée."""
         date_str = target_date.isoformat() if isinstance(target_date, date) else str(target_date)[:10]
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT COALESCE(SUM(volume_ml), 0.0) as total FROM hydration_logs WHERE user_id = ? AND date = ?",
@@ -611,7 +612,7 @@ class MetricsRepository(BaseRepository):
         payload_str = json.dumps(payload) if isinstance(payload, (dict, list)) else str(payload)
         now_str = datetime.now(timezone.utc).isoformat()
 
-        with self.get_connection() as conn:
+        with self.get_connection(user_id=user_id) as conn:
             cursor = conn.cursor()
             if self.is_postgres:
                 if idempotency_key:

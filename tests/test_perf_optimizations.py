@@ -122,7 +122,7 @@ def test_dashboard_cache_and_invalidation(test_setup):
         cache_key = (user_id, False)
         assert cache_key in DASHBOARD_CACHE
 
-        cached_ts, cached_payload = DASHBOARD_CACHE[cache_key]
+        cached_payload = DASHBOARD_CACHE.get(cache_key)
         assert cached_payload == r1.json()
 
         # Call 2: Hit cache

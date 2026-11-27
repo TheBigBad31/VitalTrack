@@ -14,13 +14,17 @@ import logging
 import os
 import re
 from typing import Any, Dict, List, Optional
-from urllib.error import URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+
+import httpx
 
 from src.models import FoodItem, MealType
 
 logger = logging.getLogger(__name__)
+_HTTP_CLIENT = httpx.Client(
+    headers={"User-Agent": "VitalTrack-NutritionEngine/0.1.0 (https://vitaltrack.local)"},
+    timeout=4.0,
+)
 
 # Base nutritionnelle locale de référence (valeurs pour 100g)
 # [calories_kcal, protein_g, carbs_g, fat_g, fiber_g, portion_standard_g]
@@ -102,30 +106,30 @@ class PhotoCalorieEstimator:
         
         encoded_query = quote(clean_query)
         url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={encoded_query}&search_simple=1&action=process&json=1&page_size=1"
-        req = Request(url, headers={"User-Agent": "VitalTrack-NutritionEngine/0.1.0 (https://vitaltrack.local)"})
-        
-        try:
-            with urlopen(req, timeout=3.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                products = data.get("products", [])
-                if not products:
-                    return None
-                prod = products[0]
-                nutriments = prod.get("nutriments", {})
-                cal_100g = nutriments.get("energy-kcal_100g") or (nutriments.get("energy_100g", 0) / 4.184)
-                if not cal_100g or cal_100g <= 0:
-                    return None
 
-                return {
-                    "name": prod.get("product_name_fr") or prod.get("product_name") or query,
-                    "cal_100g": float(cal_100g),
-                    "p": float(nutriments.get("proteins_100g", 0.0)),
-                    "c": float(nutriments.get("carbohydrates_100g", 0.0)),
-                    "f": float(nutriments.get("fat_100g", 0.0)),
-                    "fib": float(nutriments.get("fiber_100g", 0.0)),
-                    "portion_g": float(prod.get("serving_quantity", 150.0) or 150.0),
-                }
-        except (URLError, TimeoutError, ValueError, KeyError, Exception) as exc:
+        try:
+            resp = _HTTP_CLIENT.get(url, timeout=3.0)
+            resp.raise_for_status()
+            data = resp.json()
+            products = data.get("products", [])
+            if not products:
+                return None
+            prod = products[0]
+            nutriments = prod.get("nutriments", {})
+            cal_100g = nutriments.get("energy-kcal_100g") or (nutriments.get("energy_100g", 0) / 4.184)
+            if not cal_100g or cal_100g <= 0:
+                return None
+
+            return {
+                "name": prod.get("product_name_fr") or prod.get("product_name") or query,
+                "cal_100g": float(cal_100g),
+                "p": float(nutriments.get("proteins_100g", 0.0)),
+                "c": float(nutriments.get("carbohydrates_100g", 0.0)),
+                "f": float(nutriments.get("fat_100g", 0.0)),
+                "fib": float(nutriments.get("fiber_100g", 0.0)),
+                "portion_g": float(prod.get("serving_quantity", 150.0) or 150.0),
+            }
+        except (httpx.HTTPError, ValueError, KeyError, Exception) as exc:
             logger.debug(f"OpenFoodFacts lookup failed for '{query}': {exc}")
             return None
 
@@ -136,22 +140,22 @@ class PhotoCalorieEstimator:
             return None
 
         url = f"https://world.openfoodfacts.org/api/v2/product/{clean_code}.json"
-        req = Request(url, headers={"User-Agent": "VitalTrack-NutritionEngine/0.1.0 (https://vitaltrack.local)"})
 
         try:
-            with urlopen(req, timeout=4.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                status = data.get("status")
-                if status != 1 and data.get("status_verbose") != "product found":
-                    return None
-                prod = data.get("product", {})
-                if not prod:
-                    return None
+            resp = _HTTP_CLIENT.get(url, timeout=4.0)
+            resp.raise_for_status()
+            data = resp.json()
+            status = data.get("status")
+            if status != 1 and data.get("status_verbose") != "product found":
+                return None
+            prod = data.get("product", {})
+            if not prod:
+                return None
 
-                nutriments = prod.get("nutriments", {})
-                cal_100g = nutriments.get("energy-kcal_100g")
-                if cal_100g is None:
-                    cal_100g = (nutriments.get("energy_100g", 0.0) or 0.0) / 4.184
+            nutriments = prod.get("nutriments", {})
+            cal_100g = nutriments.get("energy-kcal_100g")
+            if cal_100g is None:
+                cal_100g = (nutriments.get("energy_100g", 0.0) or 0.0) / 4.184
 
                 # Nutri-Score
                 nutriscore = (

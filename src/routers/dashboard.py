@@ -56,11 +56,9 @@ async def get_dashboard_data(
     user_id = target_uid
 
     cache_key = (user_id, include_simulation)
-    now_ts = time.time()
-    if cache_key in DASHBOARD_CACHE:
-        cached_ts, cached_data = DASHBOARD_CACHE[cache_key]
-        if now_ts - cached_ts < DASHBOARD_CACHE_TTL_SECONDS:
-            return cached_data
+    cached_data = DASHBOARD_CACHE.get(cache_key)
+    if cached_data is not None:
+        return cached_data
 
     profile, meals, daily_metrics_rows, saved_devices_raw, user_workouts = await asyncio.gather(
         asyncio.to_thread(db.get_user_profile, user_id=user_id),
@@ -252,5 +250,5 @@ async def get_dashboard_data(
         "devices": device_statuses,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    DASHBOARD_CACHE[cache_key] = (now_ts, dashboard_res)
+    DASHBOARD_CACHE.set(cache_key, dashboard_res)
     return dashboard_res

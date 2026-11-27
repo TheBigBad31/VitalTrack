@@ -104,10 +104,10 @@ def test_photo_calorie_estimator_openfoodfacts_fallback():
         ]
     }
 
-    with patch("src.vision_nutrition.urlopen") as mock_urlopen:
-        mock_ctx = MagicMock()
-        mock_ctx.read.return_value = bytes(__import__("json").dumps(mock_off_response), "utf-8")
-        mock_urlopen.return_value.__enter__.return_value = mock_ctx
+    with patch("src.vision_nutrition._HTTP_CLIENT.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = mock_off_response
+        mock_get.return_value = mock_resp
 
         result = estimator.search_openfoodfacts("granola bio")
         assert result is not None

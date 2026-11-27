@@ -122,15 +122,15 @@ class DashboardCache:
         if self._redis_client is not None:
             try:
                 if user_id is None:
-                    # Invalide tous les dashboards
-                    keys = self._redis_client.keys("dashboard:*")
+                    # Invalide tous les dashboards via scan_iter (non bloquant)
+                    keys = list(self._redis_client.scan_iter(match="dashboard:*", count=100))
                     if keys:
                         self._redis_client.delete(*keys)
                 else:
-                    pattern = f"dashboard:{user_id}:*"
-                    keys = self._redis_client.keys(pattern)
-                    if keys:
-                        self._redis_client.delete(*keys)
+                    self._redis_client.delete(
+                        f"dashboard:{user_id}:true",
+                        f"dashboard:{user_id}:false",
+                    )
             except Exception as e:
                 logger.debug("DashboardCache Redis invalidate error: %s", e)
 
@@ -156,21 +156,10 @@ class DashboardCache:
             return key in self._local_cache
 
     def __getitem__(self, key: Any) -> Any:
-        # Pour compatibilité avec cached_ts, cached_payload = DASHBOARD_CACHE[cache_key]
-        import time
-        if self._redis_client is not None:
-            try:
-                redis_key = self._make_key(key)
-                val = self._redis_client.get(redis_key)
-                if val is not None:
-                    return (time.time(), json.loads(val))
-            except Exception:
-                pass
-        with self._lock:
-            val = self._local_cache[key]
-            if isinstance(self._local_cache, TTLCache):
-                return (time.time(), val)
-            return val
+        val = self.get(key)
+        if val is None:
+            raise KeyError(key)
+        return val
 
     def __setitem__(self, key: Any, val: Any) -> None:
         # Pour compatibilité DASHBOARD_CACHE[cache_key] = (now_ts, dashboard_res) ou DASHBOARD_CACHE[cache_key] = val
