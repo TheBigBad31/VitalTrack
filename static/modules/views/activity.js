@@ -752,11 +752,23 @@
 
 
 
-      container.innerHTML = workouts.slice(0, 10).map(w => {
+      const sortedWorkouts = [...workouts].sort((a, b) => {
+        const ta = a && a.start_time ? Date.parse(a.start_time) || 0 : 0;
+        const tb = b && b.start_time ? Date.parse(b.start_time) || 0 : 0;
+        return tb - ta;
+      });
+
+      container.innerHTML = sortedWorkouts.slice(0, 10).map(w => {
 
         const iconName = workoutIcons[w.workout_type] || 'activity';
 
-        const startFormatted = w.start_time ? w.start_time.replace('T', ' ').slice(0, 16) : '';
+        let startFormatted = '';
+        if (w.start_time) {
+          const parsed = new Date(w.start_time);
+          startFormatted = Number.isNaN(parsed.getTime())
+            ? w.start_time.replace('T', ' ').slice(0, 16)
+            : parsed.toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' });
+        }
 
         return `
 

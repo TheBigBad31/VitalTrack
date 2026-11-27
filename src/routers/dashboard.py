@@ -7,6 +7,7 @@ Endpoints :
 import asyncio
 import time
 from datetime import date, datetime, timedelta, timezone
+from src.repositories.metrics import workout_local_date as _workout_local_date
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
@@ -102,8 +103,11 @@ async def get_dashboard_data(
         gender=profile.get("gender", "male"),
         user_id=user_id,
     )
-    today_str = today.isoformat()
-    today_workouts = [w for w in (user_workouts or []) if (w.start_time or "").startswith(today_str)]
+    user_tz = profile.get("timezone") or "Europe/Paris"
+    today_workouts = [
+        w for w in (user_workouts or [])
+        if _workout_local_date(w.start_time, user_tz) == today
+    ]
     today_workout_calories = round(sum(float(w.calories_kcal or 0.0) for w in today_workouts), 1)
 
     today_steps = (today_activity.steps if today_activity else (today_metric.steps if today_metric else 0)) or 0

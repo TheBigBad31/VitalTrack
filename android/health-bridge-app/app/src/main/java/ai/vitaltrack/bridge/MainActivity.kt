@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chipHr: TextView
     private lateinit var chipSleep: TextView
     private lateinit var chipWeight: TextView
+    private lateinit var chipExercise: TextView
 
     private lateinit var tokenInput: EditText
     private lateinit var togglePasswordBtn: ImageView
@@ -538,6 +539,18 @@ class MainActivity : AppCompatActivity() {
         chipsRow2.addView(chipWeight)
         permsInner.addView(chipsRow2)
 
+        val chipsRow3 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+        }
+        chipExercise = createStatusChip("Exercices (READ_EXERCISE)", false)
+        (chipExercise.layoutParams as LinearLayout.LayoutParams).weight = 1f
+        chipsRow3.addView(chipExercise)
+        permsInner.addView(chipsRow3)
+
         permsCard.addView(permsInner)
         container.addView(permsCard)
 
@@ -875,11 +888,13 @@ class MainActivity : AppCompatActivity() {
         val hasHr = hrPermissions.any { grantedSet.contains(it) }
         val hasSleep = sleepPermissions.any { grantedSet.contains(it) }
         val hasWeight = weightPermissions.any { grantedSet.contains(it) }
+        val hasExercise = grantedSet.contains(HealthPermission.getReadPermission(ExerciseSessionRecord::class))
 
         updateChip(chipSteps, "Pas & Calories", hasSteps)
         updateChip(chipHr, "Rythme / SpO2 / HRV", hasHr)
         updateChip(chipSleep, "Sommeil", hasSleep)
         updateChip(chipWeight, "Poids & Masse", hasWeight)
+        updateChip(chipExercise, "Exercices (READ_EXERCISE)", hasExercise)
     }
 
     private fun updateChip(chip: TextView, label: String, granted: Boolean) {

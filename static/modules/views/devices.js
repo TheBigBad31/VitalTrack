@@ -541,7 +541,67 @@
       if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
 
       loadDataMapView();
+      loadHealthConnectDiagnostics();
 
+    }
+
+    async function loadHealthConnectDiagnostics() {
+      const grid = document.getElementById('devices-grid');
+      if (!grid || !grid.parentElement) return;
+      let panel = document.getElementById('hc-diagnostics-panel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'hc-diagnostics-panel';
+        panel.className = 'mt-6 p-4 rounded-2xl bg-[#13132B]/80 border border-[#25254A] space-y-3';
+        grid.parentElement.appendChild(panel);
+      }
+      try {
+        const res = await fetch('/api/devices/health-connect/diagnostics');
+        if (!res.ok) return;
+        const data = await res.json();
+        const ingests = Array.isArray(data.recent_ingests) ? data.recent_ingests : [];
+        const latest = data.latest_workout;
+        const escapeHtmlSafe = typeof window.escapeHtml === 'function'
+          ? window.escapeHtml
+          : (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        const ingestsHtml = ingests.length > 0
+          ? ingests.slice(0, 5).map((item) => {
+              const dt = item.received_at ? new Date(item.received_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }) : '—';
+              const badge = item.has_workouts
+                ? `<span class="text-emerald-400 font-semibold">workouts[]: ${Number(item.workouts_count || 0)}</span>`
+                : `<span class="text-slate-500">aucun workouts[]</span>`;
+              return `<div class="flex items-center justify-between text-[11px] py-1 border-b border-[#25254A]/60 last:border-0">
+                <span class="text-slate-300 font-mono">${escapeHtmlSafe(dt)}</span>
+                <span>${badge}</span>
+              </div>`;
+            }).join('')
+          : '<p class="text-[11px] text-slate-500">Aucun push Health Connect enregistré récemment.</p>';
+
+        const latestHtml = latest
+          ? `<div class="text-[11px] text-slate-300 bg-[#0B0B1A]/70 p-2.5 rounded-xl border border-[#25254A]">
+              Dernière séance : <span class="font-semibold text-white">${escapeHtmlSafe(latest.workout_type)}</span>
+              · ${Number(latest.duration_minutes || 0)} min · ${Math.round(Number(latest.calories_kcal || 0))} kcal
+              ${latest.avg_hr_bpm ? `· ${Math.round(Number(latest.avg_hr_bpm))} bpm` : ''}
+              <span class="text-slate-500">(${escapeHtmlSafe(latest.source || 'health_connect')})</span>
+            </div>`
+          : '<p class="text-[11px] text-amber-400/90">Aucune séance stockée pour le moment.</p>';
+
+        panel.innerHTML = `
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-white uppercase tracking-wider">Diagnostic Health Connect & Exercices</h4>
+            <span class="text-[10px] text-slate-400">${Number(data.total_workouts_stored || 0)} séance(s) récente(s)</span>
+          </div>
+          ${latestHtml}
+          <div class="space-y-1">${ingestsHtml}</div>
+          <div class="text-[10px] text-slate-400 bg-[#0B0B1A]/50 p-2.5 rounded-xl border border-[#25254A]/70 space-y-1">
+            <div><strong class="text-slate-200">1. RingConn → Health Connect :</strong> Vérifier que l'écriture <em>Exercices</em> est activée dans l'app RingConn.</div>
+            <div><strong class="text-slate-200">2. Health Connect → VitalTrack Bridge :</strong> Vérifier que la permission <em>Exercices (READ_EXERCISE)</em> est accordée dans VitalTrack Bridge.</div>
+          </div>
+        `;
+      } catch (e) {
+        // Silencieux si non connecté ou hors ligne
+      }
     }
 
     async function loadDataMapView() {

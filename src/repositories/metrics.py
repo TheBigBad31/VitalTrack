@@ -2,6 +2,31 @@
 
 import json
 from datetime import date, datetime, timedelta, timezone
+from typing import Optional
+import zoneinfo
+
+
+def workout_local_date(start_time: Optional[str], tz_name: str = "Europe/Paris") -> Optional[date]:
+    """Convertit un horodatage ISO (UTC ou avec offset) en date locale dans le fuseau utilisateur."""
+    if not start_time:
+        return None
+    try:
+        raw = str(start_time).strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        try:
+            tz = zoneinfo.ZoneInfo(tz_name or "Europe/Paris")
+        except Exception:
+            tz = zoneinfo.ZoneInfo("Europe/Paris")
+        return dt.astimezone(tz).date()
+    except Exception:
+        try:
+            return date.fromisoformat(str(start_time)[:10])
+        except Exception:
+            return None
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.models import (
@@ -185,13 +210,11 @@ class MetricsRepository(BaseRepository):
         return WorkoutEntry(**d)
 
     def get_workouts(self, limit: int = 30, user_id: int = 1) -> List[WorkoutEntry]:
-        """Récupère la liste des séances d'entraînement."""
+        """Récupère la liste des séances d'entraînement (les plus récentes en premier)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM (
-                    SELECT * FROM workouts WHERE user_id = ? ORDER BY start_time DESC LIMIT ?
-                ) sub ORDER BY start_time ASC
+                SELECT * FROM workouts WHERE user_id = ? ORDER BY start_time DESC LIMIT ?
             """, (user_id, limit))
             rows = cursor.fetchall()
 

@@ -350,6 +350,69 @@ def sync_device_legacy(
     return sync_device_targeted(dev_id, payload=req, current_user=current_user)
 
 
+@router.get("/api/devices/health-connect/diagnostics")
+def get_health_connect_diagnostics(
+    current_user: AuthUser = Depends(app_module.get_current_user)
+):
+    """Diagnostic léger des derniers pushs Health Connect (raw_ingest) et des séances workouts reçues."""
+    import json
+    from src.dependencies import get_db
+    db = get_db()
+    user_id = current_user.id
+
+    recent_ingests = []
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT received_at, status, payload_json
+            FROM raw_ingest
+            WHERE user_id = ? AND source = 'health_connect'
+            ORDER BY received_at DESC
+            LIMIT 10
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall()
+
+    for r in rows:
+        d = dict(r)
+        workouts_count = 0
+        has_workouts = False
+        try:
+            payload = json.loads(d.get("payload_json") or "{}")
+            if isinstance(payload, dict) and isinstance(payload.get("workouts"), list):
+                has_workouts = True
+                workouts_count = len(payload["workouts"])
+        except Exception:
+            pass
+        recent_ingests.append({
+            "received_at": d.get("received_at"),
+            "status": d.get("status"),
+            "has_workouts": has_workouts,
+            "workouts_count": workouts_count,
+        })
+
+    workouts = db.get_workouts(limit=5, user_id=user_id) if hasattr(db, "get_workouts") else []
+    latest_workout = None
+    if workouts:
+        w = workouts[0]
+        latest_workout = {
+            "workout_type": w.workout_type,
+            "start_time": w.start_time,
+            "duration_minutes": w.duration_minutes,
+            "calories_kcal": w.calories_kcal,
+            "avg_hr_bpm": w.avg_hr_bpm,
+            "source": w.source,
+        }
+
+    return {
+        "recent_ingests": recent_ingests,
+        "total_workouts_stored": len(workouts),
+        "latest_workout": latest_workout,
+    }
+
+
 @router.get("/api/devices/{device_id}")
 @router.post("/api/devices/{device_id}")
 def get_device_detail(

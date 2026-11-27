@@ -1027,7 +1027,9 @@ def get_meals_journal(
     # Calcul dynamique des objectifs si activité/séances du jour disponibles
     user_profile = db.get_user_profile(user_id=target_uid) if hasattr(db, "get_user_profile") else {}
     workouts = db.get_workouts(limit=30, user_id=target_uid) if hasattr(db, "get_workouts") else []
-    day_workouts = [w for w in (workouts or []) if (w.start_time or "").startswith(target_date.isoformat())]
+    user_tz = (user_profile or {}).get("timezone") or "Europe/Paris"
+    from src.repositories.metrics import workout_local_date
+    day_workouts = [w for w in (workouts or []) if workout_local_date(w.start_time, user_tz) == target_date]
     workout_calories_kcal = round(sum(float(w.calories_kcal or 0.0) for w in day_workouts), 1)
 
     activities = db.get_activities(limit=30, user_id=target_uid) if hasattr(db, "get_activities") else []

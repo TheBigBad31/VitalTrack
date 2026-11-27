@@ -518,6 +518,13 @@ class HealthSyncWorker(
                         Log.d(TAG, "Impossible d'agréger les calories pour la séance ${ex.metadata.id}", ce)
                     }
                     wObj.put("calories_kcal", workoutCalories)
+                    val originPkg = ex.metadata.dataOrigin.packageName
+                    if (originPkg.isNotBlank()) {
+                        wObj.put("data_origin", originPkg)
+                    }
+                    if (workoutCalories == 0.0 && java.time.Duration.between(ex.startTime, ex.endTime).toMinutes() > 0) {
+                        Log.w(TAG, "Séance ${ex.metadata.id} (${mapExerciseType(ex.exerciseType)}, source=$originPkg) : calories_kcal=0.0 malgré durée > 0")
+                    }
 
                     // Récupérer la distance et la fréquence cardiaque moyenne
                     try {
