@@ -22,68 +22,7 @@
   <!-- Google Identity Services (GIS) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-      <style>
-    :root {
-      --bg-surface: #0B0B1E;
-      --bg-card: #13132B;
-      --border-subtle: #25254A;
-    }
-    /* Global Loading Bar */
-    .global-loading-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 1.5px;
-      z-index: 9999;
-      background: linear-gradient(90deg, #7C3AED, #2563FF);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-      opacity: 0;
-      transition: opacity 200ms ease-in;
-      pointer-events: none;
-    }
-    .global-loading-bar.active {
-      opacity: 1;
-    }
-    .global-loading-bar .skeleton-bg {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, #2a2a3a 25%, #3a3a4a 50%, #2a2a3a 75%);
-      background-size: 468px 100%;
-      animation: skeleton-loading 1.5s ease-in-out infinite;
-    }
-    @keyframes skeleton-loading {
-      0% { background-position: -468px center; }
-      100% { background-position: 468px center; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .skeleton-bg { animation: none; }
-    }
-
-    /* Button loading state */
-    .btn-loading {
-      position: relative;
-      pointer-events: none;
-    }
-    .btn-loading .spinner {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      width: 16px;
-      height: 16px;
-      border: 2px solid currentColor;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .btn-loading:hover {
-      opacity: 0.7;
-    }
-  </style>
+<link rel="stylesheet" href="/static/modules/theme.css?v=1.1.0">
   
 </head>
 <body class="bg-[#0B0F17] text-slate-100 min-h-screen flex flex-col font-sans pb-24 md:pb-8">
@@ -3283,45 +3222,6 @@
     </div>
   </div>
 
-  <script>
-    const FALLBACK_DASHBOARD_DATA = {
-      summary: {
-        current_weight_kg: null,
-        weight_trend_7d_kg: null,
-        weight_7d_variation_kg: null,
-        body_fat_pct: null,
-        muscle_mass_kg: null,
-        water_pct: null,
-        bmi: null,
-        target_weight_kg: 77.0,
-        steps: 0,
-        steps_target: 10000,
-        calories_intake_kcal: 0.0,
-        calories_burned_kcal: 0.0,
-        bmr_kcal: 0.0,
-        net_energy_balance_kcal: 0.0,
-        target_calories_intake: 0.0,
-        energy_status: "maintenance",
-        recommendation: "Aucune donnée enregistrée aujourd'hui. Ajoutez votre première pesée, un repas ou synchronisez vos appareils connectés.",
-        macros: {
-          protein_g: 0.0,
-          protein_pct: 0.0,
-          carbs_g: 0.0,
-          carbs_pct: 0.0,
-          fat_g: 0.0,
-          fat_pct: 0.0,
-          fiber_g: 0.0
-        },
-        resting_hr_bpm: null,
-        hrv_ms: null,
-        sleep_score: null
-      },
-      weights_history: [],
-      activities_history: [],
-      recent_meals: [],
-      devices: []
-    };
-  </script>
 
 
   <!-- =================================================================== -->
@@ -3435,143 +3335,26 @@
   </div>
 
   <!-- MODULES JAVASCRIPT MIS EN CACHE (ARCHITECTURE DÉCOUPLÉE & VERSIONNÉE) -->
-  <script src="/static/modules/api.js?v=1.0.0"></script>
-  <script src="/static/modules/lazy.js?v=1.0.0"></script>
-  <script src="/static/modules/dashboard.js?v=1.0.0"></script>
-  <script src="/static/modules/macro_goals.js?v=1.0.0"></script>
-  <script src="/static/modules/views/summary.js?v=1.0.0"></script>
-  <script src="/static/modules/views/weight.js?v=1.0.0"></script>
-  <script src="/static/modules/views/activity.js?v=1.0.0"></script>
-  <script src="/static/modules/views/devices.js?v=1.0.0"></script>
-  <script src="/static/modules/views/goals.js?v=1.0.0"></script>
-  <script src="/static/modules/nutrition.js?v=1.0.0"></script>
-  <script src="/static/modules/friends.js?v=1.0.0"></script>
-
-  <!-- PWA Service Worker Registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' })
-          .then((reg) => {
-            console.log('[PWA] Service Worker actif, scope:', reg.scope);
-          })
-          .catch((err) => {
-            console.warn('[PWA] Service Worker échec:', err);
-          });
-      });
-    }
-
-    // Accessibilité : Piège de focus et touche Escape sur les modales
-    (function initModalFocusTrap() {
-      let activeModal = null;
-      let previousActiveElement = null;
-
-      function getFocusableElements(container) {
-        return Array.from(container.querySelectorAll(
-          'button:not([disabled]):not([aria-hidden="true"]), ' +
-          '[href]:not([disabled]):not([aria-hidden="true"]), ' +
-          'input:not([disabled]):not([type="hidden"]):not([aria-hidden="true"]), ' +
-          'select:not([disabled]):not([aria-hidden="true"]), ' +
-          'textarea:not([disabled]):not([aria-hidden="true"]), ' +
-          '[tabindex]:not([tabindex="-1"]):not([disabled])'
-        )).filter(el => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
-      }
-
-      document.addEventListener('keydown', (e) => {
-        if (!activeModal) return;
-        if (e.key === 'Escape') {
-          const closeBtn = activeModal.querySelector('button[onclick*="close"], button[aria-label*="Fermer"]');
-          if (closeBtn) closeBtn.click();
-          return;
-        }
-        if (e.key !== 'Tab') return;
-
-        const focusables = getFocusableElements(activeModal);
-        if (focusables.length === 0) {
-          e.preventDefault();
-          return;
-        }
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === first || !activeModal.contains(document.activeElement)) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last || !activeModal.contains(document.activeElement)) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      });
-
-      const observer = new MutationObserver((mutations) => {
-        mutations.forEach((m) => {
-          if (m.type === 'attributes' && m.attributeName === 'class') {
-            const target = m.target;
-            if (target.getAttribute('role') === 'dialog') {
-              const isHidden = target.classList.contains('hidden');
-              if (!isHidden) {
-                previousActiveElement = document.activeElement;
-                activeModal = target;
-                const focusables = getFocusableElements(target);
-                if (focusables.length > 0) {
-                  setTimeout(() => focusables[0].focus(), 50);
-                }
-              } else if (activeModal === target) {
-                activeModal = null;
-                if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
-                  previousActiveElement.focus();
-                }
-              }
-            }
-          }
-        });
-      });
-
-      window.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('[role="dialog"]').forEach(dialog => {
-          observer.observe(dialog, { attributes: true, attributeFilter: ['class'] });
-        });
-      });
-    })();
-  </script>
-  <script>
-    function toggleMobileMoreMenu() {
-      const menu = document.getElementById('mobile-more-menu');
-      if (menu) menu.classList.toggle('hidden');
-    }
-    window.toggleMobileMoreMenu = toggleMobileMoreMenu;
-
-    // Global loading bar control
-    window.showGlobalLoading = function(show) {
-      const loadingBar = document.getElementById('global-loading-bar');
-      if (!loadingBar) return;
-      if (show) {
-        loadingBar.classList.add('active');
-      } else {
-        loadingBar.classList.remove('active');
-      }
-    };
-
-    // Intercept native fetch calls to show/hide loading bar
-    const originalFetch = window.fetch;
-    window.fetch = async function(url, options = {}) {
-      window.showGlobalLoading(true);
-      try {
-        const response = await originalFetch(url, options);
-        return response;
-      } finally {
-        setTimeout(() => {
-          const otherLoading = document.body && document.body.classList.contains('loading');
-          if (!otherLoading) {
-            window.showGlobalLoading(false);
-          }
-        }, 200);
-      }
-    };
-  </script>
+<script src="/static/modules/api.js?v=1.1.0"></script>
+<script src="/static/modules/lazy.js?v=1.1.0"></script>
+<script src="/static/modules/dashboard.js?v=1.1.0"></script>
+<script src="/static/modules/auth.js?v=1.1.0"></script>
+<script src="/static/modules/device_wizard.js?v=1.1.0"></script>
+<script src="/static/modules/saved_meals.js?v=1.1.0"></script>
+<script src="/static/modules/macro_goals.js?v=1.1.0"></script>
+<script src="/static/modules/views/summary.js?v=1.1.0"></script>
+<script src="/static/modules/views/weight.js?v=1.1.0"></script>
+<script src="/static/modules/views/activity.js?v=1.1.0"></script>
+<script src="/static/modules/views/devices.js?v=1.1.0"></script>
+<script src="/static/modules/views/goals.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/catalog.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/catalog_modal.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/journal.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/recommendations.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/friends_catalog.js?v=1.1.0"></script>
+<script src="/static/modules/nutrition/photo.js?v=1.1.0"></script>
+<script src="/static/modules/friends.js?v=1.1.0"></script>
+<script src="/static/modules/boot.js?v=1.1.0"></script>
 </body>
 </html>

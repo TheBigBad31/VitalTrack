@@ -1,56 +1,30 @@
 // static/modules/dashboard.js - Gestion du tableau de bord, pesées, graphiques & modales
 
-
-
-    
-
     let currentData = FALLBACK_DASHBOARD_DATA;
-
     let chartWeightSummary = null;
-
     let chartMacrosDonut = null;
-
     let chartWeightDetail = null;
-
     let chartMealsStacked = null;
-
     let chartActivity = null;
-
     let chartHRIntraday = null;
-
     let chartBiometricsTrends = null;
-
     let chartCrossCorrelations = null;
-
     let currentMetricsData = null;
-
     let currentTrendsDays = 30;
-
     let currentCorrelationMode = 'weight_cals';
 
-
-
     // --- Lot 2 (BALI-90) : rendu ciblé par onglet actif ---
-
     // Seule la vue de l'onglet visible est rendue ; les autres sont marquées "dirty"
-
     // puis rendues à la demande (à la première ouverture de l'onglet).
-
     let currentActiveTab = 'summary';
-
     const dirtyTabs = new Set();
-
     const TAB_VIEW_IDS = ['summary', 'weight', 'nutrition', 'activity', 'goals', 'devices'];
-
-
 
     let currentEstimatedMeal = null;
     let currentUploadedPhotoUrl = null;
-
     // Constantes de configuration servees par le backend (/api-config).
     // Aucune valeur magique en dur cote client : remplie au chargement.
     let CONFIG = {};
-
     // Charge les constantes de configuration depuis le backend (source de verite).
     async function loadConfig() {
       try {
@@ -60,775 +34,407 @@
         console.warn('[config] Impossible de charger /api/config, valeurs par defat neutres.', err);
       }
     }
-
     // Profils métaboliques 1-clic
-
     let activeGoalProfileId = "weight_loss";
-
     const GOAL_PROFILES = {
-
       weight_loss: {
-
         id: "weight_loss",
-
         title: "🔥 Perte de Poids Durable",
-
         badge: "-0,5 kg/sem",
-
         delta: -500,
-
         steps: 10000,
-
         protein_per_kg: 1.8,
-
         desc: "Déficit cible -500 kcal/j, 1,8g/kg de protéines, 10 000 pas/j",
-
         recommendation: "Déficit modéré optimal (-500 kcal) ciblant la perte de tissu adipeux tout en préservant le muscle avec 1,8g/kg de protéines."
-
       },
-
       maintenance: {
-
         id: "maintenance",
-
         title: "⚖️ Maintien & Équilibre Vitalité",
-
         badge: "0 kcal",
-
         delta: 0,
-
         steps: 8500,
-
         protein_per_kg: 1.4,
-
         desc: "Équilibre 0 kcal, répartition équilibrée P/G/L, 8 500 pas/j",
-
         recommendation: "Équilibre métabolique et vitalité stable au quotidien. Apport énergétique à l'équilibre avec dépense réelle."
-
       },
-
       recomposition: {
-
         id: "recomposition",
-
         title: "💪 Recomposition Corporelle & Sport",
-
         badge: "-200 kcal & P+ 2.2g/kg",
-
         delta: -200,
-
         steps: 10000,
-
         protein_per_kg: 2.2,
-
         desc: "Léger déficit -200 kcal/j, protéines 2,2g/kg, focus masse musculaire",
-
         recommendation: "Léger déficit propice au développement musculaire et à l'oxydation des graisses via un ratio protéiné athlétique (2,2g/kg)."
-
       },
-
       muscle_gain: {
-
         id: "muscle_gain",
-
         title: "🏋️ Prise de Masse Maigre",
-
         badge: "+300 kcal & P+ 2.0g/kg",
-
         delta: 300,
-
         steps: 8500,
-
         protein_per_kg: 2.0,
-
         desc: "Surplus contrôlé +300 kcal/j, protéines 2,0g/kg, glucides soutenus",
-
         recommendation: "Surplus calorique maîtrisé (+300 kcal) pour soutenir l'anabolisme musculaire et la récupération."
-
       }
-
     };
 
-
-
     function initDates() {
-
       const todayIso = new Date().toISOString().split('T')[0];
-
       const elMealDate = document.getElementById('meal-date-input');
-
       const elWeightDate = document.getElementById('input-weight-date');
-
       const elActDate = document.getElementById('input-act-date');
-
       if (elMealDate) elMealDate.value = todayIso;
-
       if (elWeightDate) elWeightDate.value = todayIso;
-
       if (elActDate) elActDate.value = todayIso;
-
     }
 
-
-
     // Gestion des onglets
-
     // switchTab est délégué à static/modules/lazy.js (Architecture 6 onglets & lazy loading)
 
-
-
     // Chargement des données depuis FastAPI avec fallback
-
     async function loadDashboardData() {
       const refreshIcon = document.getElementById('refresh-icon');
       if (refreshIcon) refreshIcon.classList.add('animate-spin');
-
       try {
-
         const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `?user_id=${window.currentReadOnlyFriend.friend_id}` : '';
-
         // Chargement parallèle de la configuration backend et du dashboard pour réduire le TTFB initial
         const [, res] = await Promise.all([
           loadConfig(),
           apiFetch(`/api/dashboard${readOnlyParam}`)
         ]);
-
         if (res.ok) {
-
           currentData = await res.json();
-
           if (currentData && currentData.profile && currentData.profile.goal_profile_id && GOAL_PROFILES[currentData.profile.goal_profile_id]) {
             activeGoalProfileId = currentData.profile.goal_profile_id;
           }
-
         } else {
-
           console.warn("API dashboard indisponible, bascule sur les données fallback.");
-
           currentData = FALLBACK_DASHBOARD_DATA;
-
         }
-
       } catch (err) {
-
         console.warn("Erreur réseau API, utilisation fallback :", err);
-
         currentData = FALLBACK_DASHBOARD_DATA;
-
       } finally {
-
         if (refreshIcon) refreshIcon.classList.remove('animate-spin');
-
         renderAllViews();
-
       }
-
     }
-
-
 
     function refreshData() {
-
       // Actualisation manuelle : on invalide tous les caches (onglets + journal + métriques)
-
       currentMetricsData = null;
-
       if (typeof invalidateTabCaches === 'function') invalidateTabCaches();
-
       if (typeof invalidateJournalCache === 'function') invalidateJournalCache();
-
       if (typeof markAllTabsDirty === 'function') markAllTabsDirty();
-
       loadDashboardData();
-
     }
-
-
 
     // --- Rendu ciblé (Lot 2 - BALI-90) ---------------------------------------
-
     /** Rend la vue d'un onglet donné (sans toucher aux autres onglets). */
-
     function renderTabView(tabId) {
-
       switch (tabId) {
-
         case 'summary': renderSummaryView(); break;
-
         case 'weight': renderWeightView(); break;
-
         case 'nutrition': renderNutritionView(); break;
-
         case 'activity': renderActivityView(); break;
-
         case 'goals': if (typeof renderGoalsView === 'function') renderGoalsView(); break;
-
         case 'devices': renderDevicesView(); break;
-
         default: break;
-
       }
-
     }
-
-
 
     /** Marque un onglet à rafraîchir lors de sa prochaine ouverture. */
-
     function markTabDirty(tabId) {
-
       if (!tabId || tabId === currentActiveTab) return;
-
       dirtyTabs.add(tabId);
-
     }
-
-
 
     function markAllTabsDirty() {
-
       TAB_VIEW_IDS.forEach(markTabDirty);
-
     }
-
-
 
     /**
-
      * Rend la vue d'un onglet si elle a été invalidée (données rafraîchies alors
-
      * qu'elle était masquée). Retourne true si un rendu a eu lieu.
-
      */
-
     function renderTabViewIfDirty(tabId) {
-
       if (!dirtyTabs.has(tabId)) return false;
-
       dirtyTabs.delete(tabId);
-
       try {
-
         renderTabView(tabId);
-
         refreshIcons(document.getElementById(`view-${tabId}`));
-
       } catch (err) {
-
         console.warn(`[render] Vue ${tabId} non rendue :`, err);
-
       }
-
       return true;
-
     }
-
-
 
     // Rendu global de l'interface : ne rend immédiatement que l'onglet actif.
-
     function renderAllViews() {
-
       const active = currentActiveTab || 'summary';
-
       TAB_VIEW_IDS.forEach(tabId => {
-
         if (tabId === active) {
-
           dirtyTabs.delete(tabId);
-
           renderTabView(tabId);
-
         } else {
-
           dirtyTabs.add(tabId);
-
         }
-
       });
-
       // Icônes recréées uniquement dans la vue affichée
-
       refreshIcons(document.getElementById(`view-${active}`) || document.body);
-
     }
 
-
-
     // 1. Rendu Synthèse Quotidienne
-
     function renderNutritionView() {
-
       const meals = currentData.recent_meals || [];
-
       if (typeof renderMacroGoalsPanel === 'function') {
         renderMacroGoalsPanel('nutrition');
       }
-
       const badge = document.getElementById('meals-count-badge');
-
       if (badge) badge.innerText = `${meals.length} repas récents`;
 
-
-
       // Calcul des 7 derniers jours (utilisé par le graphique ET le tableau récapitulatif)
-
       const days = [];
-
       for (let i = 6; i >= 0; i--) {
-
         const d = new Date();
-
         d.setDate(d.getDate() - i);
-
         days.push(d.toISOString().split('T')[0]);
-
       }
-
-
 
       const bfast = [];
-
       const lunch = [];
-
       const dinner = [];
-
       const snack = [];
-
       const protByDay = [];
 
-
-
       days.forEach(day => {
-
         const dayMeals = meals.filter(m => m.date === day);
-
         let b = 0, l = 0, d = 0, s = 0, pDay = 0;
-
         dayMeals.forEach(m => {
-
           if (m.meal_type === 'breakfast') b += m.total_calories_kcal;
-
           else if (m.meal_type === 'lunch') l += m.total_calories_kcal;
-
           else if (m.meal_type === 'dinner') d += m.total_calories_kcal;
-
           else if (m.meal_type === 'snack') s += m.total_calories_kcal;
-
           pDay += Number(m.protein_g || 0);
-
         });
-
-
 
         bfast.push(b); lunch.push(l); dinner.push(d); snack.push(s); protByDay.push(pDay);
-
       });
 
-
-
       // Graphique empilé des 7 derniers jours
-
       const ctx = document.getElementById('chart-meals-stacked');
-
       if (ctx) {
-
         if (chartMealsStacked) { try { chartMealsStacked.destroy(); } catch (e) { /* ignore */ } }
 
-
-
         try {
-
         chartMealsStacked = new Chart(ctx, {
-
           type: 'bar',
-
           data: {
-
             labels: days.map(d => d.slice(5)),
-
             datasets: [
-
               { label: 'Petit-déjeuner', data: bfast, backgroundColor: '#f59e0b' },
-
               { label: 'Déjeuner', data: lunch, backgroundColor: '#22D3EE' },
-
               { label: 'Dîner', data: dinner, backgroundColor: '#7C3AED' },
-
               { label: 'Collation', data: snack, backgroundColor: '#C026D3' },
-
               {
-
                 type: 'line',
-
                 label: `Cible (${(currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0} kcal)`,
                 data: days.map(() => (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0),
-
                 borderColor: '#ef4444',
-
                 borderDash: [4, 4],
-
                 pointRadius: 0,
-
                 borderWidth: 2
-
               }
-
             ]
-
           },
-
           options: {
-
             responsive: true,
-
             maintainAspectRatio: false,
-
             scales: {
-
               x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
-
               y: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
-
             },
-
             plugins: {
-
               legend: { position: 'top', labels: { color: '#cbd5e1' } }
-
             }
-
           }
-
         });
-
         } catch (err) {
-
           console.warn('[render] Graphique repas non rendu', err);
-
           chartMealsStacked = null;
-
         }
-
       }
 
-
-
       // Rendu du Tableau Récapitulatif des Calories par Jour & par Repas
-
       const tableCaloriesBody = document.getElementById('table-meals-calories-body');
-
       const todayBadge = document.getElementById('calories-table-today-badge');
-
       if (tableCaloriesBody) {
-
         const todayStr = new Date().toISOString().split('T')[0];
-
         let todayTotal = 0;
 
-
-
         const reversedDays = [...days].reverse();
-
         tableCaloriesBody.innerHTML = reversedDays.map(day => {
-
           const idx = days.indexOf(day);
-
           const b = bfast[idx] || 0;
-
           const l = lunch[idx] || 0;
-
           const s = snack[idx] || 0;
-
           const d = dinner[idx] || 0;
-
           const p = Math.round(protByDay[idx] || 0);
-
           const targetsObj = (currentData && currentData.summary && currentData.summary.targets) || {};
           const rulesObj = targetsObj.rules || {};
           const protTarget = Math.round(targetsObj.protein_g || 140);
           const protStatus = typeof evaluateNutrientStatus === 'function'
             ? evaluateNutrientStatus('protein', p, protTarget, rulesObj.protein)
             : { state: p >= Math.round(protTarget * 0.95) ? 'reached' : 'below' };
-
           const total = Math.round(b + l + s + d);
-
           const isToday = day === todayStr;
-
           if (isToday) todayTotal = total;
 
-
-
           const target = Math.round(targetsObj.calories || (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0);
-
           const pct = target > 0 ? Math.min(Math.round((total / target) * 100), 100) : 0;
-
           const diff = total - target;
           const calStatus = typeof evaluateNutrientStatus === 'function'
             ? evaluateNutrientStatus('calories', total, target, rulesObj.calories)
             : { state: total === 0 ? 'empty' : (total <= target ? 'reached' : 'over') };
 
-
-
           let statusBadge = '';
-
           if (total === 0 || calStatus.state === 'empty') {
-
             statusBadge = '<span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 font-medium">Non renseigné</span>';
-
           } else if (calStatus.state === 'reached') {
-
             statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">🟢 Conforme (${diff >= 0 ? '+' : ''}${diff} kcal)</span>`;
-
           } else if (calStatus.state === 'close') {
-
             statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20">🟡 Proche (${diff >= 0 ? '+' : ''}${diff} kcal)</span>`;
-
           } else if (calStatus.state === 'over') {
-
             statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 font-bold border border-rose-500/20">🔴 Dépassé (+${diff} kcal)</span>`;
-
           } else {
-
             statusBadge = `<span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 font-bold border border-sky-500/20">🔵 Sous cible (${diff} kcal)</span>`;
-
           }
-
-
 
           return `
-
             <tr class="hover:bg-[#1F2A3C]/40 transition-colors ${isToday ? 'bg-indigo-500/10 font-medium' : ''}">
-
               <td class="py-2.5 px-3">
-
                 <div class="flex items-center space-x-1.5">
-
                   <span class="font-bold text-white">${day}</span>
-
                   ${isToday ? `<span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/30 text-indigo-300 font-bold">Aujourd'hui</span>` : ""}
-
                 </div>
-
               </td>
-
               <td class="py-2.5 px-3 text-amber-400 font-semibold">${b > 0 ? Math.round(b) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
-
               <td class="py-2.5 px-3 text-brand-300 font-semibold">${l > 0 ? Math.round(l) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
-
               <td class="py-2.5 px-3 text-pink-400 font-semibold">${s > 0 ? Math.round(s) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
-
               <td class="py-2.5 px-3 text-indigo-400 font-semibold">${d > 0 ? Math.round(d) + ' kcal' : '<span class="text-slate-600">-</span>'}</td>
-
               <td class="py-2.5 px-3">
-
                 <span class="font-bold ${protStatus.state === 'reached' ? 'text-emerald-400' : (p > 0 ? 'text-brand-300' : 'text-slate-600')}">${p > 0 ? p + ' g' : '-'}</span>
-
                 ${p > 0 ? `<span class="text-[10px] text-slate-400"> / ${Math.round(protTarget)}g</span>` : ''}
-
               </td>
-
               <td class="py-2.5 px-3">
-
                 <span class="text-sm font-extrabold text-white">${total} kcal</span>
-
               </td>
-
               <td class="py-2.5 px-3">
-
                 <div class="flex items-center space-x-2">
-
                   <div class="w-16 bg-[#0B0F17] rounded-full h-1.5 overflow-hidden border border-[#1F2A3C]">
-
                     <div class="h-full ${total > target ? 'bg-amber-400' : 'bg-emerald-400'}" style="width: ${pct}%"></div>
-
                   </div>
-
                   <span class="text-[10px] text-slate-400 font-mono">${pct}%</span>
-
                 </div>
-
               </td>
-
               <td class="py-2.5 px-3">${statusBadge}</td>
-
             </tr>
-
           `;
-
         }).join('');
 
-
-
         const todayTarget = (currentData && currentData.summary && currentData.summary.target_calories_intake) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0;
-
         if (todayBadge) {
-
           todayBadge.textContent = `Aujourd'hui : ${todayTotal} kcal / ${todayTarget} kcal`;
-
           if (todayTotal > todayTarget) {
-
             todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 self-start sm:self-auto";
-
           } else {
-
             todayBadge.className = "text-xs font-bold px-3 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/20 self-start sm:self-auto";
-
           }
-
         }
-
       }
 
-
-
       // Liste des cartes de repas
-
       const container = document.getElementById('meals-list-container');
-
       if (container) {
-
         const mealTypeLabels = {
-
           breakfast: { label: "Petit-déjeuner", color: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
-
           lunch: { label: "Déjeuner", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
-
           dinner: { label: "Dîner", color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/20" },
-
           snack: { label: "Collation", color: "text-pink-400 bg-pink-400/10 border-pink-400/20" }
-
         };
-
-
 
         const typeFilterEl = document.getElementById('meals-history-type-filter');
         const dateFilterEl = document.getElementById('meals-history-date-filter');
         const filterType = typeFilterEl ? typeFilterEl.value : '';
         const filterDate = dateFilterEl ? dateFilterEl.value : '';
-
         const filteredMeals = meals.filter(m => {
           if (filterType && m.meal_type !== filterType) return false;
           if (filterDate && String(m.date || '').slice(0, 10) !== filterDate) return false;
           return true;
         });
-
         if (badge) badge.innerText = `${filteredMeals.length} repas${filteredMeals.length !== meals.length ? ' / ' + meals.length : ''}`;
-
         if (filteredMeals.length === 0) {
           container.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-slate-400 bg-[#0B0F17] border border-[#1F2A3C] rounded-xl">Aucun repas enregistré pour ces critères.</div>';
         } else {
         container.innerHTML = filteredMeals.map(m => {
-
           const typeInfo = mealTypeLabels[m.meal_type] || { label: m.meal_type, color: "text-slate-400" };
-
           const itemsStr = escapeHtml((m.items || []).map(i => `${i.name} (${Math.round(i.portion_g || 100)}g)`).join(', '));
-
           const photoUrl = sanitizeUrl(m.photo_data_url);
-
           const mealIdx = meals.indexOf(m);
 
-          
-
           return `
-
             <div class="bg-[#0B0F17] border border-[#1F2A3C] rounded-xl p-4 flex flex-col justify-between space-y-3">
-
               <div class="flex items-start justify-between">
-
                 <div>
-
                   <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeInfo.color}">
-
                     ${escapeHtml(typeInfo.label)}
-
                   </span>
-
                   <div class="text-xs text-slate-400 mt-1">${escapeHtml(m.date || '')}</div>
-
                 </div>
-
                 <div class="text-right">
-
                   <span class="text-base font-extrabold text-white">${Math.round(m.total_calories_kcal)}</span>
-
                   <span class="text-xs text-slate-400">kcal</span>
-
                 </div>
-
               </div>
-
-
 
               <!-- Photo éventuelle -->
-
               ${photoUrl ? `
-
                 <div class="rounded-lg overflow-hidden border border-[#1F2A3C] max-h-32">
-
                   <img src="${photoUrl}" alt="Photo repas" class="w-full h-full object-cover">
-
                 </div>
-
               ` : ''}
 
-
-
               <!-- Aliments -->
-
               <p class="text-xs text-slate-300 line-clamp-2">
-
                 <span class="font-medium text-slate-400">Aliments:</span> ${itemsStr || 'Repas composé'}
-
               </p>
 
-
-
               <!-- Macros -->
-
               <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[#1F2A3C]/70">
-
                 <span class="text-brand-400 font-medium">P: ${Math.round(m.protein_g)}g</span>
-
                 <span class="text-sky-400 font-medium">G: ${Math.round(m.carbs_g)}g</span>
-
                 <span class="text-amber-400 font-medium">L: ${Math.round(m.fat_g)}g</span>
-
                 <span class="text-slate-400">Fibres: ${m.fiber_g ? Math.round(m.fiber_g) + 'g' : '--'}</span>
-
               </div>
 
-
-
               <!-- Actions : Copier aujourd'hui & Sauvegarde Plat Type -->
-
               <div class="pt-1 flex flex-wrap items-center justify-end gap-2">
                 <button type="button" onclick="copyMealToToday(${mealIdx})" class="write-action-btn text-[11px] font-semibold text-brand-400 hover:text-brand-300 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/25 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition-colors" title="Copier ce repas au même repas d'aujourd'hui">
                   <i data-lucide="copy" class="w-3 h-3"></i>
                   <span>Copier aujourd'hui</span>
                 </button>
-
                 <button onclick="saveLoggedMealAsTemplate(${mealIdx})" class="text-[10px] text-amber-400 hover:text-amber-300 flex items-center space-x-1 py-1 px-2 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 transition-colors">
-
                   <i data-lucide="star" class="w-3 h-3"></i>
-
                   <span>⭐ Enregistrer comme plat type</span>
-
                 </button>
-
               </div>
-
             </div>
-
           `;
-
         }).join('');
         }
-
       }
-
     }
-
     function resetMealsHistoryFilters() {
       const typeEl = document.getElementById('meals-history-type-filter');
       const dateEl = document.getElementById('meals-history-date-filter');
@@ -837,7 +443,6 @@
       renderNutritionView();
     }
     window.resetMealsHistoryFilters = resetMealsHistoryFilters;
-
     async function copyMealToToday(mealIdx) {
       const meals = (currentData && currentData.recent_meals) || [];
       const m = meals[mealIdx];
@@ -878,86 +483,43 @@
     }
     window.copyMealToToday = copyMealToToday;
 
-
-
     // 4. Rendu Vue Activité & Biomécanique Avancée (Palier 3)
-
     async function loadMetricsData(days = 30) {
-
       try {
-
         const readOnlyParam = (window.currentReadOnlyFriend && window.currentReadOnlyFriend.active && window.currentReadOnlyFriend.friend_id) ? `&user_id=${window.currentReadOnlyFriend.friend_id}` : '';
-
         const resp = await API.get(`/api/metrics?days=${days}${readOnlyParam}`);
-
         if (resp.ok) {
-
           currentMetricsData = await resp.json();
-
           return currentMetricsData;
-
         }
-
       } catch (err) {
-
         console.warn("[Metrics] Impossible de charger /api/metrics:", err);
-
       }
-
       return null;
-
     }
-
-
-
-
 
     // 5. Rendu Vue Hub Objets Connectés (Uniquement les appareils ajoutés/connectés par l'utilisateur)
-
         function formatRelativeTime(isoString) {
-
       if (!isoString) return null;
-
       try {
-
         const d = new Date(isoString);
-
         if (isNaN(d.getTime())) return null;
-
         const now = new Date();
-
         const diffMs = now - d;
-
         const diffMins = Math.floor(diffMs / 60000);
-
         if (diffMins < 1) return "À l'instant";
-
         if (diffMins === 1) return "Il y a 1 minute";
-
         if (diffMins < 60) return `Il y a ${diffMins} minutes`;
-
         const diffHours = Math.floor(diffMins / 60);
-
         if (diffHours === 1) return "Il y a 1 heure";
-
         if (diffHours < 24) return `Il y a ${diffHours} heures`;
-
         const diffDays = Math.floor(diffHours / 24);
-
         if (diffDays === 1) return "Hier";
-
         return `Il y a ${diffDays} jours`;
-
       } catch (e) {
-
         return null;
-
       }
-
     }
-
-
-
 
     async function triggerDeviceSync(deviceId, options) {
       options = options || {};
@@ -967,24 +529,20 @@
           ? `Synchronisation de ${devName} depuis le ${options.start_date}...`
           : (options.since_last_sync ? `Synchronisation incrémentale de ${devName}...` : `Synchronisation de ${devName} en cours...`);
         if (typeof showToast === 'function') showToast(loadingMsg, 'info');
-
         const qParams = new URLSearchParams();
         if (options.start_date) qParams.append('start_date', options.start_date);
         if (options.since_last_sync) qParams.append('since_last_sync', 'true');
         const qs = qParams.toString() ? ('?' + qParams.toString()) : '';
-
         const payloadBody = {
           device_id: deviceId,
           start_date: options.start_date || null,
           since_last_sync: Boolean(options.since_last_sync)
         };
-
         const res = await apiFetch('/api/devices/' + deviceId + '/sync' + qs, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payloadBody)
         });
-
         if (res.ok) {
           const data = await res.json();
           const periodInfo = data.start_date ? ' (période: ' + data.start_date + ' -> ' + data.end_date + ')' : '';
@@ -1016,3792 +574,309 @@
         if (typeof showToast === 'function') showToast('Erreur lors de la synchronisation : ' + (err.message || err), 'error');
       }
     }
-
     async function disconnectDevice(deviceId) {
-
       if (!confirm(`Êtes-vous sûr de vouloir déconnecter et révoquer l'appareil '${deviceId}' ?`)) return;
-
       try {
-
         const res = await apiFetch(`/api/devices/${deviceId}`, {
-
           method: 'DELETE'
-
         });
-
         if (res.ok) {
-
           if (typeof showToast === 'function') showToast(`Appareil '${deviceId}' déconnecté et identifiants révoqués.`, 'info');
-
           await loadDashboardData();
-
         } else {
-
           if (typeof showToast === 'function') showToast(`Erreur lors de la déconnexion.`, 'error');
-
         }
-
       } catch (err) {
-
         if (typeof showToast === 'function') showToast(`Erreur réseau lors de la déconnexion.`, 'error');
-
       }
-
     }
-
 
 
     // =====================================================================
-
-    // LOGIQUE MODAL PHOTO REPAS & CURSEUR
-
-    // =====================================================================
-
-    function openMealModal(mealType) {
-
-      if (mealType) {
-
-        const sel = document.getElementById('meal-type-select');
-
-        if (sel) sel.value = mealType;
-
-      }
-
-      const dateInp = document.getElementById('meal-date-input');
-
-      if (dateInp && !dateInp.value) {
-
-        const activeDate = (typeof window.getActiveMealDate === 'function')
-
-          ? window.getActiveMealDate()
-
-          : new Date().toISOString().split('T')[0];
-
-        dateInp.value = activeDate;
-
-      }
-
-      document.getElementById('modal-meal').classList.remove('hidden');
-
-    }
-
-    function closeMealModal() {
-
-      document.getElementById('modal-meal').classList.add('hidden');
-
-    }
-
-
-
-    function handleMealPhotoSelected(event) {
-
-      const file = event.target.files[0];
-
-      if (!file) return;
-
-
-
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-
-        currentUploadedPhotoUrl = e.target.result;
-
-        const preview = document.getElementById('meal-photo-preview');
-
-        const placeholder = document.getElementById('meal-photo-placeholder');
-
-        preview.src = currentUploadedPhotoUrl;
-
-        preview.classList.remove('hidden');
-
-        placeholder.classList.add('hidden');
-
-      };
-
-      reader.readAsDataURL(file);
-
-    }
-
-
-
-    async function triggerMealEstimation() {
-
-      const btn = document.getElementById('btn-estimate-meal');
-
-      btn.disabled = true;
-
-      btn.innerHTML = `<span class="animate-spin mr-2">⏳</span> Analyse IA en cours...`;
-
-
-
-      const desc = document.getElementById('meal-desc-input').value;
-
-      const mealType = document.getElementById('meal-type-select').value;
-
-      const scale = parseFloat(document.getElementById('portion-scale-range').value);
-
-
-
-      try {
-
-        const res = await apiFetch('/api/meals/estimate', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({
-
-            photo_data_url: currentUploadedPhotoUrl,
-
-            description: desc,
-
-            meal_type: mealType,
-
-            portion_scale: scale
-
-          })
-
-        });
-
-
-
-        if (res.ok) {
-
-          currentEstimatedMeal = await res.json();
-
-        } else {
-
-          // Fallback local estimation
-
-          currentEstimatedMeal = {
-
-            items: [
-
-              { name: "Blanc de poulet", portion_g: 150 * scale, calories_kcal: 180 * scale, protein_g: 39 * scale, carbs_g: 0, fat_g: 2.7 * scale },
-
-              { name: "Riz basmati", portion_g: 180 * scale, calories_kcal: 234 * scale, protein_g: 4.8 * scale, carbs_g: 50.4 * scale, fat_g: 0.5 * scale },
-
-              { name: "Brocolis", portion_g: 150 * scale, calories_kcal: 52 * scale, protein_g: 4.2 * scale, carbs_g: 10.5 * scale, fat_g: 0.6 * scale }
-
-            ],
-
-            total_calories_kcal: Math.round(466 * scale),
-
-            total_protein_g: Math.round(48 * scale),
-
-            total_carbs_g: Math.round(61 * scale),
-
-            total_fat_g: Math.round(3.8 * scale)
-
-          };
-
-        }
-
-      } catch (err) {
-
-        currentEstimatedMeal = {
-
-          items: [
-
-            { name: "Assiette équilibrée", portion_g: 450 * scale, calories_kcal: 550 * scale, protein_g: 35 * scale, carbs_g: 65 * scale, fat_g: 14 * scale }
-
-          ],
-
-          total_calories_kcal: Math.round(550 * scale),
-
-          total_protein_g: Math.round(35 * scale),
-
-          total_carbs_g: Math.round(65 * scale),
-
-          total_fat_g: Math.round(14 * scale)
-
-        };
-
-      } finally {
-
-        btn.disabled = false;
-
-        btn.innerHTML = `<i data-lucide="sparkles" class="w-4 h-4 mr-1"></i> Ré-estimer les Calories & Macros`;
-
-        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-        renderEstimationResult();
-
-      }
-
-    }
-
-
-
-    function updatePortionScale(val) {
-
-      const scale = parseFloat(val);
-
-      const label = scale === 1.0 ? "1.0x (Normale)" : (scale < 1.0 ? `${scale}x (Petite)` : `${scale}x (Grande/Double)`);
-
-      document.getElementById('portion-scale-val').innerText = label;
-
-
-
-      if (currentEstimatedMeal && currentEstimatedMeal.items) {
-
-        // Recalcul proportionnel immédiat dans l'interface
-
-        triggerMealEstimation();
-
-      }
-
-    }
-
-
-
-    function renderEstimationResult() {
-
-      if (!currentEstimatedMeal) return;
-
-      document.getElementById('meal-estimation-result').classList.remove('hidden');
-
-
-
-      document.getElementById('est-calories').innerText = `${Math.round(currentEstimatedMeal.total_calories_kcal || 0)} kcal`;
-
-      document.getElementById('est-protein').innerText = `${Math.round(currentEstimatedMeal.total_protein_g || 0)}g`;
-
-      document.getElementById('est-carbs').innerText = `${Math.round(currentEstimatedMeal.total_carbs_g || 0)}g`;
-
-      document.getElementById('est-fat').innerText = `${Math.round(currentEstimatedMeal.total_fat_g || 0)}g`;
-
-
-
-      const listEl = document.getElementById('est-items-list');
-
-      listEl.innerHTML = (currentEstimatedMeal.items || []).map(item => `
-
-        <div class="flex items-center justify-between p-2 rounded-lg bg-[#151D2A] border border-[#1F2A3C]">
-
-          <div>
-
-            <span class="font-bold text-white text-xs">${escapeHtml(item.name || '')}</span>
-
-            <span class="text-[10px] text-slate-400 block">${Math.round(item.portion_g)}g • ${Math.round(item.calories_kcal)} kcal</span>
-
-          </div>
-
-          <div class="text-[10px] text-slate-300">
-
-            P: <b class="text-brand-400">${Math.round(item.protein_g)}g</b> | 
-
-            G: <b class="text-sky-400">${Math.round(item.carbs_g)}g</b> | 
-
-            L: <b class="text-amber-400">${Math.round(item.fat_g)}g</b>
-
-          </div>
-
-        </div>
-
-      `).join('');
-
-    }
-
-
-
-    async function saveMealToJournal() {
-
-      const btn = document.getElementById('btn-save-meal');
-
-      btn.disabled = true;
-
-      btn.innerHTML = `Enregistrement...`;
-
-
-
-      const dateVal = document.getElementById('meal-date-input').value;
-
-      const mealType = document.getElementById('meal-type-select').value;
-
-      const scale = parseFloat(document.getElementById('portion-scale-range').value);
-
-
-
-      const payload = {
-
-        date: dateVal,
-
-        meal_type: mealType,
-
-        photo_data_url: currentUploadedPhotoUrl,
-
-        portion_scale: scale,
-
-        items: currentEstimatedMeal ? currentEstimatedMeal.items : []
-
-      };
-
-
-
-      try {
-
-        await apiFetch('/api/meals', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(payload)
-
-        });
-
-      } catch (err) {
-
-        console.warn("Save fallback");
-
-      }
-
-
-
-      btn.disabled = false;
-
-      btn.innerHTML = `<i data-lucide="check" class="w-4 h-4 mr-1"></i> Enregistré !`;
-
-      setTimeout(() => {
-
-        closeMealModal();
-
-        loadDashboardData();
-
-        switchTab('nutrition');
-
-      }, 500);
-
-    }
-
-
-
-    // =====================================================================
-
-    // GESTION BIBLIOTHÈQUE DE PLATS RÉUTILISABLES & 4 REPAS
-
-    // =====================================================================
-
-    let currentSavedMealsCache = [];
-
-    let currentSavedMealsFilter = null;
-
-    let currentSavedMealPhotoBase64 = null;
-
-
-
-    function openSavedMealsLibraryModal(filterType = null) {
-
-      currentSavedMealsFilter = filterType;
-
-      const modal = document.getElementById('modal-saved-meals');
-
-      if (modal) modal.classList.remove('hidden');
-
-      updateSavedMealFilterButtonsUI();
-
-      loadAndRenderSavedMeals();
-
-    }
-
-
-
-    function closeSavedMealsLibraryModal() {
-
-      const modal = document.getElementById('modal-saved-meals');
-
-      if (modal) modal.classList.add('hidden');
-
-    }
-
-
-
-    function filterSavedMealsLibrary(mealType) {
-
-      currentSavedMealsFilter = mealType;
-
-      updateSavedMealFilterButtonsUI();
-
-      loadAndRenderSavedMeals();
-
-    }
-
-
-
-    function updateSavedMealFilterButtonsUI() {
-
-      const types = ['all', 'breakfast', 'lunch', 'snack', 'dinner'];
-
-      types.forEach(t => {
-
-        const btn = document.getElementById(`filter-saved-${t}`);
-
-        if (!btn) return;
-
-        const isActive = (t === 'all' && !currentSavedMealsFilter) || (currentSavedMealsFilter === t);
-
-        if (isActive) {
-
-          btn.className = "saved-meal-filter-btn flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition-colors flex items-center justify-center space-x-1";
-
-        } else {
-
-          btn.className = "saved-meal-filter-btn flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center justify-center space-x-1";
-
-        }
-
-      });
-
-    }
-
-
-
-    async function loadAndRenderSavedMeals() {
-
-      const container = document.getElementById('saved-meals-cards-container');
-
-      if (!container) return;
-
-      container.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-slate-400"><span class="animate-spin inline-block mr-2">⏳</span> Chargement des plats réutilisables...</div>';
-
-
-
-      try {
-
-        let url = '/api/meals/saved';
-
-        if (currentSavedMealsFilter) {
-
-          url += `?meal_type=${currentSavedMealsFilter}`;
-
-        }
-
-        const res = await apiFetch(url);
-
-        if (res.ok) {
-
-          currentSavedMealsCache = await res.json();
-
-          renderSavedMealsCards(currentSavedMealsCache);
-
-        } else {
-
-          container.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-rose-400">Impossible de charger les plats sauvegardés.</div>';
-
-        }
-
-      } catch (err) {
-
-        container.innerHTML = '<div class="col-span-full py-8 text-center text-xs text-rose-400">Erreur réseau lors de la récupération des plats.</div>';
-
-      }
-
-    }
-
-
-
-    function renderSavedMealsCards(meals) {
-
-      const container = document.getElementById('saved-meals-cards-container');
-
-      if (!container) return;
-
-
-
-      if (!meals || meals.length === 0) {
-
-        container.innerHTML = `
-
-          <div class="col-span-full py-8 text-center space-y-3 bg-[#0B0F17]/50 border border-dashed border-[#1F2A3C] rounded-xl p-4">
-
-            <span class="text-3xl block">🍽️</span>
-
-            <p class="text-xs text-slate-400">Aucun plat réutilisable enregistré pour ce repas.</p>
-
-            <button onclick="openCreateSavedMealModal(currentSavedMealsFilter)" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold inline-flex items-center space-x-1">
-
-              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-
-              <span>Créer un premier plat</span>
-
-            </button>
-
-          </div>
-
-        `;
-
-        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch(e){} }
-
-        return;
-
-      }
-
-
-
-      const mealLabels = {
-
-        breakfast: { label: "Petit-déjeuner 🥐", color: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
-
-        lunch: { label: "Déjeuner 🥗", color: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20" },
-
-        snack: { label: "Goûter 🍎", color: "text-pink-400 bg-pink-400/10 border-pink-400/20" },
-
-        dinner: { label: "Dîner 🍲", color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/20" }
-
-      };
-
-
-
-      container.innerHTML = meals.map(m => {
-
-        const typeInfo = mealLabels[m.meal_type] || { label: m.meal_type, color: "text-slate-400" };
-
-        const safeName = escapeHtml(m.name || '');
-
-        const safeServing = escapeHtml(m.serving_size || '1 portion');
-
-        const photoUrl = sanitizeUrl(m.photo_url);
-
-        const mId = parseInt(m.id, 10) || 0;
-
-        const mType = escapeHtml(m.meal_type || '');
-
-
-
-        return `
-
-          <div class="bg-[#0B0F17] border border-[#1F2A3C] hover:border-indigo-500/30 rounded-xl p-3 flex flex-col justify-between space-y-2 transition-all">
-
-            <div class="space-y-1.5">
-
-              <div class="flex items-start justify-between gap-1">
-
-                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border ${typeInfo.color}">
-
-                  ${escapeHtml(typeInfo.label)}
-
-                </span>
-
-                <div class="flex items-center space-x-1">
-
-                  ${m.is_favorite ? '<span class="text-xs text-amber-400">⭐</span>' : ''}
-
-                  <button onclick="deleteSavedMeal(${mId})" title="Supprimer ce plat" class="p-1 text-slate-500 hover:text-rose-400 rounded transition-colors">
-
-                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-
-                  </button>
-
-                </div>
-
-              </div>
-
-
-
-              ${photoUrl ? `
-
-                <div class="rounded-lg overflow-hidden border border-[#1F2A3C] h-24 w-full">
-
-                  <img src="${photoUrl}" alt="${safeName}" class="w-full h-full object-cover">
-
-                </div>
-
-              ` : ''}
-
-
-
-              <div>
-
-                <h4 class="font-bold text-white text-xs leading-tight line-clamp-1">${safeName}</h4>
-
-                <div class="text-[10px] text-slate-400 mt-0.5">${safeServing} ${m.quantity_grams ? '(' + Math.round(m.quantity_grams) + 'g)' : ''}</div>
-
-              </div>
-
-
-
-              <!-- Macros -->
-
-              <div class="flex items-center justify-between text-[10px] pt-1 border-t border-[#1F2A3C]/70">
-
-                <span class="font-bold text-white">${Math.round(m.calories)} kcal</span>
-
-                <span class="text-brand-400">P:${Math.round(m.protein_g)}g</span>
-
-                <span class="text-sky-400">G:${Math.round(m.carbs_g)}g</span>
-
-                <span class="text-amber-400">L:${Math.round(m.fat_g)}g</span>
-
-              </div>
-
-            </div>
-
-
-
-            <!-- Bouton Ajouter au Journal 1-clic -->
-
-            <div class="pt-2">
-
-              <button onclick="logSavedMealDirectly(${mId}, '${mType}')" class="w-full py-1.5 px-2 rounded-lg bg-brand-600/20 hover:bg-brand-600 text-brand-300 hover:text-white border border-brand-500/30 text-[11px] font-bold flex items-center justify-center space-x-1.5 transition-all active:scale-95">
-
-                <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-
-                <span>+ Ajouter au Journal</span>
-
-              </button>
-
-            </div>
-
-          </div>
-
-        `;
-
-      }).join('');
-
-
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch(e){} }
-
-    }
-
-
-
-    async function logSavedMealDirectly(savedMealId, mealType) {
-
-      const activeDate = (typeof window.getActiveMealDate === 'function')
-
-        ? window.getActiveMealDate()
-
-        : new Date().toISOString().split('T')[0];
-
-      try {
-
-        if (typeof showToast === 'function') showToast("Ajout au journal alimentaire...", "info");
-
-        const res = await apiFetch(`/api/meals/saved/${savedMealId}/log`, {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({
-
-            date: activeDate,
-
-            meal_type: mealType,
-
-            portion_factor: 1.0
-
-          })
-
-        });
-
-
-
-        if (res.ok) {
-
-          const label = (typeof window.formatJournalDateLabel === 'function')
-
-            ? window.formatJournalDateLabel(activeDate)
-
-            : activeDate;
-
-          if (typeof showToast === 'function') showToast("Plat ajouté au journal " + label + " avec succès ! 🥐🥗🍎🍲", "success");
-
-          closeSavedMealsLibraryModal();
-
-          await loadDashboardData();
-
-          switchTab('nutrition');
-
-        } else {
-
-          if (typeof showToast === 'function') showToast("Erreur lors de l'ajout du plat au journal.", "error");
-
-        }
-
-      } catch (err) {
-
-        if (typeof showToast === 'function') showToast("Erreur réseau lors de l'ajout du plat.", "error");
-
-      }
-
-    }
-
-
-
-    async function deleteSavedMeal(mealId) {
-
-      if (!confirm("Voulez-vous vraiment supprimer ce plat de votre bibliothèque ?")) return;
-
-      try {
-
-        const res = await apiFetch(`/api/meals/saved/${mealId}`, { method: 'DELETE' });
-
-        if (res.ok) {
-
-          if (typeof showToast === 'function') showToast("Plat supprimé de la bibliothèque.", "info");
-
-          loadAndRenderSavedMeals();
-
-        } else {
-
-          alert("Erreur lors de la suppression du plat.");
-
-        }
-
-      } catch (err) {
-
-        alert("Erreur réseau lors de la suppression.");
-
-      }
-
-    }
-
-
-
-    function openCreateSavedMealModal(prefillType = null) {
-
-      const modal = document.getElementById('modal-create-saved-meal');
-
-      if (!modal) return;
-
-      const form = document.getElementById('form-create-saved-meal');
-
-      if (form) form.reset();
-
-      document.getElementById('saved-meal-edit-id').value = '';
-
-      currentSavedMealPhotoBase64 = null;
-
-      if (prefillType) {
-
-        document.getElementById('saved-meal-type').value = prefillType;
-
-      }
-
-      modal.classList.remove('hidden');
-
-    }
-
-
-
-    function closeCreateSavedMealModal() {
-
-      const modal = document.getElementById('modal-create-saved-meal');
-
-      if (modal) modal.classList.add('hidden');
-
-    }
-
-
-
-    function handleSavedMealPhotoFile(event) {
-
-      const file = event.target.files[0];
-
-      if (!file) return;
-
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-
-        currentSavedMealPhotoBase64 = e.target.result;
-
-        document.getElementById('saved-meal-photo-url').value = currentSavedMealPhotoBase64;
-
-      };
-
-      reader.readAsDataURL(file);
-
-    }
-
-
-
-    async function handleSavedMealFormSubmit(event) {
-
-      event.preventDefault();
-
-      const btn = document.getElementById('btn-submit-saved-meal');
-
-      btn.disabled = true;
-
-
-
-      const payload = {
-
-        name: document.getElementById('saved-meal-name').value.trim(),
-
-        meal_type: document.getElementById('saved-meal-type').value,
-
-        serving_size: document.getElementById('saved-meal-serving').value.trim() || "1 portion",
-
-        calories: parseFloat(document.getElementById('saved-meal-calories').value) || 0,
-
-        protein_g: parseFloat(document.getElementById('saved-meal-protein').value) || 0,
-
-        carbs_g: parseFloat(document.getElementById('saved-meal-carbs').value) || 0,
-
-        fat_g: parseFloat(document.getElementById('saved-meal-fat').value) || 0,
-
-        ingredients: document.getElementById('saved-meal-ingredients').value.trim() || null,
-
-        photo_url: document.getElementById('saved-meal-photo-url').value.trim() || currentSavedMealPhotoBase64 || null,
-
-        is_favorite: document.getElementById('saved-meal-favorite').checked
-
-      };
-
-
-
-      try {
-
-        const res = await apiFetch('/api/meals/saved', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(payload)
-
-        });
-
-
-
-        if (res.ok) {
-
-          if (typeof showToast === 'function') showToast("Plat réutilisable enregistré !", "success");
-
-          closeCreateSavedMealModal();
-
-          openSavedMealsLibraryModal(payload.meal_type);
-
-        } else {
-
-          alert("Erreur lors de l'enregistrement du plat.");
-
-        }
-
-      } catch (err) {
-
-        alert("Erreur réseau lors de l'enregistrement.");
-
-      } finally {
-
-        btn.disabled = false;
-
-      }
-
-    }
-
-
-
-    async function saveEstimatedMealAsTemplate() {
-
-      if (!currentEstimatedMeal) {
-
-        alert("Veuillez d'abord estimer le repas avant de l'enregistrer comme plat type.");
-
-        return;
-
-      }
-
-
-
-      const mealType = document.getElementById('meal-type-select').value;
-
-      const desc = document.getElementById('meal-desc-input').value.trim();
-
-      const defaultName = desc || (mealType === 'breakfast' ? "Mon Petit-déjeuner Type" : (mealType === 'lunch' ? "Mon Déjeuner Type" : (mealType === 'snack' ? "Mon Goûter Type" : "Mon Dîner Type")));
-
-      const mealName = prompt("Nom du plat type à enregistrer :", defaultName);
-
-      if (!mealName) return;
-
-
-
-      const payload = {
-
-        name: mealName.trim(),
-
-        meal_type: mealType,
-
-        serving_size: "1 portion",
-
-        calories: Math.round(currentEstimatedMeal.total_calories_kcal || 0),
-
-        protein_g: Math.round(currentEstimatedMeal.total_protein_g || 0),
-
-        carbs_g: Math.round(currentEstimatedMeal.total_carbs_g || 0),
-
-        fat_g: Math.round(currentEstimatedMeal.total_fat_g || 0),
-
-        fiber_g: Math.round(currentEstimatedMeal.total_fiber_g || 0),
-
-        ingredients: (currentEstimatedMeal.items || []).map(i => `${i.name} (${Math.round(i.portion_g || 100)}g)`).join(', '),
-
-        items: currentEstimatedMeal.items || [],
-
-        photo_url: currentUploadedPhotoUrl || null,
-
-        is_favorite: true
-
-      };
-
-
-
-      try {
-
-        const res = await apiFetch('/api/meals/saved', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(payload)
-
-        });
-
-
-
-        if (res.ok) {
-
-          if (typeof showToast === 'function') showToast(`⭐ '${payload.name}' enregistré dans vos plats réutilisables !`, "success");
-
-        } else {
-
-          alert("Erreur lors de l'enregistrement du plat type.");
-
-        }
-
-      } catch (err) {
-
-        alert("Erreur réseau.");
-
-      }
-
-    }
-
-
-
-    async function saveLoggedMealAsTemplate(mealIndex) {
-
-      const meals = currentData.recent_meals || [];
-
-      const m = meals[mealIndex];
-
-      if (!m) return;
-
-
-
-      const mealType = m.meal_type || 'lunch';
-
-      const itemsDesc = (m.items || []).map(i => i.name).join(', ');
-
-      const defaultName = itemsDesc ? `Plat ${itemsDesc.slice(0, 30)}` : `Plat ${mealType}`;
-
-      const mealName = prompt("Nom du plat à sauvegarder dans votre bibliothèque :", defaultName);
-
-      if (!mealName) return;
-
-
-
-      const payload = {
-
-        name: mealName.trim(),
-
-        meal_type: mealType,
-
-        serving_size: "1 portion",
-
-        calories: Math.round(m.total_calories_kcal || 0),
-
-        protein_g: Math.round(m.protein_g || 0),
-
-        carbs_g: Math.round(m.carbs_g || 0),
-
-        fat_g: Math.round(m.fat_g || 0),
-
-        fiber_g: Math.round(m.fiber_g || 0),
-
-        ingredients: (m.items || []).map(i => `${i.name} (${Math.round(i.portion_g || 100)}g)`).join(', '),
-
-        items: m.items || [],
-
-        photo_url: m.photo_data_url || null,
-
-        is_favorite: true
-
-      };
-
-
-
-      try {
-
-        const res = await apiFetch('/api/meals/saved', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(payload)
-
-        });
-
-
-
-        if (res.ok) {
-
-          if (typeof showToast === 'function') showToast(`⭐ '${payload.name}' sauvegardé dans votre bibliothèque !`, "success");
-
-        } else {
-
-          alert("Erreur lors de la sauvegarde du plat.");
-
-        }
-
-      } catch (err) {
-
-        alert("Erreur réseau.");
-
-      }
-
-    }
-
-
-
-    // =====================================================================
-
     // LOGIQUE SAISIE POIDS & ACTIVITÉ
-
     // =====================================================================
-
     function openWeightModal() {
-
       document.getElementById('modal-weight').classList.remove('hidden');
-
     }
-
     function closeWeightModal() {
-
       document.getElementById('modal-weight').classList.add('hidden');
-
     }
-
-
 
     async function submitWeightEntry() {
-
       const d = document.getElementById('input-weight-date').value;
-
       const w = parseFloat(document.getElementById('input-weight-val').value);
-
       const fat = parseFloat(document.getElementById('input-body-fat').value) || null;
-
       const muscle = parseFloat(document.getElementById('input-muscle-mass').value) || null;
 
-
-
       if (!w || isNaN(w)) {
-
         alert("Veuillez saisir un poids valide en kg.");
-
         return;
-
       }
 
-
-
       try {
-
         await apiFetch('/api/weights', {
-
           method: 'POST',
-
           headers: { 'Content-Type': 'application/json' },
-
           body: JSON.stringify({
-
             date: d,
-
             weight_kg: w,
-
             body_fat_pct: fat,
-
             muscle_mass_kg: muscle,
-
             source: "manual"
-
           })
-
         });
-
       } catch (e) {}
-
-
 
       closeWeightModal();
-
       loadDashboardData();
-
       switchTab('weight');
-
     }
-
-
 
     function openActivityModal() {
-
       document.getElementById('modal-activity').classList.remove('hidden');
-
     }
-
     function closeActivityModal() {
-
       document.getElementById('modal-activity').classList.add('hidden');
-
     }
-
-
 
     async function submitActivityEntry() {
-
       const d = document.getElementById('input-act-date').value;
-
       const steps = parseInt(document.getElementById('input-act-steps').value) || 0;
-
       const cals = parseFloat(document.getElementById('input-act-cals').value) || 0;
-
       const mins = parseInt(document.getElementById('input-act-minutes').value) || 0;
 
-
-
       try {
-
         await apiFetch('/api/activities', {
-
           method: 'POST',
-
           headers: { 'Content-Type': 'application/json' },
-
           body: JSON.stringify({
-
             date: d,
-
             steps: steps,
-
             active_calories_kcal: cals,
-
             workout_minutes: mins,
-
             source: "health_connect"
-
           })
-
         });
-
       } catch (e) {}
-
-
 
       closeActivityModal();
-
       loadDashboardData();
-
       switchTab('activity');
-
     }
 
-
-
     // =====================================================================
-
     // LOGIQUE PROFIL UTILISATEUR & ASSISTANT DE CONNEXION D'APPAREILS
-
     // =====================================================================
-
     let currentSelectedWizardDevice = 'ringconn';
 
-
-
     function openProfileModal() {
-
       try {
-
         // Fermer les autres modales ou menus déroulants pouvant se superposer
-
         const drop = document.getElementById('header-user-dropdown');
-
         if (drop) { drop.classList.add('hidden'); }
-
-
 
         ['modal-meal', 'modal-weight', 'modal-activity', 'modal-connect-wizard', 'modal-auth', 'modal-saved-meals', 'modal-create-saved-meal'].forEach(id => {
-
           const el = document.getElementById(id);
-
           if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
-
         });
-
-
 
         // Pré-remplir les champs avec les données actuelles
-
         const p = (currentData && currentData.profile) ? currentData.profile : {};
-
         const setVal = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.value = val; };
-
         setVal('prof-name', p.name);
-
         setVal('prof-gender', p.gender);
-
         setVal('prof-age', p.age);
-
         setVal('prof-height', p.height_cm);
-
         setVal('prof-target-weight', p.target_weight_kg);
-
         setVal('prof-target-steps', p.target_steps);
-
         setVal('prof-target-cals', p.target_calories_intake);
-
         setVal('prof-target-prot', p.protein_target_per_kg);
 
-
-
         const modal = document.getElementById('modal-profile');
-
         if (modal) {
-
           modal.classList.remove('hidden');
-
           modal.classList.add('flex');
-
         }
-
         if (window.lucide && lucide.createIcons) {
-
           try { lucide.createIcons(); } catch (e) {}
-
         }
-
       } catch (err) {
-
         console.error("Erreur openProfileModal:", err);
-
       }
-
     }
-
-
 
     function closeProfileModal() {
-
       const modal = document.getElementById('modal-profile');
-
       if (modal) {
-
         modal.classList.add('hidden');
-
         modal.classList.remove('flex');
-
       }
-
     }
-
-
 
     async function saveUserProfile() {
-
       const payload = {
-
         name: (document.getElementById('prof-name') && document.getElementById('prof-name').value) || 'Sébastien',
-
         gender: (document.getElementById('prof-gender') && document.getElementById('prof-gender').value) || 'male',
-
         age: parseInt(document.getElementById('prof-age') && document.getElementById('prof-age').value) || 35,
-
         height_cm: parseFloat(document.getElementById('prof-height') && document.getElementById('prof-height').value) || 178.0,
-
         target_weight_kg: parseFloat(document.getElementById('prof-target-weight') && document.getElementById('prof-target-weight').value) || 77.0,
-
         target_steps: parseInt(document.getElementById('prof-target-steps') && document.getElementById('prof-target-steps').value) || 10000,
-
         target_calories_intake: parseFloat(document.getElementById('prof-target-cals') && document.getElementById('prof-target-cals').value) || (CONFIG.defaults && CONFIG.defaults.target_calories_intake) || 0,
-
         protein_target_per_kg: parseFloat(document.getElementById('prof-target-prot') && document.getElementById('prof-target-prot').value) || 1.8,
-
         daily_protein_target_g: null
-
       };
 
-
-
       try {
-
         const res = await apiFetch('/api/profile', {
-
           method: 'POST',
-
           headers: { 'Content-Type': 'application/json' },
-
           body: JSON.stringify(payload)
-
         });
-
         if (res.ok) {
-
           closeProfileModal();
-
           await loadDashboardData();
-
           if (typeof showToast === 'function') showToast("✓ Profil mis à jour avec succès ! Les métriques métaboliques ont été recalculées.", "success");
-
           else alert("Profil mis à jour avec succès !");
-
         }
-
       } catch (e) {
-
         closeProfileModal();
-
-      }
-
-    }
-
-
-
-    function openConnectWizardModal(deviceId) {
-
-      try {
-
-        // Fermer les autres modales ou menus déroulants pouvant se superposer
-
-        const drop = document.getElementById('header-user-dropdown');
-
-        if (drop) { drop.classList.add('hidden'); }
-
-
-
-        ['modal-meal', 'modal-weight', 'modal-activity', 'modal-profile', 'modal-auth', 'modal-saved-meals', 'modal-create-saved-meal'].forEach(id => {
-
-          const el = document.getElementById(id);
-
-          if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
-
-        });
-
-
-
-        const targetDev = (typeof deviceId === 'string' && deviceId) ? deviceId : (currentSelectedWizardDevice || 'ringconn');
-
-        selectWizardDevice(targetDev);
-
-        const modal = document.getElementById('modal-connect-wizard');
-
-        if (modal) {
-
-          modal.classList.remove('hidden');
-
-          modal.classList.add('flex');
-
-        }
-
-        if (window.lucide && lucide.createIcons) {
-
-          try { lucide.createIcons(); } catch (e) {}
-
-        }
-
-      } catch (err) {
-
-        console.error("Erreur openConnectWizardModal:", err);
-
-      }
-
-    }
-
-
-
-    function closeConnectWizardModal() {
-
-      const modal = document.getElementById('modal-connect-wizard');
-
-      if (modal) {
-
-        modal.classList.add('hidden');
-
-        modal.classList.remove('flex');
-
-      }
-
-    }
-
-
-
-    function selectWizardDevice(deviceId) {
-
-      currentSelectedWizardDevice = deviceId;
-
-      document.querySelectorAll('.wizard-device-card').forEach(c => {
-
-        c.classList.remove('border-2', 'border-brand-500', 'bg-brand-500/10');
-
-        c.classList.add('border', 'border-[#1F2A3C]', 'bg-[#0B0F17]');
-
-      });
-
-
-
-      const selCard = document.getElementById(`wiz-opt-${deviceId}`);
-
-      if (selCard) {
-
-        selCard.classList.remove('border-[#1F2A3C]', 'bg-[#0B0F17]');
-
-        selCard.classList.add('border-2', 'border-brand-500', 'bg-brand-500/10');
-
-      }
-
-
-
-      const container = document.getElementById('wizard-config-container');
-
-      const actionText = document.getElementById('wizard-action-text');
-
-
-
-      if (deviceId === 'ringconn') {
-
-        actionText.innerText = "Connecter ma bague RingConn Gen 3";
-
-        container.innerHTML = `
-
-          <div class="space-y-2.5">
-
-            <div class="flex items-center space-x-2 text-brand-400 font-bold text-xs">
-
-              <i data-lucide="sparkles" class="w-4 h-4"></i>
-
-              <span>Connexion Optimale : Bague RingConn Gen 3</span>
-
-            </div>
-
-            <p class="text-xs text-slate-300">
-
-              Votre bague <strong>RingConn Gen 3</strong> mesure en temps réel le sommeil (durée, score réparateur), l'HRV nocturne en ms, la fréquence cardiaque et les calories actives.
-
-            </p>
-
-            <div class="bg-[#151D2A] p-2.5 rounded-lg border border-[#1F2A3C] text-[11px] space-y-2">
-
-              <span class="text-slate-400 block font-semibold">Modes d'interconnexion au choix :</span>
-
-              <div class="text-slate-200">
-
-                <span class="text-brand-400 font-bold">1. Passerelle Google Health Connect (Android)</span> : Synchronisation automatique native.
-
-              </div>
-
-              <div class="text-slate-200">
-
-                <span class="text-brand-400 font-bold">2. Webhook RingConn / MacroDroid</span> :
-
-                <div class="mt-1 p-1.5 rounded bg-[#0B0F17] font-mono text-[10px] text-brand-400 flex items-center justify-between">
-
-                  <span>POST /api/webhooks/ringconn</span>
-
-                  <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/ringconn'); alert('URL Webhook copiée !');" class="text-slate-400 hover:text-white ml-2 text-[10px] underline">Copier</button>
-
-                </div>
-
-              </div>
-
-              <div class="text-slate-200">
-
-                <span class="text-brand-400 font-bold">3. OpenAPI Cloud Directe</span> : Token d'accès OpenAPI RingConn.
-
-              </div>
-
-            </div>
-
-            <div>
-
-              <label class="block text-[11px] text-slate-400 mb-1">Clé API / Token RingConn (Facultatif si synchronisé via Google Health) :</label>
-
-              <input type="text" id="wiz-input-ringconn-key" placeholder="rc_live_... ou laisser vide pour passerelle Google Health" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
-
-            </div>
-
-            <div class="pt-2">
-
-              <button type="button" onclick="testRingConnIngestion()" class="w-full py-2 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-
-                <i data-lucide="play" class="w-3.5 h-3.5"></i>
-
-                <span>Tester la réception / Synchroniser métriques RingConn</span>
-
-              </button>
-
-            </div>
-
-          </div>
-
-        `;
-
-      } else if (deviceId === 'health_connect') {
-
-        actionText.innerText = "Activer la passerelle Google Health Connect";
-
-        container.innerHTML = `
-
-          <div class="space-y-3.5">
-
-            <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
-
-              <i data-lucide="smartphone" class="w-4 h-4"></i>
-
-              <span>Passerelle Universelle Android Google Health Connect</span>
-
-            </div>
-
-            <p class="text-xs text-slate-300">
-
-              Centralise toutes vos applications de santé sur smartphone (RingConn, balances connectées, trackers) et les pousse vers le webhook VitalTrack.
-
-            </p>
-
-
-
-            <!-- Téléchargements directs : APK & Profil MacroDroid -->
-
-            <div class="p-3 rounded-xl bg-gradient-to-r from-indigo-950/40 to-[#151D2A] border border-indigo-500/30 space-y-2">
-
-              <span class="text-[11px] font-bold text-indigo-300 flex items-center space-x-1.5">
-
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-
-                <span>Applications & Profils Android à installer :</span>
-
-              </span>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-
-                <a href="/static/downloads/vitaltrack-health-bridge.apk" download="vitaltrack-health-bridge.apk" class="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/25 transition-transform active:scale-95 text-center cursor-pointer">
-
-                  <i data-lucide="smartphone" class="w-4 h-4"></i>
-
-                  <span>Télécharger l'APK Android</span>
-
-                </a>
-
-                <a href="/static/downloads/macrodroid_health_connect_profile.json" download="macrodroid_health_connect_profile.json" class="py-2 px-3 rounded-xl bg-[#1F2A3C] hover:bg-[#2A374D] border border-slate-600 text-slate-200 font-semibold text-xs flex items-center justify-center space-x-2 transition-colors text-center cursor-pointer">
-
-                  <i data-lucide="file-json" class="w-4 h-4 text-amber-400"></i>
-
-                  <span>Profil MacroDroid (.json)</span>
-
-                </a>
-
-              </div>
-
-            </div>
-
-
-
-            <!-- Configuration Webhook & Jeton Secret -->
-
-            <div class="p-3 rounded-xl bg-[#151D2A] border border-[#1F2A3C] text-[11px] text-slate-300 space-y-2.5">
-
-              <!-- Endpoint Webhook -->
-
-              <div class="space-y-1">
-
-                <div class="flex justify-between items-center text-slate-400">
-
-                  <span class="font-medium">URL du Webhook :</span>
-
-                  <button type="button" onclick="navigator.clipboard.writeText(window.location.origin + '/api/webhooks/health-connect'); if (typeof showToast === 'function') showToast('URL Webhook copiée !', 'success'); else alert('URL Webhook copiée !');" class="text-brand-400 hover:text-brand-300 flex items-center space-x-1 text-[11px] font-semibold underline cursor-pointer">
-
-                    <i data-lucide="copy" class="w-3 h-3"></i>
-
-                    <span>Copier l'URL</span>
-
-                  </button>
-
-                </div>
-
-                <div class="p-2 rounded-lg bg-[#0B0F17] font-mono text-[10px] text-brand-400 break-all border border-[#1F2A3C]/70 select-all">
-
-                  ${window.location.origin}/api/webhooks/health-connect
-
-                </div>
-
-              </div>
-
-
-
-              <!-- Jeton Secret X-Webhook-Token -->
-
-              <div class="space-y-1 pt-1.5 border-t border-[#1F2A3C]/60">
-
-                <div class="flex justify-between items-center text-slate-400">
-
-                  <span class="font-medium">Jeton Secret (<code>X-Webhook-Token</code>) :</span>
-
-                  <div class="flex items-center space-x-2">
-
-                    <button type="button" onclick="generateDeviceToken('health_connect')" class="text-indigo-400 hover:text-indigo-300 font-semibold text-[11px] underline cursor-pointer" title="Régénérer un nouveau jeton d'appareil">
-
-                      Régénérer
-
-                    </button>
-
-                    <button type="button" onclick="toggleTokenVisibility('health_connect')" id="wiz-token-toggle-health_connect" class="text-slate-400 hover:text-white flex items-center space-x-1 text-[11px] cursor-pointer">
-
-                      <i data-lucide="eye" id="wiz-token-eye-icon-health_connect" class="w-3 h-3"></i>
-
-                      <span id="wiz-token-eye-text-health_connect">Révéler</span>
-
-                    </button>
-
-                    <button type="button" onclick="copyTokenToClipboard('health_connect')" class="text-brand-400 hover:text-brand-300 flex items-center space-x-1 text-[11px] font-semibold underline cursor-pointer">
-
-                      <i data-lucide="copy" class="w-3 h-3"></i>
-
-                      <span>Copier mon Token</span>
-
-                    </button>
-
-                  </div>
-
-                </div>
-
-                <div class="p-2 rounded-lg bg-[#0B0F17] font-mono text-[10px] text-emerald-400 break-all border border-[#1F2A3C]/70 flex items-center justify-between">
-
-                  <span id="wiz-token-display-val-health_connect" class="tracking-wider">Chargement du jeton...</span>
-
-                </div>
-
-              </div>
-
-
-
-              <!-- Statut réel de réception -->
-
-              <div class="flex justify-between items-center pt-1.5 border-t border-[#1F2A3C]/60 text-xs">
-
-                <span class="text-slate-400">Statut de synchronisation :</span>
-
-                <span id="wiz-sync-badge-health_connect" class="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-
-                  <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-
-                  <span>En attente du 1er envoi depuis votre téléphone</span>
-
-                </span>
-
-              </div>
-
-            </div>
-
-
-
-            <!-- Guide Xiaomi HyperOS / MIUI -->
-
-            <div class="p-2.5 rounded-lg bg-[#0B0F17] border border-amber-500/30 text-[11px] space-y-1.5">
-
-              <div class="flex items-center space-x-1.5 text-amber-400 font-bold">
-
-                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
-
-                <span>Réglages Requis Xiaomi HyperOS / MIUI</span>
-
-              </div>
-
-              <ul class="text-[10px] text-slate-300 list-disc list-inside space-y-0.5">
-
-                <li><strong>Démarrage auto</strong> : <em>Paramètres > Applications > Gérer les applications > VitalTrack Bridge (ou MacroDroid) > Démarrage automatique</em> : <strong>Activé</strong>.</li>
-
-                <li><strong>Batterie</strong> : <em>Économiseur de batterie MIUI</em> : régler sur <strong>« Pas de restrictions »</strong>.</li>
-
-                <li><strong>Santé Connect</strong> : <em>Paramètres > Sécurité & Confidentialité > Health Connect > Applications autorisées</em> : accorder l'accès en lecture.</li>
-
-              </ul>
-
-            </div>
-
-
-
-            <div class="pt-1">
-
-              <button type="button" onclick="testHealthConnectIngestion()" class="w-full py-2.5 rounded-xl bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors cursor-pointer shadow-sm">
-
-                <i data-lucide="play" class="w-3.5 h-3.5"></i>
-
-                <span>Envoyer test webhook</span>
-
-              </button>
-
-            </div>
-
-          </div>
-
-        `;
-
-        fetchOrInitDeviceToken('health_connect');
-
-      } else if (deviceId === 'withings') {
-
-        actionText.innerText = "Connecter ma Balance Withings";
-
-        container.innerHTML = `
-
-          <div class="space-y-2.5">
-
-            <div class="flex items-center space-x-2 text-brand-400 font-bold text-xs">
-
-              <i data-lucide="scale" class="w-4 h-4"></i>
-
-              <span>Balance Withings Body Smart / Comp (Wi-Fi Direct)</span>
-
-            </div>
-
-            <p class="text-xs text-slate-300">
-
-              Synchronisation directe Cloud-to-Cloud via OAuth 2.0 officiel de Withings.
-
-            </p>
-
-            <div>
-
-              <label class="block text-[11px] text-slate-400 mb-1">Identifiant Compte Withings (Email) :</label>
-
-              <input type="email" id="wiz-input-withings-email" placeholder="votre.email@exemple.com" value="${escapeHtml((currentUnifiedSession && currentUnifiedSession.email) || '')}" class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500">
-
-            </div>
-
-            <div class="pt-1">
-
-              <button type="button" onclick="testScaleIngestion('withings')" class="w-full py-2 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors">
-
-                <i data-lucide="play" class="w-3.5 h-3.5"></i>
-
-                <span>Tester la réception d'une pesée Withings</span>
-
-              </button>
-
-            </div>
-
-          </div>
-
-        `;
-
-      } else {
-
-        actionText.innerText = "Connecter Oura Ring Gen 3";
-
-        container.innerHTML = `
-
-          <div class="space-y-2.5">
-
-            <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs">
-
-              <i data-lucide="circle-dot" class="w-4 h-4"></i>
-
-              <span>Oura Ring Gen 3 Cloud API v2</span>
-
-            </div>
-
-            <p class="text-xs text-slate-300">
-
-              Interconnexion par Bearer Token personnel via l'API v2 d'Oura.
-
-            </p>
-
-            <div>
-
-              <label class="block text-[11px] text-slate-400 mb-1">Personal Access Token Oura :</label>
-
-              <input type="password" id="wiz-input-oura-token" placeholder="Bearer token Oura..." class="w-full bg-[#151D2A] border border-[#1F2A3C] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500">
-
-            </div>
-
-          </div>
-
-        `;
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    async function testRingConnIngestion() {
-
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      const payload = {
-
-        date: todayStr,
-
-        source: "ringconn_gen3",
-
-        steps: 11450,
-
-        active_calories_kcal: 490.0,
-
-        resting_hr_bpm: 56,
-
-        hrv_ms: 62.0,
-
-        sleep_score: 88,
-
-        workout_minutes: 40,
-
-        workout_type: "Marche & Cardio (RingConn Gen 3)"
-
-      };
-
-      try {
-
-        const res = await fetch('/api/webhooks/ringconn', {
-
-          method: 'POST',
-
-          headers: {'Content-Type': 'application/json'},
-
-          body: JSON.stringify(payload)
-
-        });
-
-        if (res.ok) {
-
-          alert("✓ Succès ! Métriques RingConn Gen 3 reçues (11 450 pas, HRV 62 ms, Score Sommeil 88).");
-
-          loadDashboardData();
-
-        }
-
-      } catch (e) {
-
-        alert("Erreur lors du test webhook RingConn");
-
-      }
-
-    }
-
-
-
-    let currentDeviceTokens = {};
-
-    let deviceTokensRevealed = {};
-
-
-
-    async function fetchOrInitDeviceToken(deviceId) {
-
-      const displayEl = document.getElementById(`wiz-token-display-val-${deviceId}`);
-
-      const badgeEl = document.getElementById(`wiz-sync-badge-${deviceId}`);
-
-
-
-      // Mettre à jour le badge selon le statut réel de l'appareil
-
-      if (currentData && currentData.devices) {
-
-        const d = currentData.devices.find(dev => (dev.id || dev.device_id) === deviceId);
-
-        if (d && badgeEl) {
-
-          const hasSync = Boolean(d.last_sync_at || d.last_sync);
-
-          if (hasSync) {
-
-            const relTime = formatRelativeTime(d.last_sync_at || d.last_sync) || 'Récemment';
-
-            badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1";
-
-            badgeEl.innerHTML = `<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Synchronisé (${relTime})</span>`;
-
-          } else {
-
-            badgeEl.className = "text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1";
-
-            badgeEl.innerHTML = '<span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>En attente du 1er envoi depuis votre téléphone</span>';
-
-          }
-
-        }
-
-      }
-
-
-
-      try {
-
-        const res = await apiFetch(`/api/devices/${deviceId}/token`, { method: 'GET' });
-
-        if (res && res.ok) {
-
-          const data = await res.json();
-
-          if (data && data.token) {
-
-            currentDeviceTokens[deviceId] = data.token;
-
-            updateTokenDisplay(deviceId);
-
-            return data.token;
-
-          }
-
-        }
-
-      } catch (e) {
-
-        // En cas d'erreur de récupération
-
-      }
-
-
-
-      // Si aucun jeton n'existe encore pour l'utilisateur, on le génère automatiquement
-
-      try {
-
-        const genRes = await apiFetch(`/api/devices/${deviceId}/token`, {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : deviceId })
-
-        });
-
-        if (genRes && genRes.ok) {
-
-          const data = await genRes.json();
-
-          if (data && data.token) {
-
-            currentDeviceTokens[deviceId] = data.token;
-
-            updateTokenDisplay(deviceId);
-
-            return data.token;
-
-          }
-
-        } else {
-
-          console.error("Échec création token automatique:", genRes ? genRes.status : "inconnu");
-
-          if (displayEl) displayEl.innerText = "Non configuré";
-
-        }
-
-      } catch (err) {
-
-        console.error("Erreur récupération/génération token:", err);
-
-        if (displayEl) displayEl.innerText = "Non configuré";
-
-      }
-
-    }
-
-
-
-    function updateTokenDisplay(deviceId) {
-
-      const displayEl = document.getElementById(`wiz-token-display-val-${deviceId}`);
-
-      const eyeIcon = document.getElementById(`wiz-token-eye-icon-${deviceId}`);
-
-      const eyeText = document.getElementById(`wiz-token-eye-text-${deviceId}`);
-
-      if (!displayEl) return;
-
-
-
-      const token = currentDeviceTokens[deviceId] || "";
-
-      const isRevealed = Boolean(deviceTokensRevealed[deviceId]);
-
-
-
-      if (!token) {
-
-        displayEl.innerText = "Aucun jeton actif";
-
-        return;
-
-      }
-
-
-
-      if (isRevealed) {
-
-        displayEl.innerText = token;
-
-        if (eyeText) eyeText.innerText = "Masquer";
-
-        if (eyeIcon) eyeIcon.setAttribute('data-lucide', 'eye-off');
-
-      } else {
-
-        const prefix = token.slice(0, 10);
-
-        displayEl.innerText = prefix + "••••••••••••••••••••••••";
-
-        if (eyeText) eyeText.innerText = "Révéler";
-
-        if (eyeIcon) eyeIcon.setAttribute('data-lucide', 'eye');
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    function toggleTokenVisibility(deviceId) {
-
-      deviceTokensRevealed[deviceId] = !deviceTokensRevealed[deviceId];
-
-      updateTokenDisplay(deviceId);
-
-    }
-
-
-
-    async function copyTokenToClipboard(deviceId) {
-
-      let token = currentDeviceTokens[deviceId];
-
-      if (!token) {
-
-        token = await fetchOrInitDeviceToken(deviceId);
-
-      }
-
-      if (token) {
-
-        navigator.clipboard.writeText(token);
-
-        if (typeof showToast === 'function') showToast("✓ Jeton secret copié dans le presse-papier !", "success");
-
-        else alert("✓ Jeton secret copié dans le presse-papier !");
-
-      } else {
-
-        if (typeof showToast === 'function') showToast("Jeton introuvable.", "error");
-
-      }
-
-    }
-
-
-
-    async function generateDeviceToken(deviceId) {
-
-      try {
-
-        if (typeof showToast === 'function') showToast("Génération d'un nouveau jeton...", "info");
-
-        const res = await apiFetch(`/api/devices/${deviceId}/token`, {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({ name: deviceId === 'health_connect' ? 'Google Health Connect' : 'Smart Sensor' })
-
-        });
-
-        if (res && res.ok) {
-
-          const data = await res.json();
-
-          if (data && data.token) {
-
-            currentDeviceTokens[deviceId] = data.token;
-
-            deviceTokensRevealed[deviceId] = true; // Révélé dès la génération
-
-            updateTokenDisplay(deviceId);
-
-            navigator.clipboard.writeText(data.token);
-
-            if (typeof showToast === 'function') {
-
-              showToast("✓ Nouveau jeton généré et copié dans le presse-papier !", "success");
-
-            } else {
-
-              alert(`✓ Jeton généré et copié dans le presse-papier :\n${data.token}`);
-
-            }
-
-            await loadDashboardData();
-
-          }
-
-        } else {
-
-          const errData = await res.json().catch(() => ({}));
-
-          console.error("Erreur génération token HTTP status:", res.status, errData);
-
-          if (typeof showToast === 'function') showToast("Erreur génération jeton: " + (errData.detail || res.statusText), "error");
-
-          else alert("Erreur génération jeton: " + (errData.detail || res.statusText));
-
-        }
-
-      } catch (err) {
-
-        console.error("Erreur génération token:", err);
-
-        if (typeof showToast === 'function') showToast("Erreur lors de la génération du jeton.", "error");
-
-        else alert("Erreur lors de la génération du jeton.");
-
-      }
-
-    }
-
-
-
-    async function testHealthConnectIngestion() {
-      const todayStr = new Date().toISOString().split('T')[0];
-      let token = currentDeviceTokens['health_connect'];
-      if (!token) {
-        token = await fetchOrInitDeviceToken('health_connect');
-      }
-
-      const headers = {
-        'Content-Type': 'application/json',
-        'X-Dry-Run': 'true'
-      };
-      if (token) {
-        headers['X-Webhook-Token'] = token;
-      }
-
-      const payload = {
-        date: todayStr,
-        source: "health_connect",
-        steps: 12100,
-        active_calories_kcal: 530.0,
-        resting_hr_bpm: 57,
-        hrv_ms: 59.0,
-        sleep_score: 85,
-        token: token || undefined
-      };
-
-      try {
-        if (typeof showToast === 'function') showToast("Test webhook en cours (simulation dry-run)...", "info");
-        const res = await fetch('/api/webhooks/health-connect?dry_run=true', {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json().catch(() => ({}));
-
-        if (res.ok) {
-          const popupMsg = "\u2713 Test Passerelle Health Connect (Simulation R\u00e9ussie)\n\n" +
-            "\u2022 Statut : Authentifi\u00e9 & Valid\u00e9 (HTTP 200)\n" +
-            "\u2022 Utilisateur : #" + (data.user_id || '1') + "\n" +
-            "\u2022 Appareil : " + (data.device_id || 'health_connect') + "\n" +
-            "\u2022 Jeton webhook : " + (token ? token.substring(0, 10) + '...' : '(aucun)') + "\n\n" +
-            "M\u00e9triques v\u00e9rifi\u00e9es :\n" +
-            "\u2022 Date : " + payload.date + "\n" +
-            "\u2022 Pas : " + payload.steps + "\n" +
-            "\u2022 Calories actives : " + payload.active_calories_kcal + " kcal\n" +
-            "\u2022 Fr\u00e9quence card. repos : " + payload.resting_hr_bpm + " bpm\n" +
-            "\u2022 HRV : " + payload.hrv_ms + " ms\n" +
-            "\u2022 Score sommeil : " + payload.sleep_score + "/100\n\n" +
-            "Note : Mode dry-run actif, aucune donn\u00e9e n'a \u00e9t\u00e9 ins\u00e9r\u00e9e en base de donn\u00e9es.";
-
-          alert(popupMsg);
-          if (typeof showToast === 'function') {
-            showToast("\u2713 Test valid\u00e9 avec succ\u00e8s (dry-run, base inchang\u00e9e).", "success");
-          }
-          await fetchOrInitDeviceToken('health_connect');
-        } else {
-          const msg = "\u00c9chec du test webhook : " + (data.detail || res.statusText);
-          if (typeof showToast === 'function') showToast(msg, "error");
-          else alert(msg);
-        }
-      } catch (e) {
-        if (typeof showToast === 'function') showToast("Erreur de communication lors du test webhook Google Health", "error");
-        else alert("Erreur lors du test webhook Google Health");
       }
     }
-
-    async function testScaleIngestion(sourceName) {
-
-      const todayStr = new Date().toISOString().split('T')[0];
-
-      const payload = {
-
-        date: todayStr,
-
-        source: sourceName,
-
-        weight_kg: 79.4,
-
-        body_fat_pct: 19.9,
-
-        muscle_mass_kg: 38.3,
-
-        water_pct: 56.8
-
-      };
-
-      try {
-
-        const res = await fetch('/api/webhook/health', {
-
-          method: 'POST',
-
-          headers: {'Content-Type': 'application/json'},
-
-          body: JSON.stringify(payload)
-
-        });
-
-        if (res.ok) {
-
-          alert(`✓ Succès ! Pesée reçue via connecteur ${sourceName} : 79.4 kg, 19.9% masse grasse.`);
-
-          loadDashboardData();
-
-        }
-
-      } catch (e) {
-
-        alert("Erreur test balance");
-
-      }
-
-    }
-
 
 
     // =====================================================================
-
     // LOGIQUE SAUVEGARDE & PERSISTANCE DURABLE (Anti-Perte Vercel)
-
     // =====================================================================
-
     async function exportDataBackup() {
-
       try {
-
         const res = await apiFetch('/api/backup/export');
-
         if (!res.ok) throw new Error("Erreur export");
-
         const data = await res.json();
-
-        
 
         // Sauvegarde miroir dans localStorage
-
         localStorage.setItem('vitaltrack_backup_cache', JSON.stringify(data));
 
-
-
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-
         const url = URL.createObjectURL(blob);
-
         const a = document.createElement('a');
-
         a.href = url;
-
         a.download = `vitaltrack-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`;
-
         document.body.appendChild(a);
-
         a.click();
-
         document.body.removeChild(a);
-
         URL.revokeObjectURL(url);
-
         alert("✓ Sauvegarde complète exportée avec succès ! (Profil + Poids + Repas + Activités)");
-
       } catch (e) {
-
         alert("Erreur lors de l'export des données.");
-
       }
-
     }
-
-
 
     async function importDataBackup(event) {
-
       const file = event.target.files[0];
-
       if (!file) return;
 
-
-
       const reader = new FileReader();
-
       reader.onload = async (e) => {
-
         try {
-
           const parsed = JSON.parse(e.target.result);
-
           const res = await apiFetch('/api/backup/import', {
-
             method: 'POST',
-
             headers: { 'Content-Type': 'application/json' },
-
             body: JSON.stringify({ data: parsed, overwrite: true })
-
           });
-
           const resData = await res.json();
-
           if (res.ok) {
-
             localStorage.setItem('vitaltrack_backup_cache', JSON.stringify(parsed));
-
             alert(resData.message || "✓ Sauvegarde restaurée avec succès !");
-
             closeProfileModal();
-
             loadDashboardData();
-
           } else {
-
             alert("Erreur de restauration du fichier JSON.");
-
           }
-
         } catch (err) {
-
           alert("Fichier JSON invalide.");
-
         }
-
       };
-
       reader.readAsText(file);
-
     }
-
-
 
     async function clearPersonalHistory() {
-
       if (!confirm("Voulez-vous vider les données de démonstration pour démarrer votre suivi réel personnel ? Votre profil morphologique sera conservé.")) {
-
         return;
-
       }
-
       try {
-
         const res = await apiFetch('/api/profile/clear-history', { method: 'POST' });
-
         if (res.ok) {
-
           localStorage.removeItem('vitaltrack_backup_cache');
-
           alert("Historique réinitialisé ! Vous pouvez enregistrer votre première pesée réelle.");
-
           closeProfileModal();
-
           loadDashboardData();
-
         }
-
       } catch (e) {
-
         alert("Erreur lors de l'effacement de l'historique");
-
       }
-
     }
-
-
 
     async function resetDemoData() {
-
       if (!confirm("Recharger les données de démonstration 30 jours (poids, repas, activités) ?")) {
-
         return;
-
       }
-
       try {
-
         const res = await apiFetch('/api/profile/reset-demo', { method: 'POST' });
-
         if (res.ok) {
-
           alert("Jeu de données réaliste 30 jours rechargé avec succès !");
-
           closeProfileModal();
-
           loadDashboardData();
-
         }
-
       } catch (e) {
-
         alert("Erreur lors du rechargement de la démo");
-
       }
-
     }
-
-
 
     // Auto-sync miroir dans localStorage à chaque chargement réussi
-
     window.addEventListener('beforeunload', () => {
-
       if (currentData && currentData.profile) {
-
         try {
-
           localStorage.setItem('vitaltrack_last_known_profile', JSON.stringify(currentData.profile));
-
         } catch (e) {}
-
       }
-
     });
 
 
-
-    async function submitDeviceConnection() {
-
-      const devId = currentSelectedWizardDevice;
-
-      let apiKey = null;
-
-      let email = null;
-
-      let authType = 'connected';
-
-
-
-      if (devId === 'ringconn') {
-
-        const inp = document.getElementById('wiz-input-ringconn-key');
-
-        apiKey = inp ? inp.value : null;
-
-        authType = apiKey ? 'ringconn_openapi' : 'google_health_connect';
-
-      } else if (devId === 'withings') {
-
-        const inp = document.getElementById('wiz-input-withings-email');
-
-        email = (inp && inp.value) ? inp.value.trim() : ((currentUnifiedSession && currentUnifiedSession.email) || '');
-
-        authType = 'withings_oauth';
-
-      } else if (devId === 'health_connect') {
-
-        authType = 'google_health_connect';
-
-      } else if (devId === 'oura') {
-
-        const inp = document.getElementById('wiz-input-oura-token');
-
-        apiKey = inp ? inp.value : null;
-
-        authType = 'oura_bearer_token';
-
-      }
-
-
-
-      try {
-
-        const res = await apiFetch('/api/devices/connect', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({
-
-            device_id: devId,
-
-            connected: true,
-
-            auth_type: authType,
-
-            api_key: apiKey,
-
-            account_email: email
-
-          })
-
-        });
-
-
-
-        if (res.ok) {
-
-          closeConnectWizardModal();
-
-          await loadDashboardData();
-
-          switchTab('devices');
-
-          showToast(`Félicitations ! L'appareil '${devId === 'ringconn' ? 'RingConn Gen 3' : (devId === 'health_connect' ? 'Google Health Connect' : devId)}' a été connecté avec succès à votre profil VitalTrack !`, 'success');
-
-        }
-
-      } catch (e) {
-
-        closeConnectWizardModal();
-
-      }
-
-    }
-
-
-
     // =====================================================================
-
     // LOGIQUE AUTHENTIFICATION UNIFIÉE (GOOGLE, EMAIL/MDP, SESSION & TOKEN BEARER)
-
     // =====================================================================
-
     let currentUnifiedSession = { is_authenticated: false };
-
     let currentGoogleConfig = { google_client_id: "", is_configured: false };
-
     let currentAuthEmailMode = 'login'; // 'login' ou 'register'
 
-
-
     function showToast(message, type = 'info', duration = 3500) {
-
       const container = document.getElementById('pwa-toast-container');
-
       if (!container) {
-
         console.log(`[Toast ${type}]`, message);
-
         return;
-
       }
-
       const toast = document.createElement('div');
-
       toast.className = `pointer-events-auto p-3.5 rounded-xl border shadow-xl flex items-center space-x-3 text-xs transition-all duration-300 transform translate-y-2 opacity-0 ${
-
         type === 'success' ? 'bg-[#0e2a1d] border-emerald-500/50 text-emerald-200 shadow-emerald-950/50' :
-
         type === 'error' ? 'bg-[#2d1215] border-red-500/50 text-red-200 shadow-red-950/50' :
-
         'bg-[#151D2A] border-[#1F2A3C] text-slate-200 shadow-black/60'
-
       }`;
-
       const iconName = type === 'success' ? 'check-circle' : (type === 'error' ? 'alert-triangle' : 'info');
-
       toast.innerHTML = `
-
         <i data-lucide="${iconName}" class="w-4 h-4 shrink-0 ${type === 'success' ? 'text-emerald-400' : (type === 'error' ? 'text-red-400' : 'text-blue-400')}"></i>
-
         <div class="flex-1 leading-snug">${escapeHtml(message)}</div>
-
       `;
-
       container.appendChild(toast);
-
       if (window.lucide && lucide.createIcons) {
-
         try { lucide.createIcons(); } catch (e) {}
-
       }
-
       requestAnimationFrame(() => {
-
         toast.classList.remove('translate-y-2', 'opacity-0');
-
       });
-
       setTimeout(() => {
-
         toast.classList.add('opacity-0', 'translate-y-2');
-
         setTimeout(() => toast.remove(), 300);
-
       }, duration);
-
     }
 
-
-
-    function openAuthModal() {
-
-      // Fermer les autres modales pour éviter toute superposition opaque
-
-      const wizardModal = document.getElementById('modal-connect-wizard');
-
-      if (wizardModal && !wizardModal.classList.contains('hidden')) {
-
-        wizardModal.classList.add('hidden');
-
-      }
-
-      const profModal = document.getElementById('modal-profile');
-
-      if (profModal && !profModal.classList.contains('hidden')) {
-
-        profModal.classList.add('hidden');
-
-      }
-
-      const modal = document.getElementById('modal-auth');
-
-      if (modal) {
-
-        modal.classList.remove('hidden');
-
-        modal.classList.add('flex');
-
-      }
-
-      if (currentGoogleConfig && currentGoogleConfig.google_client_id) {
-
-        initGoogleIdentityServices();
-
-      }
-
-      if (window.lucide && lucide.createIcons) {
-
-        try { lucide.createIcons(); } catch (e) {}
-
-      }
-
-    }
-
-
-
-    function closeAuthModal() {
-
-      const modal = document.getElementById('modal-auth');
-
-      if (modal) {
-
-        modal.classList.add('hidden');
-
-        modal.classList.remove('flex');
-
-      }
-
-    }
-
-
-
-    // Alias de compatibilité
-
-    function openGoogleAuthModal() {
-
-      openAuthModal();
-
-    }
-
-    function closeGoogleAuthModal() {
-
-      closeAuthModal();
-
-    }
-
-
-
-    function switchAuthTab(tab) {
-
-      const panelGoogle = document.getElementById('auth-panel-google');
-
-      const panelEmail = document.getElementById('auth-panel-email');
-
-      const tabGoogle = document.getElementById('tab-auth-google');
-
-      const tabEmail = document.getElementById('tab-auth-email');
-
-
-
-      if (tab === 'google') {
-
-        if (panelGoogle) panelGoogle.classList.remove('hidden');
-
-        if (panelEmail) panelEmail.classList.add('hidden');
-
-        if (tabGoogle) {
-
-          tabGoogle.className = "py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all";
-
-        }
-
-        if (tabEmail) {
-
-          tabEmail.className = "py-2 rounded-lg text-slate-400 hover:text-white flex items-center justify-center space-x-1.5 transition-all";
-
-        }
-
-      } else {
-
-        if (panelGoogle) panelGoogle.classList.add('hidden');
-
-        if (panelEmail) panelEmail.classList.remove('hidden');
-
-        if (tabEmail) {
-
-          tabEmail.className = "py-2 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center justify-center space-x-1.5 transition-all";
-
-        }
-
-        if (tabGoogle) {
-
-          tabGoogle.className = "py-2 rounded-lg text-slate-400 hover:text-white flex items-center justify-center space-x-1.5 transition-all";
-
-        }
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    function setAuthEmailMode(mode) {
-
-      currentAuthEmailMode = mode;
-
-      const btnLogin = document.getElementById('btn-mode-login');
-
-      const btnRegister = document.getElementById('btn-mode-register');
-
-      const nameField = document.getElementById('email-field-name');
-
-      const submitLabel = document.getElementById('btn-submit-email-label');
-
-      const passHint = document.getElementById('password-hint');
-
-      const errBox = document.getElementById('auth-email-error');
-
-      if (errBox) errBox.classList.add('hidden');
-
-
-
-      if (mode === 'register') {
-
-        if (nameField) nameField.classList.remove('hidden');
-
-        if (passHint) passHint.classList.remove('hidden');
-
-        if (submitLabel) submitLabel.innerText = "Créer mon compte VitalTrack";
-
-        if (btnRegister) {
-
-          btnRegister.className = "font-bold text-brand-400 pb-1 border-b-2 border-brand-400 transition-all";
-
-        }
-
-        if (btnLogin) {
-
-          btnLogin.className = "text-slate-400 hover:text-slate-200 pb-1 border-b-2 border-transparent transition-all";
-
-        }
-
-      } else {
-
-        if (nameField) nameField.classList.add('hidden');
-
-        if (passHint) passHint.classList.add('hidden');
-
-        if (submitLabel) submitLabel.innerText = "Se connecter";
-
-        if (btnLogin) {
-
-          btnLogin.className = "font-bold text-brand-400 pb-1 border-b-2 border-brand-400 transition-all";
-
-        }
-
-        if (btnRegister) {
-
-          btnRegister.className = "text-slate-400 hover:text-slate-200 pb-1 border-b-2 border-transparent transition-all";
-
-        }
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    function togglePasswordVisibility() {
-
-      const passInp = document.getElementById('auth-password-input');
-
-      const icon = document.getElementById('icon-toggle-password');
-
-      if (!passInp) return;
-
-      if (passInp.type === 'password') {
-
-        passInp.type = 'text';
-
-        if (icon) icon.setAttribute('data-lucide', 'eye-off');
-
-      } else {
-
-        passInp.type = 'password';
-
-        if (icon) icon.setAttribute('data-lucide', 'eye');
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    function showEmailAuthError(msg) {
-
-      const errBox = document.getElementById('auth-email-error');
-
-      const errText = document.getElementById('auth-email-error-text');
-
-      if (errBox && errText) {
-
-        errText.innerText = msg;
-
-        errBox.classList.remove('hidden');
-
-      }
-
-    }
-
-
-
-    async function handleEmailAuthSubmit() {
-
-      const emailInp = document.getElementById('auth-email-input');
-
-      const passInp = document.getElementById('auth-password-input');
-
-      const nameInp = document.getElementById('auth-email-name');
-
-      const btn = document.getElementById('btn-submit-email-auth');
-
-
-
-      const email = emailInp ? emailInp.value.trim() : '';
-
-      const password = passInp ? passInp.value : '';
-
-      const name = (nameInp && nameInp.value.trim()) ? nameInp.value.trim() : 'Utilisateur VitalTrack';
-
-
-
-      if (!email || !email.includes('@')) {
-
-        showEmailAuthError("Veuillez renseigner une adresse email valide.");
-
-        return;
-
-      }
-
-      if (!password || password.length < 6) {
-
-        showEmailAuthError("Le mot de passe doit comporter au moins 6 caractères.");
-
-        return;
-
-      }
-
-
-
-      if (btn) btn.disabled = true;
-
-
-
-      try {
-
-        const endpoint = currentAuthEmailMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-
-        const bodyPayload = currentAuthEmailMode === 'register'
-
-          ? { email, password, name }
-
-          : { email, password };
-
-
-
-        const res = await fetch(endpoint, {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify(bodyPayload)
-
-        });
-
-
-
-        const data = await res.json();
-
-
-
-        if (res.ok) {
-
-          // Stocker le token JWT dans localStorage
-
-          if (data.access_token) {
-
-            localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
-
-          }
-
-          currentUnifiedSession = data.session || {
-
-            is_authenticated: true,
-
-            email: data.user ? data.user.email : email,
-
-            name: data.user ? data.user.name : name,
-
-            auth_method: 'email_password'
-
-          };
-
-          localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(currentUnifiedSession));
-
-          renderUnifiedAuthState(currentUnifiedSession, data.profile);
-
-          closeAuthModal();
-
-          await loadDashboardData();
-
-          showToast(`✓ ${data.message || 'Authentification réussie !'}`, "success");
-
-        } else {
-
-          showEmailAuthError(data.detail || "Erreur lors de l'authentification.");
-
-        }
-
-      } catch (e) {
-
-        showEmailAuthError("Impossible de joindre le serveur VitalTrack.");
-
-      } finally {
-
-        if (btn) btn.disabled = false;
-
-      }
-
-    }
-
-
-
-    function continueAsGuest() {
-
-      closeAuthModal();
-
-      alert("Mode Invité / Démo activé. Vous pouvez explorer toutes les fonctionnalités de VitalTrack.");
-
-    }
-
-
-
-    function toggleUserDropdown() {
-
-      const menu = document.getElementById('header-user-dropdown');
-
-      if (menu) {
-
-        menu.classList.toggle('hidden');
-
-      }
-
-    }
-
-
-
-    // Fermer le dropdown au clic en dehors
-
-    document.addEventListener('click', (e) => {
-
-      const container = document.getElementById('header-auth-container');
-
-      const menu = document.getElementById('header-user-dropdown');
-
-      if (container && menu && !container.contains(e.target)) {
-
-        menu.classList.add('hidden');
-
-      }
-
-    });
-
-
-
-    async function loadUnifiedAuthState() {
-
-      // 1. Lecture immédiate du cache local (si JWT Bearer présent)
-
-      try {
-
-        const cached = localStorage.getItem(GOOGLE_SESSION_KEY);
-
-        const hasToken = Boolean(localStorage.getItem(JWT_STORAGE_KEY));
-
-        if (cached && hasToken) {
-
-          const parsed = JSON.parse(cached);
-
-          if (parsed && parsed.is_authenticated) {
-
-            currentUnifiedSession = parsed;
-
-            renderUnifiedAuthState(parsed, currentData ? currentData.profile : null);
-
-          }
-
-        }
-
-      } catch (e) {}
-
-
-
-      // 2. Appel backend pour synchronisation avec transmission automatique du Bearer Token
-
-      try {
-
-        const [confRes, meRes] = await Promise.all([
-
-          apiFetch('/api/auth/config'),
-
-          apiFetch('/api/auth/me')
-
-        ]);
-
-
-
-        if (confRes && confRes.ok) {
-
-          currentGoogleConfig = await confRes.json();
-
-          initGoogleIdentityServices();
-
-        }
-
-
-
-        if (meRes && meRes.ok) {
-
-          const data = await meRes.json();
-
-          if (data.session && data.session.is_authenticated) {
-
-            currentUnifiedSession = data.session;
-
-            localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(data.session));
-
-            renderUnifiedAuthState(currentUnifiedSession, data.profile);
-
-          } else if (data.current_user && localStorage.getItem(JWT_STORAGE_KEY)) {
-
-            currentUnifiedSession = {
-
-              is_authenticated: true,
-
-              email: data.current_user.email,
-
-              name: data.current_user.name,
-
-              picture: data.current_user.picture || '',
-
-              auth_method: data.current_user.auth_provider || 'email'
-
-            };
-
-            localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(currentUnifiedSession));
-
-            renderUnifiedAuthState(currentUnifiedSession, data.profile);
-
-          } else {
-
-            currentUnifiedSession = { is_authenticated: false };
-
-            renderUnifiedAuthState(currentUnifiedSession, data.profile);
-
-          }
-
-        }
-
-      } catch (e) {
-
-        console.warn("Erreur chargement session (mode local résilient) :", e);
-
-      }
-
-    }
-
-
-
-    function initGoogleIdentityServices() {
-
-      const noticeEl = document.getElementById('gsi-unconfigured-notice');
-
-      if (!currentGoogleConfig.google_client_id || typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
-
-        if (noticeEl) noticeEl.classList.remove('hidden');
-
-        return;
-
-      }
-
-      if (noticeEl) noticeEl.classList.add('hidden');
-
-      try {
-
-        google.accounts.id.initialize({
-
-          client_id: currentGoogleConfig.google_client_id,
-
-          callback: handleGoogleCredentialResponse,
-
-          auto_select: false
-
-        });
-
-
-
-        const btnContainer = document.getElementById('gsi-button-container');
-
-        if (btnContainer) {
-
-          btnContainer.innerHTML = '';
-
-          google.accounts.id.renderButton(btnContainer, {
-
-            theme: "filled_blue",
-
-            size: "large",
-
-            shape: "pill",
-
-            text: "signin_with",
-
-            locale: "fr"
-
-          });
-
-        }
-
-      } catch (e) {
-
-        console.warn("Erreur init Google GIS :", e);
-
-      }
-
-    }
-
-
-
-    async function handleGoogleCredentialResponse(response) {
-
-      if (!response.credential) return;
-
-      try {
-
-        const res = await fetch('/api/auth/google', {
-
-          method: 'POST',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({ credential: response.credential })
-
-        });
-
-        if (res.ok) {
-
-          const data = await res.json();
-
-          if (data.access_token) {
-
-            localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
-
-          }
-
-          currentUnifiedSession = data.session;
-
-          localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(data.session));
-
-          renderUnifiedAuthState(data.session, data.profile);
-
-          syncGoogleAccountStorage(data.session.email);
-
-          closeAuthModal();
-
-          await loadDashboardData();
-
-          alert(`Bienvenue ${data.session.name} ! Votre compte Google et vos données sont synchronisés.`);
-
-        } else {
-
-          const errData = await res.json().catch(() => ({}));
-
-          alert(errData.detail || "Authentification Google refusée.");
-
-        }
-
-      } catch (e) {
-
-        alert("Erreur lors de l'authentification Google.");
-
-      }
-
-    }
-
-
-
-    async function logoutSession() {
-
-      try {
-
-        if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_API_CACHE' });
-        }
-        if (typeof caches !== 'undefined') {
-          caches.delete('vitaltrack-api-v2').catch(() => {});
-        }
-        if (localStorage.getItem(JWT_STORAGE_KEY)) {
-
-          await apiFetch('/api/auth/logout', { method: 'POST' });
-
-        }
-
-      } catch (e) {
-
-        console.warn("Déconnexion backend différée :", e);
-
-      } finally {
-
-        localStorage.removeItem(JWT_STORAGE_KEY);
-
-        localStorage.removeItem(GOOGLE_SESSION_KEY);
-
-        currentUnifiedSession = { is_authenticated: false };
-
-        renderUnifiedAuthState(currentUnifiedSession, null);
-
-        closeAuthModal();
-
-        await loadDashboardData();
-
-        alert("Déconnexion réussie.");
-
-      }
-
-    }
-
-
-
-    // Alias pour compatibilité
-
-    async function logoutGoogle() {
-
-      await logoutSession();
-
-    }
-
-
-
-    async function saveGoogleClientId() {
-
-      const inp = document.getElementById('google-input-client-id');
-
-      const val = inp ? inp.value.trim() : '';
-
-      if (!val) {
-
-        alert("Veuillez saisir un Client ID valide.");
-
-        return;
-
-      }
-
-      try {
-
-        const res = await apiFetch('/api/auth/config', {
-
-          method: 'PUT',
-
-          headers: { 'Content-Type': 'application/json' },
-
-          body: JSON.stringify({ google_client_id: val })
-
-        });
-
-        if (res.ok) {
-
-          const data = await res.json();
-
-          currentGoogleConfig = data.config;
-
-          initGoogleIdentityServices();
-
-          alert("✓ Google Client ID enregistré avec succès !");
-
-        }
-
-      } catch (e) {
-
-        alert("Erreur lors de l'enregistrement du Client ID.");
-
-      }
-
-    }
-
-
-
-    function renderUnifiedAuthState(session, profile) {
-
-      const headerContainer = document.getElementById('header-auth-container');
-
-      const profEmail = document.getElementById('prof-google-email');
-
-      const profAvatar = document.getElementById('prof-google-avatar');
-
-      const profActionBtn = document.getElementById('btn-prof-google-action');
-
-
-
-      const connView = document.getElementById('auth-connected-view');
-
-      const loginView = document.getElementById('auth-login-view');
-
-      const uAvatar = document.getElementById('auth-user-avatar');
-
-      const uInitials = document.getElementById('auth-user-initials');
-
-      const uName = document.getElementById('auth-user-name');
-
-      const uEmail = document.getElementById('auth-user-email');
-
-      const uBadge = document.getElementById('auth-provider-badge');
-
-
-
-      if (session && session.is_authenticated) {
-
-        const rawEmail = session.email || '';
-
-        const rawName = session.name || (rawEmail ? rawEmail.split('@')[0] : '') || 'Utilisateur';
-
-        const email = escapeHtml(rawEmail);
-
-        const name = escapeHtml(rawName);
-
-        const picture = sanitizeUrl(session.picture || '');
-
-        const initials = escapeHtml(rawName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'VT');
-
-        const firstName = escapeHtml(rawName.split(' ')[0] || '');
-
-        const isGoogle = (session.auth_method && session.auth_method.includes('google'));
-
-
-
-        // Header : Avatar utilisateur connecté avec menu déroulant
-
-        if (headerContainer) {
-
-          headerContainer.innerHTML = `
-
-            <button type="button" onclick="toggleUserDropdown()" id="btn-header-avatar" class="flex items-center space-x-1.5 p-1 rounded-xl bg-[#151D2A] hover:bg-[#1F2A3C] border border-brand-500/40 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="${name} (${email})">
-
-              <div class="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-tr from-brand-600 to-electric-cyan text-white font-bold text-xs shrink-0">
-
-                ${picture ? `<img src="${picture}" class="w-full h-full object-cover" alt="Avatar">` : `<span>${initials}</span>`}
-
-              </div>
-
-              <span class="hidden sm:inline font-semibold px-1 text-brand-300">${firstName}</span>
-
-              <span class="w-2 h-2 rounded-full bg-brand-400 mr-1"></span>
-
-              <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 hidden sm:inline"></i>
-
-            </button>
-
-
-
-            <!-- Menu Déroulant Profil -->
-
-            <div id="header-user-dropdown" class="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#151D2A] border border-[#1F2A3C] shadow-2xl p-2 space-y-1 z-50 hidden">
-
-              <div class="px-3 py-2 border-b border-[#1F2A3C] mb-1">
-
-                <div class="text-xs font-bold text-white truncate">${name}</div>
-
-                <div class="text-[10px] text-brand-400 truncate">${email}</div>
-
-                <span class="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">${isGoogle ? 'Compte Google' : 'Compte Email'}</span>
-
-              </div>
-
-              <button onclick="toggleUserDropdown(); openProfileModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
-
-                <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
-
-                <span>Mon Profil</span>
-
-              </button>
-
-              <button onclick="toggleUserDropdown(); openFriendsModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
-
-                <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
-
-                <span>Amis & Partage</span>
-
-              </button>
-
-              <button onclick="toggleUserDropdown(); openConnectWizardModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
-
-                <i data-lucide="link-2" class="w-4 h-4 text-indigo-400"></i>
-
-                <span>Appareils Connectés</span>
-
-              </button>
-
-              <button onclick="toggleUserDropdown(); openAuthModal()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-[#1F2A3C] flex items-center space-x-2 transition-colors">
-
-                <i data-lucide="shield" class="w-4 h-4 text-sky-400"></i>
-
-                <span>Sécurité & Sessions</span>
-
-              </button>
-
-              <div class="border-t border-[#1F2A3C] pt-1">
-
-                <button onclick="toggleUserDropdown(); logoutSession()" class="w-full text-left px-3 py-2 rounded-xl text-xs text-red-300 hover:bg-red-950/40 flex items-center space-x-2 transition-colors">
-
-                  <i data-lucide="log-out" class="w-4 h-4 text-red-400"></i>
-
-                  <span>Déconnexion</span>
-
-                </button>
-
-              </div>
-
-            </div>
-
-          `;
-
-        }
-
-
-
-        // Modale Profil
-
-        if (profEmail) profEmail.innerText = `${rawEmail} (${isGoogle ? 'Google' : 'Email'})`;
-
-        if (profAvatar) {
-
-          profAvatar.innerHTML = picture
-
-            ? `<img src="${picture}" class="w-full h-full object-cover">`
-
-            : `<div class="w-full h-full bg-brand-600 flex items-center justify-center text-white font-bold text-xs">${initials}</div>`;
-
-        }
-
-        if (profActionBtn) {
-
-          profActionBtn.innerText = "Gérer Compte";
-
-          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-brand-500/20 hover:bg-brand-500/30 border border-brand-500/40 text-brand-300 text-[11px] font-semibold transition-all";
-
-        }
-
-
-
-        // Modale Auth
-
-        if (connView) connView.classList.remove('hidden');
-
-        if (loginView) loginView.classList.add('hidden');
-
-        if (uAvatar) {
-
-          if (picture) {
-
-            uAvatar.src = picture;
-
-            uAvatar.classList.remove('hidden');
-
-            if (uInitials) uInitials.classList.add('hidden');
-
-          } else {
-
-            uAvatar.classList.add('hidden');
-
-            if (uInitials) {
-
-              uInitials.innerText = initials;
-
-              uInitials.classList.remove('hidden');
-
-            }
-
-          }
-
-        }
-
-        if (uName) uName.innerText = rawName;
-
-        if (uEmail) uEmail.innerText = rawEmail;
-
-        if (uBadge) uBadge.innerText = isGoogle ? "Google" : "Email & Mot de passe";
-
-
-
-      } else {
-
-        // Déconnecté
-
-        if (headerContainer) {
-
-          headerContainer.innerHTML = `
-
-            <button type="button" onclick="openAuthModal()" id="btn-header-auth" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-medium transition-all active:scale-95 shadow-sm" title="Se connecter / S'inscrire">
-
-              <i data-lucide="user" class="w-4 h-4 text-brand-400"></i>
-
-              <span class="hidden sm:inline">Connexion</span>
-
-            </button>
-
-          `;
-
-        }
-
-
-
-        if (profEmail) profEmail.innerText = "Non connecté";
-
-        if (profAvatar) {
-
-          profAvatar.innerHTML = `
-
-            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-
-            </svg>
-
-          `;
-
-        }
-
-        if (profActionBtn) {
-
-          profActionBtn.innerText = "Se connecter";
-
-          profActionBtn.className = "px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-[11px] font-semibold transition-all";
-
-        }
-
-
-
-        if (connView) connView.classList.add('hidden');
-
-        if (loginView) loginView.classList.remove('hidden');
-
-      }
-
-      if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) {} }
-
-    }
-
-
-
-    // Alias pour compatibilité
-
-    function renderGoogleAuthState(session, profile) {
-
-      renderUnifiedAuthState(session, profile);
-
-    }
-
-
-
-    // Exposition globale explicite des handlers d'interface
-
-    window.openProfileModal = openProfileModal;
-
-    window.closeProfileModal = closeProfileModal;
-
-    window.saveUserProfile = saveUserProfile;
-
-    window.openConnectWizardModal = openConnectWizardModal;
-
-    window.closeConnectWizardModal = closeConnectWizardModal;
-
-    window.selectWizardDevice = selectWizardDevice;
-
-    window.submitDeviceConnection = submitDeviceConnection;
-
-    window.openAuthModal = openAuthModal;
-
-    window.closeAuthModal = closeAuthModal;
-
-    window.switchTab = switchTab;
-
-    window.generateDeviceToken = generateDeviceToken;
-
-    window.toggleTokenVisibility = toggleTokenVisibility;
-
-    window.copyTokenToClipboard = copyTokenToClipboard;
-
-    window.fetchOrInitDeviceToken = fetchOrInitDeviceToken;
-
-    window.testHealthConnectIngestion = testHealthConnectIngestion;
-
-    window.formatRelativeTime = formatRelativeTime;
-
-    window.renderLiveSyncBanner = renderLiveSyncBanner;
-
-    window.triggerSyncFromBanner = triggerSyncFromBanner;
-
-
-
-    function syncGoogleAccountStorage(email) {
-
-      if (!email) return;
-
-      const key = `vitaltrack_backup_${email}`;
-
-      const existing = localStorage.getItem(key);
-
-      if (existing) {
-
-        try {
-
-          const parsed = JSON.parse(existing);
-
-          apiFetch('/api/backup/import', {
-
-            method: 'POST',
-
-            headers: { 'Content-Type': 'application/json' },
-
-            body: JSON.stringify({ data: parsed, overwrite: false })
-
-          });
-
-        } catch (e) {}
-
-      } else if (currentData) {
-
-        localStorage.setItem(key, JSON.stringify(currentData));
-
-      }
-
-    }
-
-  
-
-
-
-
-
-// Fonctions de modale de synchronisation par date (BALI-291)
-function openDateSyncModal(deviceId) {
-  const modal = document.getElementById('modal-date-sync');
-  if (!modal) return;
-  const inputDevId = document.getElementById('input-date-sync-device-id');
-  const inputDate = document.getElementById('input-date-sync-start');
-  const lastSyncLabel = document.getElementById('date-sync-last-val');
-
-  if (inputDevId) inputDevId.value = deviceId || 'health_connect';
-  if (inputDate) {
-    const today = new Date().toISOString().split('T')[0];
-    inputDate.value = today;
-  }
-  if (lastSyncLabel) {
-    const statusEl = document.getElementById('live-health-connect-status') || document.getElementById('live-hc-status-text');
-    const text = statusEl ? statusEl.innerText : 'Inconnue';
-    lastSyncLabel.innerText = text;
-  }
-  modal.classList.remove('hidden');
-}
-
-function closeDateSyncModal() {
-  const modal = document.getElementById('modal-date-sync');
-  if (modal) modal.classList.add('hidden');
-}
-
-async function submitDateSync() {
-  const inputDevId = document.getElementById('input-date-sync-device-id');
-  const inputDate = document.getElementById('input-date-sync-start');
-  const deviceId = (inputDevId && inputDevId.value) ? inputDevId.value : 'health_connect';
-  const startDate = inputDate ? inputDate.value : null;
-
-  if (!startDate) {
-    if (typeof showToast === 'function') showToast('Veuillez sélectionner une date valide', 'warning');
-    return;
-  }
-
-  closeDateSyncModal();
-  await triggerDeviceSync(deviceId, { start_date: startDate });
-}
-
-function openBridgeFromDateSyncModal() {
-  const inputDate = document.getElementById('input-date-sync-start');
-  const startDate = inputDate ? inputDate.value : '';
-  closeDateSyncModal();
-
-  const url = startDate ? 'vitaltrack://sync?from_date=' + encodeURIComponent(startDate) : 'vitaltrack://sync?since_last=true';
-  window.location.href = url;
-  if (typeof showToast === 'function') {
-    showToast('Ouverture du bridge Android VitalTrack (' + (startDate || 'dernière synchro') + ')...', 'info');
-  }
-}
-
-window.openDateSyncModal = openDateSyncModal;
-window.closeDateSyncModal = closeDateSyncModal;
-window.submitDateSync = submitDateSync;
-window.openBridgeFromDateSyncModal = openBridgeFromDateSyncModal;
-window.triggerDeviceSync = triggerDeviceSync;
