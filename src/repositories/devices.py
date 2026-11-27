@@ -2,12 +2,15 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.crypto import decrypt_credentials, decrypt_data, encrypt_credentials, encrypt_data
 from src.repositories.base import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class DevicesRepository(BaseRepository):
@@ -24,11 +27,30 @@ class DevicesRepository(BaseRepository):
         d["last_sync_at"] = d.get("last_sync_at") or d.get("last_sync")
 
         enc_cred = d.get("encrypted_credentials")
+        raw_api_key = d.get("api_key")
+        decrypt_failed = False
         if enc_cred:
-            creds = decrypt_credentials(enc_cred)
-        elif d.get("api_key"):
-            raw_k = decrypt_data(d["api_key"])
-            creds = {"api_key": raw_k} if raw_k else {}
+            if reveal_secrets:
+                creds = decrypt_credentials(enc_cred)
+            else:
+                try:
+                    creds = decrypt_credentials(enc_cred)
+                except Exception as exc:
+                    logger.warning("Failed to decrypt encrypted_credentials for device %s: %s", d.get("device_id"), exc)
+                    creds = {}
+                    decrypt_failed = True
+        elif raw_api_key:
+            if reveal_secrets:
+                raw_k = decrypt_data(raw_api_key)
+                creds = {"api_key": raw_k} if raw_k else {}
+            else:
+                try:
+                    raw_k = decrypt_data(raw_api_key)
+                    creds = {"api_key": raw_k} if raw_k else {}
+                except Exception as exc:
+                    logger.warning("Failed to decrypt api_key for device %s: %s", d.get("device_id"), exc)
+                    creds = {}
+                    decrypt_failed = True
         else:
             creds = {}
 
@@ -37,8 +59,10 @@ class DevicesRepository(BaseRepository):
         else:
             d.pop("encrypted_credentials", None)
             d.pop("api_key", None)
-            d["has_credentials"] = bool(creds)
-            if creds.get("api_key"):
+            d["has_credentials"] = bool(creds) or decrypt_failed
+            if decrypt_failed:
+                d["api_key_masked"] = None
+            elif creds.get("api_key"):
                 raw_k = str(creds["api_key"])
                 d["api_key_masked"] = f"{raw_k[:4]}...{raw_k[-4:]}" if len(raw_k) > 8 else "***"
         return d
