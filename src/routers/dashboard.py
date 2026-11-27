@@ -129,6 +129,9 @@ async def get_dashboard_data(
         steps=today_steps,
         workout_calories_kcal=today_workout_calories,
         goal_delta=goal_delta,
+        weight_kg=effective_weight_kg or 80.0,
+        target_steps=int(profile.get("target_steps") or 10000),
+        activity_level=profile.get("activity_level") or "moderately_active",
     )
     daily_targets = get_daily_nutrition_targets(
         db,

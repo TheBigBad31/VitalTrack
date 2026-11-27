@@ -51,12 +51,36 @@ function getEffectiveWeightKg() {
 function getDynamicCaloriesBase(profileId) {
   const data = (typeof currentData !== 'undefined' && currentData) || {};
   const s = data.summary || {};
-  const p = (typeof GOAL_PROFILES !== 'undefined' && GOAL_PROFILES[profileId]) || { delta: -500 };
+  const prof = data.profile || {};
+  const p = (typeof GOAL_PROFILES !== 'undefined' && GOAL_PROFILES[profileId]) || { delta: -500, steps: 10000 };
   if (s.dynamic_tdee && Number(s.dynamic_tdee.dynamic_tdee) > 0) {
     return Math.max(1200, Math.round(Number(s.dynamic_tdee.dynamic_tdee) + p.delta));
   }
-  const burned = Number(s.calories_burned_kcal) || 2280;
-  return Math.max(1200, Math.round(burned + p.delta));
+  const weight = getEffectiveWeightKg() || Number(prof.current_weight_kg) || Number(prof.target_weight_kg) || 80;
+  const height = Number(prof.height_cm) || 178;
+  const age = Number(prof.age) || 35;
+  const gender = String(prof.gender || 'male').toLowerCase();
+  const bmr = gender === 'female'
+    ? (10 * weight + 6.25 * height - 5 * age - 161)
+    : (10 * weight + 6.25 * height - 5 * age + 5);
+  const neatFactors = {
+    sedentary: 0.10,
+    lightly_active: 0.15,
+    light: 0.15,
+    moderately_active: 0.20,
+    moderate: 0.20,
+    very_active: 0.25,
+    active: 0.25,
+    extra_active: 0.30,
+  };
+  const actKey = String(prof.activity_level || 'moderately_active').trim().toLowerCase();
+  const baseNeat = bmr * (neatFactors[actKey] ?? 0.20);
+  const targetSteps = Number(prof.target_steps) || Number(p.steps) || 10000;
+  const todaySteps = Number(s.steps) || 0;
+  const effectiveSteps = Math.max(todaySteps, targetSteps);
+  const neatSteps = effectiveSteps * 0.0005 * weight;
+  const workoutCals = Number(s.workout_calories_kcal) || 0;
+  return Math.max(1200, Math.round(bmr + baseNeat + neatSteps + workoutCals + p.delta));
 }
 
 function parseProfileGoalsConfig(raw) {
@@ -355,6 +379,27 @@ function renderNutrientConfigCards() {
     header.appendChild(title);
     header.appendChild(preview);
     card.appendChild(header);
+
+    if (key === 'calories' && resolvedRule.source !== 'fixed') {
+      const dataObj = (typeof currentData !== 'undefined' && currentData) || {};
+      const dyn = (dataObj.summary && dataObj.summary.dynamic_tdee) || null;
+      if (dyn && Number(dyn.bmr_kcal) > 0) {
+        const formulaBox = document.createElement('div');
+        formulaBox.id = 'goal-calories-formula-breakdown';
+        formulaBox.className = 'text-[11px] text-slate-300 bg-[#13132B]/70 border border-[#25254A] rounded-xl px-3 py-2 leading-relaxed';
+        const bmrVal = Math.round(Number(dyn.bmr_kcal) || 0);
+        const baseNeatVal = Math.round(Number(dyn.base_neat_kcal) || 0);
+        const stepsVal = Math.round(Number(dyn.neat_steps_kcal) || 0);
+        const effSteps = Number(dyn.effective_steps) || 0;
+        const workoutVal = Math.round(Number(dyn.workout_calories_kcal) || 0);
+        const profObj = (typeof GOAL_PROFILES !== 'undefined' && GOAL_PROFILES[resolved.goal_profile_id]) || { delta: Number(dyn.goal_delta) || 0 };
+        const deltaVal = Math.round(Number(profObj.delta ?? dyn.goal_delta) || 0);
+        const deltaStr = deltaVal >= 0 ? `+${deltaVal}` : `${deltaVal}`;
+        const targetVal = Math.round(Number(resolvedRule.target) || 0);
+        formulaBox.textContent = `Formule : BMR ${bmrVal} + Activité ${baseNeatVal} + Marche ${stepsVal} (${effSteps.toLocaleString('fr-FR')} pas) + Séances ${workoutVal} ${deltaStr} kcal = ${targetVal} kcal`;
+        card.appendChild(formulaBox);
+      }
+    }
 
     // Row 1 : Mode (Plancher / Plafond / Fourchette) + Source/Unité
     const controlsRow = document.createElement('div');

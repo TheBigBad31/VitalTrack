@@ -158,22 +158,44 @@ def test_nutrition_engine_with_repositories_di():
 def test_calculate_dynamic_tdee_target():
     from src.domain.nutrition import calculate_dynamic_tdee_target
 
-    # BMR 1700, 10000 steps (400 kcal NEAT), 300 kcal workout, goal_delta -500 (perte de poids)
+    # BMR 1942.5 (100kg/178cm/35ans/H), moderately_active (+20% = 388.5),
+    # 0 pas le matin mais target_steps=10000 -> 10000 * 0.0005 * 100 = 500 kcal,
+    # 300 kcal workout, goal_delta -500 (perte de poids)
     res = calculate_dynamic_tdee_target(
-        bmr_kcal=1700.0,
-        steps=10000,
+        bmr_kcal=1942.5,
+        steps=0,
         workout_calories_kcal=300.0,
         goal_delta=-500.0,
-        min_calories=1200.0
+        min_calories=1200.0,
+        weight_kg=100.0,
+        target_steps=10000,
+        activity_level="moderately_active",
     )
-    assert res["bmr_kcal"] == 1700.0
-    assert res["neat_steps_kcal"] == 400.0
+    assert res["bmr_kcal"] == 1942.5
+    assert res["base_neat_kcal"] == 388.5
+    assert res["effective_steps"] == 10000
+    assert res["neat_steps_kcal"] == 500.0
     assert res["workout_calories_kcal"] == 300.0
-    assert res["dynamic_tdee"] == 2400.0
-    # target = max(1200, 2400 - 500) = 1900 kcal
-    assert res["target_calories_intake"] == 1900.0
-    assert res["base_target_calories_intake"] == 1600.0
-    assert res["daily_carbs_target_g"] == round((1900.0 * 0.45) / 4.0, 1)
+    assert res["dynamic_tdee"] == 3131.0
+    # target = max(1200, 3131 - 500) = 2631.0 kcal
+    assert res["target_calories_intake"] == 2631.0
+    assert res["base_target_calories_intake"] == 2331.0
+    assert res["daily_carbs_target_g"] == round((2631.0 * 0.45) / 4.0, 1)
+
+    # Si today_steps > target_steps (ex: 12000 > 10000), bonus automatique
+    bonus_res = calculate_dynamic_tdee_target(
+        bmr_kcal=1700.0,
+        steps=12000,
+        workout_calories_kcal=0.0,
+        goal_delta=0.0,
+        weight_kg=80.0,
+        target_steps=10000,
+        activity_level="sedentary",
+    )
+    assert bonus_res["base_neat_kcal"] == 170.0
+    assert bonus_res["effective_steps"] == 12000
+    assert bonus_res["neat_steps_kcal"] == 480.0
+    assert bonus_res["target_calories_intake"] == 2350.0
 
     # Respect du seuil minimal (min_calories = 1200)
     low_res = calculate_dynamic_tdee_target(
@@ -181,7 +203,12 @@ def test_calculate_dynamic_tdee_target():
         steps=2000,
         workout_calories_kcal=0.0,
         goal_delta=-500.0,
-        min_calories=1200.0
+        min_calories=1200.0,
+        weight_kg=60.0,
+        target_steps=2000,
+        activity_level="sedentary",
     )
-    assert low_res["dynamic_tdee"] == 1080.0
+    assert low_res["base_neat_kcal"] == 100.0
+    assert low_res["neat_steps_kcal"] == 60.0
+    assert low_res["dynamic_tdee"] == 1160.0
     assert low_res["target_calories_intake"] == 1200.0

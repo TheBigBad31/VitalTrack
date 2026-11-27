@@ -1060,6 +1060,9 @@ def get_meals_journal(
         steps=day_steps,
         workout_calories_kcal=workout_calories_kcal,
         goal_delta=goal_delta,
+        weight_kg=user_weight_kg,
+        target_steps=int(user_profile.get("target_steps") or 10000),
+        activity_level=user_profile.get("activity_level") or "moderately_active",
     )
     targets = get_daily_nutrition_targets(
         db,

@@ -516,18 +516,40 @@ def calculate_dynamic_tdee_target(
     workout_calories_kcal: float = 0.0,
     goal_delta: float = 0.0,
     min_calories: float = 1200.0,
+    weight_kg: float = 80.0,
+    target_steps: int = 0,
+    activity_level: str = "moderately_active",
 ) -> Dict[str, float]:
-    """Calcule le budget calorique et de macronutriments dynamique ajusté aux pas et séances.
+    """Calcule le budget calorique et de macronutriments dynamique ajusté au profil, aux pas et séances.
 
     Formule de budget :
-      neat_steps_kcal = steps * 0.04
-      target_calories_intake = max(min_calories, bmr_kcal + neat_steps_kcal + workout_calories_kcal + goal_delta)
+      base_neat_kcal = bmr_kcal * neat_factor(activity_level)
+      effective_steps = max(steps, target_steps)
+      neat_steps_kcal = effective_steps * 0.0005 * weight_kg
+      target_calories_intake = max(min_calories, bmr_kcal + base_neat_kcal + neat_steps_kcal + workout_calories_kcal + goal_delta)
     """
-    neat_steps_kcal = round(max(0, steps) * 0.04, 1)
+    neat_factors = {
+        "sedentary": 0.10,
+        "lightly_active": 0.15,
+        "light": 0.15,
+        "moderately_active": 0.20,
+        "moderate": 0.20,
+        "very_active": 0.25,
+        "active": 0.25,
+        "extra_active": 0.30,
+    }
+    act_key = str(activity_level or "moderately_active").strip().lower()
+    neat_factor = neat_factors.get(act_key, 0.20)
+    base_neat_kcal = round(bmr_kcal * neat_factor, 1)
+
+    eff_weight = float(weight_kg) if (weight_kg is not None and float(weight_kg) > 0) else 80.0
+    effective_steps = max(max(0, int(steps or 0)), max(0, int(target_steps or 0)))
+    neat_steps_kcal = round(effective_steps * 0.0005 * eff_weight, 1)
     workout_cals = round(max(0.0, float(workout_calories_kcal or 0.0)), 1)
-    dynamic_tdee = round(bmr_kcal + neat_steps_kcal + workout_cals, 1)
-    base_target = round(max(min_calories, bmr_kcal + neat_steps_kcal + goal_delta), 1)
-    raw_target = bmr_kcal + neat_steps_kcal + workout_cals + goal_delta
+
+    dynamic_tdee = round(bmr_kcal + base_neat_kcal + neat_steps_kcal + workout_cals, 1)
+    base_target = round(max(min_calories, bmr_kcal + base_neat_kcal + neat_steps_kcal + goal_delta), 1)
+    raw_target = bmr_kcal + base_neat_kcal + neat_steps_kcal + workout_cals + goal_delta
     target_cals = round(max(min_calories, raw_target), 1)
 
     # Répartition glucidique ajustée : les calories de séance débloquent principalement des glucides pour la récupération
@@ -538,7 +560,11 @@ def calculate_dynamic_tdee_target(
 
     return {
         "bmr_kcal": round(bmr_kcal, 1),
+        "base_neat_kcal": base_neat_kcal,
         "neat_steps_kcal": neat_steps_kcal,
+        "effective_steps": effective_steps,
+        "weight_kg": round(eff_weight, 1),
+        "activity_level": act_key,
         "workout_calories_kcal": workout_cals,
         "dynamic_tdee": dynamic_tdee,
         "base_target_calories_intake": base_target,
