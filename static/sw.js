@@ -1,8 +1,8 @@
 // static/sw.js - Service Worker VitalTrack PWA
 // Cache offline et stratégie réseau pour les données biométriques et nutritionnelles
 
-const CACHE_NAME = 'vitaltrack-cache-v2';
-const API_CACHE_NAME = 'vitaltrack-api-v2';
+const CACHE_NAME = 'vitaltrack-cache-v3';
+const API_CACHE_NAME = 'vitaltrack-api-v3';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
@@ -14,15 +14,25 @@ const STATIC_ASSETS = [
   '/static/vendor/chart.umd.min.js',
   '/static/modules/api.js',
   '/static/modules/lazy.js',
+  '/static/modules/boot.js',
   '/static/modules/dashboard.js',
+  '/static/modules/auth.js',
+  '/static/modules/device_wizard.js',
+  '/static/modules/saved_meals.js',
   '/static/modules/macro_goals.js',
-  '/static/modules/nutrition.js',
-  '/static/modules/friends.js',
   '/static/modules/views/summary.js',
   '/static/modules/views/weight.js',
   '/static/modules/views/activity.js',
   '/static/modules/views/devices.js',
-  '/static/modules/views/goals.js'
+  '/static/modules/views/goals.js',
+  '/static/modules/nutrition.js',
+  '/static/modules/nutrition/catalog.js',
+  '/static/modules/nutrition/catalog_modal.js',
+  '/static/modules/nutrition/journal.js',
+  '/static/modules/nutrition/recommendations.js',
+  '/static/modules/nutrition/friends_catalog.js',
+  '/static/modules/nutrition/photo.js',
+  '/static/modules/friends.js'
 ];
 
 function isSensitiveApiPath(pathname) {

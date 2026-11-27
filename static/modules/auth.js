@@ -329,7 +329,7 @@
           navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_API_CACHE' });
         }
         if (typeof caches !== 'undefined') {
-          caches.delete('vitaltrack-api-v2').catch(() => {});
+          caches.delete('vitaltrack-api-v3').catch(() => {});
         }
         if (localStorage.getItem(JWT_STORAGE_KEY)) {
           const storedRefresh = typeof REFRESH_TOKEN_STORAGE_KEY !== 'undefined'
