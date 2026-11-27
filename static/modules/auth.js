@@ -160,9 +160,12 @@
         const data = await res.json();
 
         if (res.ok) {
-          // Stocker le token JWT dans localStorage
+          // Stocker le token JWT et le refresh token dans localStorage
           if (data.access_token) {
             localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
+          }
+          if (data.refresh_token && typeof REFRESH_TOKEN_STORAGE_KEY !== 'undefined') {
+            localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, data.refresh_token);
           }
           currentUnifiedSession = data.session || {
             is_authenticated: true,
@@ -301,6 +304,9 @@
           if (data.access_token) {
             localStorage.setItem(JWT_STORAGE_KEY, data.access_token);
           }
+          if (data.refresh_token && typeof REFRESH_TOKEN_STORAGE_KEY !== 'undefined') {
+            localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, data.refresh_token);
+          }
           currentUnifiedSession = data.session;
           localStorage.setItem(GOOGLE_SESSION_KEY, JSON.stringify(data.session));
           renderUnifiedAuthState(data.session, data.profile);
@@ -326,12 +332,22 @@
           caches.delete('vitaltrack-api-v2').catch(() => {});
         }
         if (localStorage.getItem(JWT_STORAGE_KEY)) {
-          await apiFetch('/api/auth/logout', { method: 'POST' });
+          const storedRefresh = typeof REFRESH_TOKEN_STORAGE_KEY !== 'undefined'
+            ? localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
+            : null;
+          await apiFetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(storedRefresh ? { refresh_token: storedRefresh } : {})
+          });
         }
       } catch (e) {
         console.warn("Déconnexion backend différée :", e);
       } finally {
         localStorage.removeItem(JWT_STORAGE_KEY);
+        if (typeof REFRESH_TOKEN_STORAGE_KEY !== 'undefined') {
+          localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+        }
         localStorage.removeItem(GOOGLE_SESSION_KEY);
         currentUnifiedSession = { is_authenticated: false };
         renderUnifiedAuthState(currentUnifiedSession, null);

@@ -3,10 +3,15 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from src.auth import _is_production
+from src.auth import (
+    REFRESH_TOKEN_EXPIRE_SECONDS,
+    _is_production,
+    generate_refresh_token,
+    hash_refresh_token,
+)
 from src.models import UserConsentItem
 from src.repositories.base import BaseRepository
 
@@ -479,6 +484,7 @@ class UsersRepository(BaseRepository):
             cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM food_items WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
         return True
@@ -695,7 +701,181 @@ class UsersRepository(BaseRepository):
                 cursor.execute("DELETE FROM user_profile WHERE user_id = ?", (uid,))
                 cursor.execute("DELETE FROM food_items WHERE user_id = ?", (uid,))
                 cursor.execute("DELETE FROM saved_meals WHERE user_id = ?", (uid,))
+                cursor.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (uid,))
                 cursor.execute("DELETE FROM users WHERE id = ?", (uid,))
             conn.commit()
             return len(users_to_delete)
+
+    # =========================================================================
+    # Refresh Tokens révocables (hashés SHA-256 + rotation + détection reuse)
+    # =========================================================================
+
+    def create_refresh_token(
+        self,
+        user_id: int,
+        expires_in_seconds: Optional[int] = None,
+        family_id: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Crée et persiste un refresh token opaque (stocké uniquement sous forme de hash SHA-256)."""
+        raw_token = generate_refresh_token()
+        token_hash = hash_refresh_token(raw_token)
+        ttl = int(expires_in_seconds) if expires_in_seconds is not None else REFRESH_TOKEN_EXPIRE_SECONDS
+        now = datetime.now(timezone.utc)
+        now_str = now.isoformat()
+        expires_at = (now + timedelta(seconds=ttl)).isoformat()
+        fam_id = family_id or str(uuid.uuid4())
+        ua = (user_agent or "")[:255] or None
+
+        with self.get_connection(user_id=user_id) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, created_at, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, token_hash, fam_id, expires_at, now_str, ua),
+            )
+            conn.commit()
+
+        return {
+            "refresh_token": raw_token,
+            "token_hash": token_hash,
+            "family_id": fam_id,
+            "expires_at": expires_at,
+        }
+
+    def rotate_refresh_token(
+        self,
+        raw_token: str,
+        expires_in_seconds: Optional[int] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Valide un refresh token actif et effectue une rotation atomique (ancien révoqué, nouveau émis).
+
+        Détection de réutilisation : si un token déjà remplacé est rejoué, toute la famille
+        de tokens est immédiatement révoquée.
+        """
+        if not raw_token or not raw_token.strip():
+            return None
+
+        token_hash = hash_refresh_token(raw_token)
+        now = datetime.now(timezone.utc)
+        now_str = now.isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM refresh_tokens WHERE token_hash = ?", (token_hash,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            token_row = dict(row)
+            if token_row.get("revoked_at"):
+                # Détection de replay d'un token déjà tourné -> révoquer toute la famille
+                if token_row.get("replaced_by_hash"):
+                    cursor.execute(
+                        "UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL",
+                        (now_str, token_row["family_id"]),
+                    )
+                    conn.commit()
+                return None
+
+            try:
+                expires_dt = datetime.fromisoformat(str(token_row["expires_at"]))
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                expires_dt = now - timedelta(seconds=1)
+
+            if expires_dt <= now:
+                cursor.execute(
+                    "UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+                    (now_str, token_row["id"]),
+                )
+                conn.commit()
+                return None
+
+            user_id = int(token_row["user_id"])
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                cursor.execute(
+                    "UPDATE refresh_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+                    (now_str, token_row["id"]),
+                )
+                conn.commit()
+                return None
+
+            new_raw = generate_refresh_token()
+            new_hash = hash_refresh_token(new_raw)
+            ttl = int(expires_in_seconds) if expires_in_seconds is not None else REFRESH_TOKEN_EXPIRE_SECONDS
+            new_expires_at = (now + timedelta(seconds=ttl)).isoformat()
+            ua = (user_agent or token_row.get("user_agent") or "")[:255] or None
+
+            cursor.execute(
+                """
+                UPDATE refresh_tokens
+                SET revoked_at = ?, replaced_by_hash = ?
+                WHERE id = ? AND revoked_at IS NULL
+                """,
+                (now_str, new_hash, token_row["id"]),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return None
+
+            cursor.execute(
+                """
+                INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at, created_at, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, new_hash, token_row["family_id"], new_expires_at, now_str, ua),
+            )
+            conn.commit()
+
+            return {
+                "user": dict(user_row),
+                "refresh_token": new_raw,
+                "token_hash": new_hash,
+                "family_id": token_row["family_id"],
+                "expires_at": new_expires_at,
+            }
+
+    def revoke_refresh_token(self, raw_token: str, user_id: Optional[int] = None) -> bool:
+        """Révoque un refresh token spécifique (par son hash SHA-256)."""
+        if not raw_token or not raw_token.strip():
+            return False
+
+        token_hash = hash_refresh_token(raw_token)
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        with self.get_connection(user_id=user_id) as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute(
+                    "UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND user_id = ? AND revoked_at IS NULL",
+                    (now_str, token_hash, user_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+                    (now_str, token_hash),
+                )
+            revoked = cursor.rowcount > 0
+            conn.commit()
+            return revoked
+
+    def revoke_all_user_refresh_tokens(self, user_id: int) -> int:
+        """Révoque tous les refresh tokens actifs d'un utilisateur (ex: logout global)."""
+        now_str = datetime.now(timezone.utc).isoformat()
+        with self.get_connection(user_id=user_id) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                (now_str, user_id),
+            )
+            count = cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            conn.commit()
+            return count
 

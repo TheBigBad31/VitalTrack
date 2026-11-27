@@ -1,6 +1,13 @@
 /** @vitest */
-import { describe, it, expect } from 'vitest'
-import { escapeHtml, sanitizeUrl } from './api.js'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import {
+  apiFetch,
+  escapeHtml,
+  sanitizeUrl,
+  JWT_STORAGE_KEY,
+  REFRESH_TOKEN_STORAGE_KEY,
+  GOOGLE_SESSION_KEY
+} from './api.js'
 
 describe('escapeHtml', () => {
   it('should escape HTML special characters', () => {
@@ -68,5 +75,91 @@ describe('sanitizeUrl', () => {
 
   it('should reject about: URLs', () => {
     expect(sanitizeUrl('about:blank')).toBe('')
+  })
+})
+
+describe('apiFetch auto-refresh on 401', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    window.showGlobalLoading = vi.fn()
+    window.openAuthModal = vi.fn()
+    globalThis.openAuthModal = window.openAuthModal
+    vi.restoreAllMocks()
+  })
+
+  it('refreshes access token on 401 and retries request without opening auth modal', async () => {
+    localStorage.setItem(JWT_STORAGE_KEY, 'expired-jwt')
+    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, 'valid-refresh-1')
+
+    const fetchMock = vi.fn(async (url, opts) => {
+      if (url === '/api/auth/refresh') {
+        expect(JSON.parse(opts.body)).toEqual({ refresh_token: 'valid-refresh-1' })
+        return new Response(
+          JSON.stringify({ access_token: 'fresh-jwt-2', refresh_token: 'valid-refresh-2' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+      if (opts.headers.Authorization === 'Bearer expired-jwt') {
+        return new Response(JSON.stringify({ detail: 'expired' }), { status: 401 })
+      }
+      expect(opts.headers.Authorization).toBe('Bearer fresh-jwt-2')
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await apiFetch('/api/dashboard')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(localStorage.getItem(JWT_STORAGE_KEY)).toBe('fresh-jwt-2')
+    expect(localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBe('valid-refresh-2')
+    expect(window.openAuthModal).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates concurrent refresh calls (single-flight)', async () => {
+    localStorage.setItem(JWT_STORAGE_KEY, 'expired-jwt')
+    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, 'valid-refresh-sf')
+
+    let refreshCalls = 0
+    const fetchMock = vi.fn(async (url, opts) => {
+      if (url === '/api/auth/refresh') {
+        refreshCalls += 1
+        return new Response(
+          JSON.stringify({ access_token: 'fresh-sf-jwt', refresh_token: 'valid-refresh-sf-2' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+      if (opts.headers.Authorization === 'Bearer expired-jwt') {
+        return new Response(null, { status: 401 })
+      }
+      return new Response(JSON.stringify({ url }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [r1, r2] = await Promise.all([apiFetch('/api/dashboard'), apiFetch('/api/weights')])
+    expect(r1.status).toBe(200)
+    expect(r2.status).toBe(200)
+    expect(refreshCalls).toBe(1)
+    expect(window.openAuthModal).not.toHaveBeenCalled()
+  })
+
+  it('clears tokens and opens auth modal when refresh fails', async () => {
+    localStorage.setItem(JWT_STORAGE_KEY, 'expired-jwt')
+    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, 'revoked-refresh')
+    localStorage.setItem(GOOGLE_SESSION_KEY, '{"is_authenticated":true}')
+
+    const fetchMock = vi.fn(async (url) => {
+      if (url === '/api/auth/refresh') {
+        return new Response(JSON.stringify({ detail: 'revoked' }), { status: 401 })
+      }
+      return new Response(null, { status: 401 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await apiFetch('/api/dashboard')
+    expect(res.status).toBe(401)
+    expect(localStorage.getItem(JWT_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(GOOGLE_SESSION_KEY)).toBeNull()
+    expect(window.openAuthModal).toHaveBeenCalledTimes(1)
   })
 })
