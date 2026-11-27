@@ -399,8 +399,8 @@ class RateLimiter:
     def _sync_db_scope(self) -> None:
         """Réinitialise automatiquement les compteurs si l'instance DB de l'application a été remplacée (fixtures de test)."""
         try:
-            import src.app as app_module
-            current_db = getattr(app_module, "db", None)
+            from src.dependencies import get_db_if_initialized
+            current_db = get_db_if_initialized()
             db_key = f"{id(current_db)}:{getattr(current_db, 'db_path', '')}" if current_db is not None else None
         except Exception:
             db_key = None

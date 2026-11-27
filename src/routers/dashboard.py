@@ -13,8 +13,16 @@ from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
 
-import src.app as app_module
 from src.auth import AuthUser
+from src.connectors.registry import DeviceConnectorRegistry
+from src.db import Database
+from src.dependencies import (
+    get_current_user,
+    get_db,
+    get_device_registry,
+    get_nutrition_engine,
+    invalidate_dashboard_cache,
+)
 from src.routers.friends import verify_view_access
 
 
@@ -33,23 +41,18 @@ DASHBOARD_CACHE = dashboard_cache
 DASHBOARD_CACHE_TTL_SECONDS = DEFAULT_TTL_SECONDS
 
 
-def invalidate_dashboard_cache(user_id: Optional[int] = None):
-    """Invalide le cache du dashboard (global ou par utilisateur via DashboardCache)."""
-    dashboard_cache.invalidate(user_id)
-
-
 @router.get("/api/dashboard")
 async def get_dashboard_data(
     include_simulation: bool = Query(False, description="Inclure ou exclure les données de simulation"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    nutrition_engine: NutritionEngine = Depends(get_nutrition_engine),
+    device_registry: DeviceConnectorRegistry = Depends(get_device_registry),
 ):
     """Renvoie les données unifiées pour alimenter l'ensemble des 5 vues de dashboards pour l'utilisateur connecté ou un ami."""
-    db = app_module.db
-    nutrition_engine = getattr(app_module, "nutrition_engine", None)
     if nutrition_engine is None or getattr(nutrition_engine, "db", None) is not db:
         nutrition_engine = NutritionEngine(db=db)
-    device_registry = app_module.device_registry
 
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)

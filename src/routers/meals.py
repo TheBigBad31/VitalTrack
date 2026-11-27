@@ -41,9 +41,15 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
+from src.dependencies import (
+    get_calorie_estimator,
+    get_current_user,
+    get_db,
+    get_nutrition_engine,
+    invalidate_dashboard_cache,
+)
 from src.models import (
     CatalogItem,
     CatalogItemType,
@@ -54,6 +60,7 @@ from src.models import (
     SavedMeal,
 )
 from src.nutrition_engine import NutritionEngine
+from src.vision_nutrition import PhotoCalorieEstimator
 from src.meal_recommendations import (
     compute_weighted_meal_recommendations,
     get_daily_nutrition_targets,
@@ -255,20 +262,14 @@ class SaveAsDishRequest(BaseModel):
     category: Optional[str] = Field(None, description="Catégorie alimentaire")
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
-def get_nutrition_engine() -> NutritionEngine:
-    """Retourne l'instance NutritionEngine courante depuis src.app."""
-    return app_module.nutrition_engine
-
-
-def calculate_day_summary(target_date: date, user_id: int = 1) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def calculate_day_summary(
+    target_date: date,
+    user_id: int = 1,
+    db: Optional[Database] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Calcule les 4 repas et le résumé nutritionnel de la journée sans écriture en base."""
-    db = get_db()
-    logs = db.get_meal_logs_for_date(target_date, user_id=user_id)
+    active_db = db or get_db()
+    logs = active_db.get_meal_logs_for_date(target_date, user_id=user_id)
     logs_by_type = {log.meal_type: log for log in logs}
 
     meal_types = ["breakfast", "lunch", "snack", "dinner"]
@@ -333,10 +334,10 @@ def calculate_day_summary(target_date: date, user_id: int = 1) -> Tuple[List[Dic
 def get_meals(
     limit: int = Query(50, ge=1, le=200),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne les repas récemment enregistrés pour l'utilisateur connecté ou un ami autorisé."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     meals = db.get_meals(limit=limit, user_id=target_uid)
@@ -344,13 +345,16 @@ def get_meals(
 
 
 @router.get("/api/meals/barcode/{barcode}")
-def get_barcode_product(barcode: str, current_user: AuthUser = Depends(app_module.get_current_user)):
+def get_barcode_product(
+    barcode: str,
+    current_user: AuthUser = Depends(get_current_user),
+    calorie_estimator: PhotoCalorieEstimator = Depends(get_calorie_estimator),
+):
     """Recherche un produit par code-barres EAN-13 via OpenFoodFacts."""
     clean_code = barcode.strip().replace(" ", "").replace("-", "")
     if not clean_code or not clean_code.isdigit() or len(clean_code) < 8:
         raise HTTPException(status_code=400, detail="Code-barres EAN-13 invalide (doit contenir au moins 8 chiffres)")
 
-    calorie_estimator = app_module.calorie_estimator
     product = calorie_estimator.fetch_openfoodfacts_barcode(clean_code)
     if not product:
         raise HTTPException(status_code=404, detail="Produit non trouvé sur OpenFoodFacts pour ce code-barres")
@@ -372,7 +376,11 @@ def get_analyze_photo_info():
 
 @router.post("/api/meals/analyze-photo", dependencies=[Depends(rate_limit_photo_analysis)])
 @router.post("/api/meals/estimate", dependencies=[Depends(rate_limit_photo_analysis)])
-def estimate_meal_calories(req: MealEstimateRequest, current_user: AuthUser = Depends(app_module.get_current_user)):
+def estimate_meal_calories(
+    req: MealEstimateRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    calorie_estimator: PhotoCalorieEstimator = Depends(get_calorie_estimator),
+):
     """Estime les calories et macronutriments à partir d'une photo ou d'une description.
 
     Prend en compte le curseur d'ajustement de portion interactive (0.5x - 2.0x).
@@ -394,8 +402,6 @@ def estimate_meal_calories(req: MealEstimateRequest, current_user: AuthUser = De
         except (binascii.Error, ValueError):
             logger.exception("Échec du décodage base64 de la photo de repas")
             image_bytes = None
-
-    calorie_estimator = app_module.calorie_estimator
 
     # Si un code-barres est fourni, recherche OpenFoodFacts en priorité
     if req.barcode:
@@ -459,10 +465,14 @@ def estimate_meal_calories(req: MealEstimateRequest, current_user: AuthUser = De
 
 
 @router.post("/api/meals")
-def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.get_current_user)):
+def log_meal(
+    req: MealSaveRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    nutrition_engine: NutritionEngine = Depends(get_nutrition_engine),
+    calorie_estimator: PhotoCalorieEstimator = Depends(get_calorie_estimator),
+):
     """Enregistre définitivement un repas décomposé ou direct dans le journal alimentaire pour l'utilisateur connecté."""
-    db = get_db()
-    nutrition_engine = get_nutrition_engine()
     target_date = req.date or dt_module.date.today()
     meal_type = req.meal_type or determine_meal_type()
 
@@ -501,7 +511,6 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         )
         saved = db.insert_meal(entry, user_id=current_user.id)
     else:
-        calorie_estimator = app_module.calorie_estimator
         est = calorie_estimator.analyze_meal(
             description=None,
             portion_scale=req.portion_scale,
@@ -526,14 +535,18 @@ def log_meal(req: MealSaveRequest, current_user: AuthUser = Depends(app_module.g
         append=False
     )
 
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return saved.model_dump()
 
 
 @router.put("/api/meals/{meal_id}")
-def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Depends(app_module.get_current_user)):
+def update_meal(
+    meal_id: int,
+    req: MealSaveRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Met à jour un repas existant dans le journal pour l'utilisateur connecté."""
-    db = get_db()
     target_date = req.date or dt_module.date.today()
     meal_type = req.meal_type or determine_meal_type()
     if req.items:
@@ -589,18 +602,21 @@ def update_meal(meal_id: int, req: MealSaveRequest, current_user: AuthUser = Dep
         append=False
     )
 
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return updated.model_dump()
 
 
 @router.delete("/api/meals/{meal_id}")
-def delete_meal(meal_id: int, current_user: AuthUser = Depends(app_module.get_current_user)):
+def delete_meal(
+    meal_id: int,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Supprime un repas du journal pour l'utilisateur connecté."""
-    db = get_db()
     deleted = db.delete_meal(meal_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Repas introuvable")
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {"status": "success", "message": f"Repas #{meal_id} supprimé avec succès"}
 
 
@@ -612,10 +628,10 @@ def delete_meal(meal_id: int, current_user: AuthUser = Depends(app_module.get_cu
 def list_saved_meals(
     meal_type: Optional[str] = Query(None, description="Filtre par repas (breakfast, lunch, snack, dinner)"),
     is_favorite: Optional[bool] = Query(None, description="Filtre par favoris"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère la liste des plats sauvegardés/réutilisables de l'utilisateur connecté."""
-    db = get_db()
     meals = db.get_saved_meals(meal_type=meal_type, is_favorite=is_favorite, user_id=current_user.id)
     return [m.model_dump() for m in meals]
 
@@ -623,10 +639,10 @@ def list_saved_meals(
 @router.post("/api/meals/saved")
 def create_saved_meal(
     req: SavedMealCreateRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Crée et enregistre un nouveau plat type dans la bibliothèque réutilisable."""
-    db = get_db()
     saved_meal = SavedMeal(
         user_id=current_user.id,
         name=req.name,
@@ -650,10 +666,10 @@ def create_saved_meal(
 @router.get("/api/meals/saved/{meal_id}")
 def get_saved_meal(
     meal_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère les détails d'un plat type réutilisable."""
-    db = get_db()
     saved = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
     if not saved:
         raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
@@ -664,10 +680,10 @@ def get_saved_meal(
 def update_saved_meal(
     meal_id: int,
     req: SavedMealUpdateRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Met à jour un plat type réutilisable existant."""
-    db = get_db()
     existing = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
     if not existing:
         raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
@@ -688,10 +704,10 @@ def update_saved_meal(
 @router.delete("/api/meals/saved/{meal_id}")
 def delete_saved_meal(
     meal_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Supprime un plat réutilisable de la bibliothèque."""
-    db = get_db()
     deleted = db.delete_saved_meal(meal_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
@@ -702,10 +718,10 @@ def delete_saved_meal(
 def log_saved_meal_to_journal(
     meal_id: int,
     req: SavedMealLogRequest = SavedMealLogRequest(),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Logge instantanément un plat réutilisable dans le journal alimentaire du jour."""
-    db = get_db()
     saved = db.get_saved_meal_by_id(meal_id, user_id=current_user.id)
     if not saved:
         raise HTTPException(status_code=404, detail="Plat réutilisable introuvable")
@@ -764,7 +780,7 @@ def log_saved_meal_to_journal(
         append=False
     )
 
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": f"Plat '{saved.name}' ajouté au journal ({meal_type}) avec portion x{factor}",
@@ -785,10 +801,10 @@ def get_catalog_items(
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un ami pour consultation en lecture seule"),
     source: Optional[str] = Query(None, description="Source des aliments ('all', 'mine', 'public', 'friends')"),
     friend_id: Optional[int] = Query(None, description="ID d'un ami spécifique pour explorer son catalogue"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère le catalogue d'aliments et de plats selon la source (all, mine, public, friends) ou friend_id."""
-    db = get_db()
     # Consultation en lecture seule : cible l'utilisateur concerné (ami ou soi-même) après vérification d'accès.
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
@@ -809,10 +825,10 @@ def get_catalog_items(
 @router.post("/api/catalog/items")
 def create_catalog_item(
     req: CatalogItemCreateRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Crée un nouvel aliment ou plat dans le catalogue."""
-    db = get_db()
     item = CatalogItem(
         user_id=current_user.id,
         name=req.name.strip(),
@@ -839,10 +855,10 @@ def create_catalog_item(
 def update_catalog_item(
     item_id: int,
     req: CatalogItemUpdateRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Met à jour un aliment ou un plat du catalogue."""
-    db = get_db()
     update_data = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = db.update_food_item(item_id, update_data, user_id=current_user.id)
     if not updated:
@@ -853,10 +869,10 @@ def update_catalog_item(
 @router.delete("/api/catalog/items/{item_id}")
 def delete_catalog_item(
     item_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Supprime un aliment ou un plat du catalogue."""
-    db = get_db()
     deleted = db.delete_food_item(item_id, user_id=current_user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Élément de catalogue introuvable ou non autorisé")
@@ -868,9 +884,11 @@ def delete_catalog_item(
 # ---------------------------------------------------------
 
 @router.get("/api/catalog/subscriptions")
-def get_catalog_subscriptions(current_user: AuthUser = Depends(app_module.get_current_user)):
+def get_catalog_subscriptions(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Liste tous les catalogues d'amis auxquels l'utilisateur est abonné."""
-    db = get_db()
     subs = db.get_catalog_subscriptions(subscriber_id=current_user.id)
     return subs
 
@@ -878,10 +896,10 @@ def get_catalog_subscriptions(current_user: AuthUser = Depends(app_module.get_cu
 @router.post("/api/catalog/subscriptions")
 def create_catalog_subscription(
     req: CatalogSubscriptionCreateRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """S'abonne au catalogue d'un utilisateur par son ID ou son adresse email."""
-    db = get_db()
     target_user_id = req.target_user_id
     if not target_user_id and req.email:
         target_user = db.get_user_by_email(req.email)
@@ -910,10 +928,10 @@ def create_catalog_subscription(
 @router.delete("/api/catalog/subscriptions/{target_user_id}")
 def delete_catalog_subscription(
     target_user_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Se désabonne du catalogue d'un ami."""
-    db = get_db()
     removed = db.remove_catalog_subscription(subscriber_id=current_user.id, target_user_id=target_user_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Abonnement introuvable ou déjà supprimé")
@@ -928,10 +946,10 @@ def get_friend_catalog_items(
     target_user_id: int,
     type: Optional[str] = Query(None, description="Filtre par type ('food' ou 'dish')"),
     q: Optional[str] = Query(None, description="Recherche textuelle par nom"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Explore le catalogue complet d'un ami spécifique."""
-    db = get_db()
     friend = db.get_user_by_id(target_user_id)
     if not friend:
         raise HTTPException(status_code=404, detail="Ami introuvable")
@@ -958,10 +976,10 @@ def get_friend_catalog_items(
 @router.get("/api/catalog/items/{item_id}/benefits")
 def get_catalog_item_benefits(
     item_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère les bienfaits associés à un aliment/plat donné."""
-    db = get_db()
     item = db.get_food_item_by_id(item_id, user_id=current_user.id)
     if not item:
         raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
@@ -973,10 +991,10 @@ def get_catalog_item_benefits(
 def update_catalog_item_benefits(
     item_id: int,
     req: UpdateCatalogItemBenefitsRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Met à jour les bienfaits associés à un aliment/plat donné (sélection manuelle ou auto)."""
-    db = get_db()
     item = db.get_food_item_by_id(item_id, user_id=current_user.id)
     if not item:
         raise HTTPException(status_code=404, detail="Élément de catalogue introuvable")
@@ -985,9 +1003,8 @@ def update_catalog_item_benefits(
 
 
 @router.get("/api/nutrition/benefits")
-def get_nutrition_benefits():
+def get_nutrition_benefits(db: Database = Depends(get_db)):
     """Récupère la liste de tous les bienfaits disponibles dans le référentiel expert groupés par catégorie."""
-    db = get_db()
     all_benefits = db.get_all_nutrition_benefits()
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for b in all_benefits:
@@ -1020,14 +1037,14 @@ def evaluate_nutrition_benefits(req: NutritionEvaluateRequest):
 def get_meals_journal(
     date_param: Optional[str] = Query(None, alias="date", description="Date YYYY-MM-DD"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Récupère les 4 repas du jour avec la composition et les totaux (lecture pure sans écriture en base)."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     target_date = dt_module.date.fromisoformat(date_param) if date_param else dt_module.date.today()
-    meals_response, day_summary = calculate_day_summary(target_date, user_id=target_uid)
+    meals_response, day_summary = calculate_day_summary(target_date, user_id=target_uid, db=db)
     # Calcul dynamique des objectifs si activité/séances du jour disponibles
     user_profile = db.get_user_profile(user_id=target_uid) if hasattr(db, "get_user_profile") else {}
     workouts = db.get_workouts(limit=30, user_id=target_uid) if hasattr(db, "get_workouts") else []
@@ -1100,10 +1117,10 @@ def get_meals_journal(
 def add_item_to_meal_journal(
     meal_type: str,
     payload: Union[MealJournalAddItemRequest, MealJournalAddBatchRequest, List[MealJournalAddItemRequest]],
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Ajoute un ou plusieurs aliments/plats (avec quantité spécifiée) dans le repas d'une date."""
-    db = get_db()
     if meal_type not in ["breakfast", "lunch", "snack", "dinner"]:
         raise HTTPException(status_code=400, detail="meal_type invalide (breakfast, lunch, snack, dinner)")
 
@@ -1185,8 +1202,8 @@ def add_item_to_meal_journal(
             )
 
     action_date = last_log.date if last_log else target_date
-    _, day_summary = calculate_day_summary(action_date, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    _, day_summary = calculate_day_summary(action_date, user_id=current_user.id, db=db)
+    invalidate_dashboard_cache(current_user.id)
 
     return {
         "status": "success",
@@ -1199,16 +1216,16 @@ def add_item_to_meal_journal(
 @router.delete("/api/meals/journal/items/{item_id}")
 def delete_meal_journal_item(
     item_id: int,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retire un aliment d'un repas et actualise le repas parent."""
-    db = get_db()
     updated_log = db.delete_meal_log_item(item_id, user_id=current_user.id)
     if not updated_log:
         raise HTTPException(status_code=404, detail="Ligne d'aliment introuvable dans le journal")
 
-    _, day_summary = calculate_day_summary(updated_log.date, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    _, day_summary = calculate_day_summary(updated_log.date, user_id=current_user.id, db=db)
+    invalidate_dashboard_cache(current_user.id)
 
     return {
         "status": "success",
@@ -1222,10 +1239,10 @@ def delete_meal_journal_item(
 def save_meal_as_dish(
     meal_type: str,
     req: SaveAsDishRequest,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Transforme la composition d'un repas consommé en un nouveau plat réutilisable dans le catalogue."""
-    db = get_db()
     target_date = req.date or dt_module.date.today()
     meal_log = db.get_or_create_meal_log(target_date, meal_type, user_id=current_user.id)
 
@@ -1274,10 +1291,10 @@ def save_meal_as_dish(
 def get_nutrition_goals_history(
     days: int = Query(14, ge=1, le=90, description="Nombre de jours d'historique (1 à 90)"),
     user_id: Optional[int] = Query(None, description="ID utilisateur ami en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne l'historique quotidien des objectifs (protéines, calories, glucides, lipides) et leurs KPIs d'adhérence."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
 

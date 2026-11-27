@@ -26,9 +26,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
+from src.dependencies import get_current_user, get_db, get_static_dir, invalidate_dashboard_cache
 
 
 logger = logging.getLogger("vitaltrack.observability")
@@ -95,11 +95,6 @@ DEFAULT_GOALS_PRESETS = {
 GITHUB_LATEST_RELEASE_APK_URL = "https://github.com/TheBigBad31/VitalTrack/releases/latest/download/vitaltrack-health-bridge.apk"
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 class BackupRestoreInput(BaseModel):
     data: Dict[str, Any]
     overwrite: bool = False
@@ -117,9 +112,11 @@ class ConsentUpdatePayload(BaseModel):
 
 @router.get("/api/backup/export")
 @router.get("/api/export/json")
-def export_backup(current_user: AuthUser = Depends(app_module.get_current_user)):
+def export_backup(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Exporte l'intégralité du profil utilisateur, des appareils configurés et de l'historique en JSON (RGPD)."""
-    db = get_db()
     backup_data = db.export_full_backup(user_id=current_user.id)
     return backup_data
 
@@ -127,10 +124,10 @@ def export_backup(current_user: AuthUser = Depends(app_module.get_current_user))
 @router.get("/api/export/csv")
 def export_data_csv(
     limit: Optional[int] = Query(None, description="Limite optionnelle pour pagination ou export complet"),
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Exporte l'intégralité des données biométriques (pesées et activités) au format CSV standard sans troncature (RGPD)."""
-    db = get_db()
     fetch_limit = limit if limit and limit > 0 else 1000000
     weights = db.get_weights(limit=fetch_limit, user_id=current_user.id)
     activities = db.get_activities(limit=fetch_limit, user_id=current_user.id)
@@ -188,10 +185,10 @@ def export_data_csv(
 def delete_user_data_only_endpoint(
     confirm: bool = Query(True, description="Confirmation de purge des données"),
     payload: Optional[ConfirmDeletionPayload] = None,
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Efface l'intégralité des données et de l'historique biométrique tout en conservant le compte et les accès de l'utilisateur."""
-    db = get_db()
     is_confirmed = confirm and (payload.confirm if payload else True)
     if not is_confirmed:
         raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression des données (confirm=true)")
@@ -208,10 +205,10 @@ def delete_user_data_only_endpoint(
 def delete_user_account_endpoint(
     confirm: bool = Query(True, description="Confirmation de suppression du compte"),
     payload: Optional[ConfirmDeletionPayload] = None,
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Supprime définitivement le compte utilisateur et l'ensemble de ses données associées (Droit à l'oubli RGPD)."""
-    db = get_db()
     is_confirmed = confirm and (payload.confirm if payload else True)
     if not is_confirmed:
         raise HTTPException(status_code=400, detail="Confirmation requise pour la suppression définitive du compte (confirm=true)")
@@ -225,9 +222,11 @@ def delete_user_account_endpoint(
 
 
 @router.get("/api/user/consents")
-def get_user_consents_endpoint(current_user: AuthUser = Depends(app_module.get_current_user)):
+def get_user_consents_endpoint(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Retourne les préférences de consentement RGPD par catégorie pour l'utilisateur."""
-    db = get_db()
     consents = db.get_user_consents(user_id=current_user.id)
     return {
         "user_id": current_user.id,
@@ -236,9 +235,12 @@ def get_user_consents_endpoint(current_user: AuthUser = Depends(app_module.get_c
 
 
 @router.post("/api/user/consents")
-def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: AuthUser = Depends(app_module.get_current_user)):
+def update_user_consent_endpoint(
+    payload: ConsentUpdatePayload,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Met à jour le consentement pour une catégorie spécifique."""
-    db = get_db()
     allowed_categories = {"biometrics", "nutrition", "analytics", "devices"}
     if payload.category not in allowed_categories:
         raise HTTPException(status_code=400, detail=f"Catégorie invalide. Choix possibles: {allowed_categories}")
@@ -250,11 +252,14 @@ def update_user_consent_endpoint(payload: ConsentUpdatePayload, current_user: Au
 
 
 @router.post("/api/backup/import")
-def import_backup(payload: BackupRestoreInput, current_user: AuthUser = Depends(app_module.get_current_user)):
+def import_backup(
+    payload: BackupRestoreInput,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Restaure ou synchronise les données depuis un export JSON ou le localStorage/IndexedDB."""
-    db = get_db()
     result = db.import_full_backup(payload.data, overwrite=payload.overwrite, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return result
 
 
@@ -300,7 +305,7 @@ def get_bridge_version():
 @router.get("/api/downloads/android-bridge")
 def download_android_bridge():
     """Téléchargement direct de l'APK VitalTrack Android Health Bridge."""
-    static_dir = getattr(app_module, "STATIC_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+    static_dir = get_static_dir()
     local_apk = os.path.join(static_dir, "downloads", "vitaltrack-health-bridge.apk")
     if os.path.isfile(local_apk):
         return FileResponse(

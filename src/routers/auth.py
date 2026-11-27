@@ -14,7 +14,7 @@ Endpoints :
 import os
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from src.auth import (
     JWT_EXPIRE_SECONDS,
@@ -28,76 +28,17 @@ from src.auth import (
     UserPublicResponse,
     _is_production,
     create_access_token,
-    decode_access_token,
     hash_password,
-    is_strict_auth_enabled,
     parse_google_identity,
     validate_password_strength,
     verify_password,
 )
-from src.dependencies import get_db
+from src.db import Database
+from src.dependencies import get_current_user, get_db, get_strict_user
 from src.rate_limit import rate_limit_login, rate_limit_refresh, rate_limit_register
 
 
 router = APIRouter(tags=["auth"])
-
-
-def get_current_user(
-    authorization: Optional[str] = Header(None),
-    x_webhook_token: Optional[str] = Header(None, alias="X-Webhook-Token")
-) -> AuthUser:
-    """Résout l'utilisateur courant via src.app.get_current_user de manière dynamique."""
-    import sys
-    app_module = sys.modules.get("src.app")
-    if app_module and hasattr(app_module, "get_current_user"):
-        return app_module.get_current_user(authorization=authorization, x_webhook_token=x_webhook_token)
-
-    # Résolution directe en fallback
-    db = get_db()
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ", 1)[1].strip()
-        payload = decode_access_token(token)
-        if payload and "user_id" in payload:
-            user_data = db.get_user_by_id(int(payload["user_id"]))
-            if user_data:
-                return AuthUser(
-                    id=user_data["id"],
-                    uuid=user_data["uuid"],
-                    email=user_data["email"],
-                    name=user_data.get("name"),
-                    picture=user_data.get("picture"),
-                    auth_provider=user_data.get("auth_provider", "google"),
-                    google_sub=user_data.get("google_sub"),
-                )
-    raise HTTPException(status_code=401, detail="Authentification requise")
-
-
-def get_strict_user(authorization: Optional[str] = Header(None)) -> AuthUser:
-    """Exige un jeton Bearer JWT valide (sans fallback dev ni session globale)."""
-    import sys
-    app_module = sys.modules.get("src.app")
-    if app_module and hasattr(app_module, "get_strict_user"):
-        return app_module.get_strict_user(authorization=authorization)
-
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Jeton d'authentification Bearer manquant ou invalide")
-    token = authorization.split("Bearer ", 1)[1].strip()
-    payload = decode_access_token(token)
-    if not payload or "user_id" not in payload:
-        raise HTTPException(status_code=401, detail="Jeton JWT expiré ou signature invalide")
-    db = get_db()
-    user_data = db.get_user_by_id(int(payload["user_id"]))
-    if not user_data:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-    return AuthUser(
-        id=user_data["id"],
-        uuid=user_data["uuid"],
-        email=user_data["email"],
-        name=user_data.get("name"),
-        picture=user_data.get("picture"),
-        auth_provider=user_data.get("auth_provider", "google"),
-        google_sub=user_data.get("google_sub"),
-    )
 
 
 def _is_admin_user(user: AuthUser) -> bool:
@@ -125,9 +66,8 @@ def _to_user_public(user: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/api/auth/config")
-def get_auth_config():
+def get_auth_config(db: Database = Depends(get_db)):
     """Retourne la configuration Google OAuth/GIS (Client ID, scopes et statut)."""
-    db = get_db()
     return db.get_google_config()
 
 
@@ -135,6 +75,7 @@ def get_auth_config():
 def update_auth_config(
     payload: GoogleConfigUpdate,
     current_user: AuthUser = Depends(get_strict_user),
+    db: Database = Depends(get_db),
 ):
     """Enregistre ou met à jour le Google Client ID (Bearer admin requis, désactivé en prod)."""
     if _is_production():
@@ -147,21 +88,23 @@ def update_auth_config(
             status_code=403,
             detail="Droits administrateur requis pour modifier la configuration Google OAuth.",
         )
-    db = get_db()
     res = db.set_google_client_id(payload.google_client_id)
     return {
         "status": "success",
         "message": "Configuration Google Client ID enregistrée avec succès",
-        "config": res
+        "config": res,
     }
 
 
 @router.post("/api/auth/register", dependencies=[Depends(rate_limit_register)])
 @router.post("/api/register", dependencies=[Depends(rate_limit_register)], include_in_schema=False)
 @router.post("/register", dependencies=[Depends(rate_limit_register)], include_in_schema=False)
-def register_user(payload: RegisterRequest, request: Request):
+def register_user(
+    payload: RegisterRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+):
     """Inscription classique avec email et mot de passe sécurisé (hash bcrypt / PBKDF2)."""
-    db = get_db()
     if not validate_password_strength(payload.password):
         raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au minimum 8 caractères")
 
@@ -175,7 +118,7 @@ def register_user(payload: RegisterRequest, request: Request):
         email=payload.email,
         name=payload.name or payload.email.split("@")[0],
         password_hash=pwd_hash,
-        auth_provider="email"
+        auth_provider="email",
     )
     token = create_access_token(user["id"], user["uuid"], user["email"], user.get("name"))
     refresh_data = db.create_refresh_token(
@@ -196,9 +139,12 @@ def register_user(payload: RegisterRequest, request: Request):
 @router.post("/api/auth/login", dependencies=[Depends(rate_limit_login)])
 @router.post("/api/login", dependencies=[Depends(rate_limit_login)], include_in_schema=False)
 @router.post("/login", dependencies=[Depends(rate_limit_login)], include_in_schema=False)
-def login_user(payload: LoginRequest, request: Request):
+def login_user(
+    payload: LoginRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+):
     """Connexion classique par email et mot de passe."""
-    db = get_db()
     with db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE email = ?", (payload.email.strip().lower(),))
@@ -227,7 +173,11 @@ def login_user(payload: LoginRequest, request: Request):
 
 
 @router.post("/api/auth/google")
-def authenticate_google_user(payload: GoogleAuthPayload, request: Request):
+def authenticate_google_user(
+    payload: GoogleAuthPayload,
+    request: Request,
+    db: Database = Depends(get_db),
+):
     """Authentifie l'utilisateur via Google GIS (ID Token JWT vérifié cryptographiquement).
 
     Associe automatiquement le compte Google au profil utilisateur et génère un access token court
@@ -239,7 +189,6 @@ def authenticate_google_user(payload: GoogleAuthPayload, request: Request):
             detail="ID Token Google (credential) requis pour l'authentification.",
         )
 
-    db = get_db()
     cfg = db.get_google_config()
     client_id = (cfg.get("google_client_id") or "").strip() or None
     try:
@@ -252,7 +201,7 @@ def authenticate_google_user(payload: GoogleAuthPayload, request: Request):
         name=user_info["name"],
         picture=user_info.get("picture", ""),
         google_sub=user_info.get("google_sub", ""),
-        auth_method=user_info.get("auth_method", "google_gis_jwt")
+        auth_method=user_info.get("auth_method", "google_gis_jwt"),
     )
     user_id = session.get("user_id")
     user_uuid = session.get("uuid")
@@ -276,7 +225,7 @@ def authenticate_google_user(payload: GoogleAuthPayload, request: Request):
         connected=True,
         auth_type="google_health_connect",
         account_email=user_info["email"],
-        user_id=user_id
+        user_id=user_id,
     )
 
     return {
@@ -287,14 +236,17 @@ def authenticate_google_user(payload: GoogleAuthPayload, request: Request):
         "token_type": "bearer",
         "expires_in": JWT_EXPIRE_SECONDS,
         "session": session,
-        "profile": user_profile
+        "profile": user_profile,
     }
 
 
 @router.post("/api/auth/refresh", dependencies=[Depends(rate_limit_refresh)])
-def refresh_access_token(payload: RefreshTokenRequest, request: Request):
+def refresh_access_token(
+    payload: RefreshTokenRequest,
+    request: Request,
+    db: Database = Depends(get_db),
+):
     """Échange un refresh token valide contre un nouvel access token court et un nouveau refresh token (rotation)."""
-    db = get_db()
     rotated = db.rotate_refresh_token(
         raw_token=payload.refresh_token,
         user_agent=request.headers.get("user-agent"),
@@ -323,9 +275,11 @@ def refresh_access_token(payload: RefreshTokenRequest, request: Request):
 
 
 @router.get("/api/auth/me")
-def get_current_google_session(current_user: AuthUser = Depends(get_current_user)):
+def get_current_google_session(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Retourne la session active, le jeton JWT et le profil associé."""
-    db = get_db()
     session = db.get_google_session(email=current_user.email)
     profile = db.get_user_profile(user_id=current_user.id)
     token = create_access_token(current_user.id, current_user.uuid, current_user.email, current_user.name)
@@ -342,9 +296,9 @@ def get_current_google_session(current_user: AuthUser = Depends(get_current_user
 def logout_google_session(
     payload: Optional[LogoutRequest] = Body(default=None),
     current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Déconnecte l'utilisateur authentifié et révoque ses refresh tokens."""
-    db = get_db()
     revoked_count = 0
 
     if payload and payload.refresh_token and not payload.revoke_all:

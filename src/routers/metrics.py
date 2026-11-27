@@ -11,10 +11,10 @@ from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.biometrics_math import DailyBiometrics
 from src.db import Database
+from src.dependencies import get_current_user, get_db, invalidate_dashboard_cache
 from src.models import HydrationLogEntry
 from src.routers.friends import verify_view_access
 from src.analytics import BiometricsAnalyticsService
@@ -23,20 +23,15 @@ from src.analytics import BiometricsAnalyticsService
 router = APIRouter(tags=["metrics"])
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 @router.get("/api/daily-metrics")
 def get_daily_metrics_list(
     limit: int = Query(30, ge=1, le=180, description="Nombre d'entrées"),
     source: Optional[str] = Query(None, description="Filtre source"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne la liste des métriques quotidiennes biométriques (pas, sommeil, HRV, etc.)."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     metrics = db.get_daily_metrics(limit=limit, source=source, user_id=target_uid)
@@ -48,10 +43,10 @@ def get_biometrics_metrics(
     days: int = Query(30, ge=7, le=90, description="Nombre de jours d'historique (30 à 90)"),
     date_str: Optional[str] = Query(None, alias="date", description="Date cible au format YYYY-MM-DD pour les échantillons intraday"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Agrégat biométrique complet pour les visualisations Palier 3 pour l'utilisateur connecté ou un ami."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     user_id = target_uid
@@ -444,10 +439,10 @@ class HydrationCreateIn(BaseModel):
 def get_hydration(
     target_date: Optional[str] = Query(None, alias="date", description="Date au format YYYY-MM-DD (par défaut aujourd'hui)"),
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Retourne les logs d'hydratation et le total pour la date sélectionnée."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
 
@@ -473,10 +468,10 @@ def get_hydration(
 @router.post("/api/metrics/hydration")
 def add_hydration(
     payload: HydrationCreateIn,
-    current_user: AuthUser = Depends(app_module.get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Enregistre un apport hydrique journalier."""
-    db = get_db()
     target_date = payload.date
     if isinstance(target_date, str):
         log_date = date.fromisoformat(target_date[:10])
@@ -493,7 +488,7 @@ def add_hydration(
         source=payload.source
     )
     saved = db.insert_hydration_log(entry, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     total_ml = db.get_daily_hydration_total(target_date=log_date, user_id=current_user.id)
 
     profile = db.get_user_profile(user_id=current_user.id)

@@ -8,13 +8,13 @@ Endpoints :
 - POST /api/profile/clear-history: efface l'historique, conserve le profil
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-import src.app as app_module
 from src.auth import AuthUser
 from src.db import Database
+from src.dependencies import get_current_user, get_db, invalidate_dashboard_cache
 from src.routers.friends import verify_view_access
 
 
@@ -49,18 +49,13 @@ class UserProfileInput(BaseModel):
     google_sub: Optional[str] = None
 
 
-def get_db() -> Database:
-    """Retourne l'instance Database courante depuis src.app (supporte le monkeypatch des tests)."""
-    return app_module.db
-
-
 @router.get("/api/profile")
 def get_user_profile(
     user_id: Optional[int] = Query(None, description="Identifiant optionnel d'un utilisateur ami pour consultation en lecture seule"),
-    current_user: AuthUser = Depends(app_module.get_current_user),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
 ):
     """Renvoie le profil utilisateur personnalisé et ses préférences d'objets pour l'utilisateur connecté ou un ami."""
-    db = get_db()
     target_uid = current_user.id if user_id is None else user_id
     verify_view_access(target_uid, current_user, database=db)
     is_owner = target_uid == current_user.id
@@ -89,11 +84,14 @@ def get_user_profile(
 
 @router.post("/api/profile")
 @router.put("/api/profile")
-def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = Depends(app_module.get_current_user)):
+def update_user_profile(
+    profile_in: UserProfileInput,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Met à jour ou crée le profil utilisateur pour l'utilisateur connecté."""
-    db = get_db()
     updated = db.update_user_profile(profile_in.model_dump(exclude_unset=True), user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Profil mis à jour avec succès",
@@ -102,12 +100,14 @@ def update_user_profile(profile_in: UserProfileInput, current_user: AuthUser = D
 
 
 @router.post("/api/profile/reset-demo")
-def reset_demo(current_user: AuthUser = Depends(app_module.get_current_user)):
+def reset_demo(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Réinitialise et recharge le jeu complet de données de démonstration réaliste 30 jours."""
-    db = get_db()
     db.update_user_profile({"is_demo_profile": 1}, user_id=current_user.id)
     db.reset_demo_data(user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Données de démonstration 30 jours réinitialisées avec succès",
@@ -115,12 +115,14 @@ def reset_demo(current_user: AuthUser = Depends(app_module.get_current_user)):
 
 
 @router.post("/api/profile/clear-history")
-def clear_history(current_user: AuthUser = Depends(app_module.get_current_user)):
+def clear_history(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
     """Efface l'historique tout en conservant les paramètres de profil pour un suivi personnel réel."""
-    db = get_db()
     db.clear_all_history(keep_profile=True, user_id=current_user.id)
     db.update_user_profile({"is_demo_profile": 0}, user_id=current_user.id)
-    app_module.invalidate_dashboard_cache(current_user.id)
+    invalidate_dashboard_cache(current_user.id)
     return {
         "status": "success",
         "message": "Historique effacé. Vous pouvez démarrer votre suivi réel !",
