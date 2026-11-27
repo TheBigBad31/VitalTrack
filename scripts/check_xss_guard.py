@@ -18,6 +18,7 @@ SAFE_EXPRESSIONS_PATTERN = re.compile(
         Math\.(?:round|floor|ceil|min|max|abs)\s*\(.*?\)|
         parseInt\s*\(.*?\)|
         parseFloat\s*\(.*?\)|
+        Number\s*\(.*?\)|
         typeof\s+.*|
         true|false|null|undefined|
         [\d\s+\-*/%?:.<>=!&|()]+|
@@ -50,7 +51,8 @@ KNOWN_SAFE_VARS = {
     "typeInfo.color", "typeInfo.label", "cfg.color", "cfg.name", "cfg.emoji", "cfg.border",
     "cardsHtml", "addCardHtml", "syncStatusDesc", "html", "widthPct", "colorCls", "mins",
     "cls", "workoutBadge", "iconName", "syncLabel", "relTime", "picture", "cal", "p", "g", "l",
-    "cals", "unit", "startFormatted", "net", "diff", "pct", "statusBadge", "b", "l", "s", "d", "total"
+    "cals", "unit", "startFormatted", "net", "diff", "pct", "statusBadge", "b", "l", "s", "d", "total",
+    "latestHtml", "ingestsHtml", "stepsTgt"
 }
 
 
@@ -89,10 +91,48 @@ def is_safe_expression(expr: str) -> bool:
         return True
     if expr.startswith("escapeHtml(") or expr.startswith("sanitizeUrl("):
         return True
-    # Ternaires imbriqués ou template literal imbriqué contenant des safe vars
+    # Validation des expressions ternaires : chaque branche (hors chaînes/parenthèses) doit être sûre
     if "?" in expr and ":" in expr:
-        # Check if branches return safe literals or expressions
-        return True
+        def _split_ternary(s: str):
+            q_idx = -1
+            depth = 0
+            in_quote = None
+            for idx, ch in enumerate(s):
+                if in_quote:
+                    if ch == in_quote and (idx == 0 or s[idx - 1] != "\\"):
+                        in_quote = None
+                    continue
+                if ch in ("'", '"', "`"):
+                    in_quote = ch
+                elif ch in ("(", "[", "{"):
+                    depth += 1
+                elif ch in (")", "]", "}"):
+                    depth = max(0, depth - 1)
+                elif depth == 0 and ch == "?" and q_idx == -1:
+                    q_idx = idx
+                elif depth == 0 and ch == ":" and q_idx != -1:
+                    return s[q_idx + 1 : idx].strip(), s[idx + 1 :].strip()
+            return None
+
+        branches = _split_ternary(expr)
+        if branches:
+            true_branch, false_branch = branches
+
+            def _is_safe_branch(b: str) -> bool:
+                b = b.strip()
+                if b.startswith("(") and b.endswith(")"):
+                    b = b[1:-1].strip()
+                if (b.startswith("'") and b.endswith("'")) or (b.startswith('"') and b.endswith('"')):
+                    return True
+                if b.startswith("`") and b.endswith("`"):
+                    return all(is_safe_expression(inner) for inner in extract_template_interpolations(b))
+                if "+" in b:
+                    return all(_is_safe_branch(part) for part in b.split("+"))
+                return is_safe_expression(b)
+
+            if _is_safe_branch(true_branch) and _is_safe_branch(false_branch):
+                return True
+        return False
     if SAFE_EXPRESSIONS_PATTERN.match(expr):
         return True
     return False
@@ -102,8 +142,8 @@ def check_file(file_path: Path) -> list:
     content = file_path.read_text(encoding="utf-8")
     errors = []
 
-    # Cherche .innerHTML = `...`
-    pattern = re.compile(r'(\w+\.innerHTML\s*=\s*`)([\s\S]*?)(`;)', re.MULTILINE)
+    # Cherche .innerHTML = `...` et .innerHTML += `...`
+    pattern = re.compile(r'(\w+\.innerHTML\s*\+?=\s*`)([\s\S]*?)(`;)', re.MULTILINE)
     for match in pattern.finditer(content):
         literal_body = match.group(2)
         start_pos = match.start()
@@ -136,7 +176,7 @@ def main():
         sys.exit(1)
 
     all_errors = []
-    js_files = sorted(modules_dir.glob("*.js"))
+    js_files = sorted(modules_dir.rglob("*.js"))
     for js_file in js_files:
         errors = check_file(js_file)
         if errors:
