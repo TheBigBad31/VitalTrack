@@ -7,6 +7,7 @@ Endpoints :
 import asyncio
 import time
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from src.repositories.metrics import workout_local_date as _workout_local_date
 from typing import Any, Dict, Optional, Tuple
 
@@ -81,8 +82,19 @@ async def get_dashboard_data(
     if not activities and not effective_exclude:
         activities = await asyncio.to_thread(db.get_activities, limit=90, user_id=user_id, exclude_simulation=False)
 
-    today = date.today()
+    user_tz = profile.get("timezone") or "Europe/Paris"
+    try:
+        tz_info = ZoneInfo(user_tz)
+    except ZoneInfoNotFoundError:
+        user_tz = "Europe/Paris"
+        tz_info = ZoneInfo(user_tz)
+    today = datetime.now(tz_info).date()
     latest_weight = weights[-1] if weights else None
+    effective_weight_kg = (
+        latest_weight.weight_kg
+        if latest_weight
+        else (profile.get("current_weight_kg") or profile.get("target_weight_kg") or 79.5)
+    )
 
     weight_7d_change = 0.0
     if len(weights) >= 7:
@@ -97,13 +109,12 @@ async def get_dashboard_data(
     daily_nutrition = nutrition_engine.get_daily_nutrition_summary(today, user_id=user_id)
     energy_balance = nutrition_engine.calculate_daily_energy_balance(
         target_date=today,
-        user_weight_kg=latest_weight.weight_kg if latest_weight else 79.5,
+        user_weight_kg=effective_weight_kg,
         user_height_cm=profile.get("height_cm", 178.0),
         user_age=profile.get("age", 35),
         gender=profile.get("gender", "male"),
         user_id=user_id,
     )
-    user_tz = profile.get("timezone") or "Europe/Paris"
     today_workouts = [
         w for w in (user_workouts or [])
         if _workout_local_date(w.start_time, user_tz) == today
@@ -111,18 +122,11 @@ async def get_dashboard_data(
     today_workout_calories = round(sum(float(w.calories_kcal or 0.0) for w in today_workouts), 1)
 
     today_steps = (today_activity.steps if today_activity else (today_metric.steps if today_metric else 0)) or 0
-    neat_steps_kcal = round(today_steps * 0.04, 1)
 
     # Calcul dynamique du budget calorique et glucidique du jour
     goal_id = profile.get("goal_profile_id") or "weight_loss"
     goal_delta_map = {"weight_loss": -500.0, "maintenance": 0.0, "recomposition": -200.0, "muscle_gain": 300.0}
     goal_delta = goal_delta_map.get(goal_id, -500.0)
-
-    effective_weight_kg = (
-        latest_weight.weight_kg
-        if latest_weight
-        else (profile.get("current_weight_kg") or profile.get("target_weight_kg"))
-    )
 
     dynamic_tdee = calculate_dynamic_tdee_target(
         bmr_kcal=energy_balance["bmr_kcal"],
@@ -133,6 +137,7 @@ async def get_dashboard_data(
         target_steps=int(profile.get("target_steps") or 10000),
         activity_level=profile.get("activity_level") or "moderately_active",
     )
+    neat_steps_kcal = dynamic_tdee.get("neat_steps_kcal", round(today_steps * 0.04, 1))
     daily_targets = get_daily_nutrition_targets(
         db,
         user_id=user_id,

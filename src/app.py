@@ -205,20 +205,22 @@ async def database_service_unavailable_handler(request: Request, exc: DatabaseSe
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Capture toutes les exceptions non gérées pour exposer le diagnostic en JSON plutôt qu'un 500 muet."""
-    import traceback
-    tb = traceback.format_exc()
-    print(f"[VitalTrack Unhandled Exception] {request.method} {request.url.path}: {exc}\n{tb}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "status": "error",
-            "error": "Internal Server Error",
-            "type": type(exc).__name__,
-            "detail": str(exc),
-            "path": request.url.path,
-        },
+    """Capture toutes les exceptions non gérées sans exposer de détails techniques en production."""
+    import logging
+
+    logging.getLogger(__name__).exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
     )
+    is_prod = os.getenv("ENVIRONMENT") == "production" or os.getenv("VERCEL") == "1"
+    content: dict[str, Any] = {
+        "status": "error",
+        "error": "Internal Server Error",
+        "detail": "Une erreur interne est survenue." if is_prod else str(exc),
+        "path": request.url.path,
+    }
+    if not is_prod:
+        content["type"] = type(exc).__name__
+    return JSONResponse(status_code=500, content=content)
 
 
 # Instances partagées

@@ -603,6 +603,9 @@ def ingest_health_webhook(
     except Exception as sync_status_err:
         logger.warning("Impossible de mettre à jour le statut de synchronisation pour l'appareil '%s': %s", primary_device_id, sync_status_err)
 
+    from src.app import invalidate_dashboard_cache
+    invalidate_dashboard_cache(resolved_user_id)
+
     return {
         "status": "success",
         "message": f"{len(results)} enregistrement(s) de santé ingéré(s) avec succès pour l'utilisateur {resolved_user_id}",
@@ -666,25 +669,23 @@ async def ingest_withings_webhook(
     
     # Trouver l'utilisateur VitalTrack associé à ce userid Withings
     db_inst = app_db if app_db else Database()
-    # Note: en production, il faut mapper le userid Withings vers user_id VitalTrack
-    # Pour l'instant, on suppose user_id=1 ou on cherche dans user_devices
-    user_device = db_inst.get_user_device("withings", user_id=1, reveal_secrets=True)
+    user_device = db_inst.find_user_by_withings_id(userid)
     if not user_device:
         return {"status": "ignored", "message": "Aucun appareil Withings configuré pour cet utilisateur"}
-    
+
+    target_user_id = int(user_device["user_id"])
+
     # Déclencher un catch-up sync (rattrapage) pour récupérer les nouvelles pesées
-    # En arrière-plan pour répondre rapidement à Withings
-    from datetime import date, timedelta
-    from src.connectors.withings import WithingsScaleConnector
-    
-    connector = WithingsScaleConnector(config=user_device.get("credentials", {}), db_instance=db_inst, user_id=1)
+    connector = WithingsScaleConnector(config=user_device.get("credentials", {}), db_instance=db_inst, user_id=target_user_id)
     if connector.is_configured:
         try:
             # Sync sur 7 jours en mode catch-up
             weights = connector.catchup_sync(days_back=7)
             for w in weights:
-                db_inst.insert_weight(w, user_id=1)
-            return {"status": "success", "synced_weights": len(weights)}
+                db_inst.insert_weight(w, user_id=target_user_id)
+            from src.app import invalidate_dashboard_cache
+            invalidate_dashboard_cache(target_user_id)
+            return {"status": "success", "synced_weights": len(weights), "user_id": target_user_id}
         except Exception as e:
             return {"status": "error", "message": f"Erreur sync Withings: {e}"}
     

@@ -493,6 +493,7 @@ def add_hydration(
         source=payload.source
     )
     saved = db.insert_hydration_log(entry, user_id=current_user.id)
+    app_module.invalidate_dashboard_cache(current_user.id)
     total_ml = db.get_daily_hydration_total(target_date=log_date, user_id=current_user.id)
 
     profile = db.get_user_profile(user_id=current_user.id)
