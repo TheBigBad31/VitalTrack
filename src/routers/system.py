@@ -286,6 +286,17 @@ def get_config():
     }
 
 
+@router.get("/api/bridge/version")
+def get_bridge_version():
+    """Retourne les informations de version de l'APK VitalTrack Health Bridge."""
+    return {
+        "version_code": 4,
+        "version_name": "1.0.3",
+        "apk_url": "/static/downloads/vitaltrack-health-bridge.apk",
+        "release_notes": "Synchronisation Health Connect, import historique et prise de photo repas.",
+    }
+
+
 @router.get("/api/downloads/android-bridge")
 def download_android_bridge():
     """Téléchargement direct de l'APK VitalTrack Android Health Bridge."""

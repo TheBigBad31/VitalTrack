@@ -2,15 +2,21 @@ package ai.vitaltrack.bridge
 
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
-import android.content.ClipboardManager
 import android.app.DatePickerDialog
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -23,6 +29,7 @@ import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -35,6 +42,10 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -109,6 +120,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var photoPlaceholderLayout: LinearLayout
     private lateinit var photoProgressLayout: LinearLayout
 
+    private lateinit var updateBannerCard: MaterialCardView
+    private lateinit var updateBannerText: TextView
+    private lateinit var updateActionBtn: MaterialButton
+    private var pendingApkUrl: String? = null
+    private var activeDownloadId: Long = -1L
+    private var downloadReceiver: BroadcastReceiver? = null
+
     private var pulseAnimator: ObjectAnimator? = null
 
     private val requestPermissionActivityContract =
@@ -142,12 +160,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         handleSyncIntent(intent)
+        checkForAppUpdate()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSyncIntent(intent)
+        checkForAppUpdate()
     }
 
     private fun handleSyncIntent(intent: Intent?) {
@@ -184,6 +204,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         pulseAnimator?.cancel()
+        downloadReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+            }
+            downloadReceiver = null
+        }
         super.onDestroy()
     }
 
@@ -253,6 +280,50 @@ class MainActivity : AppCompatActivity() {
         }
         titleContainer.addView(appTitle)
         titleContainer.addView(appSubtitle)
+        headerLayout.addView(titleContainer)
+        container.addView(headerLayout)
+
+        // --- 1b. BANNIÈRE MISE À JOUR ---
+        updateBannerCard = MaterialCardView(this).apply {
+            visibility = View.GONE
+            radius = dp(16).toFloat()
+            setCardBackgroundColor(Color.parseColor("#172554"))
+            strokeColor = Color.parseColor("#38BDF8")
+            strokeWidth = dp(1)
+            cardElevation = 0f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(16) }
+        }
+        val updateBannerContent = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        updateBannerText = TextView(this).apply {
+            text = "Nouvelle version disponible"
+            textSize = 13f
+            setTextColor(Color.parseColor("#E0F2FE"))
+            setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(10)
+            }
+        }
+        updateActionBtn = MaterialButton(this).apply {
+            text = "Mettre à jour"
+            textSize = 12f
+            setTextColor(Color.parseColor("#0F172A"))
+            backgroundTintList = ColorStateList.valueOf(Color.parseColor("#38BDF8"))
+            cornerRadius = dp(10)
+            setOnClickListener {
+                pendingApkUrl?.let { url -> startApkDownload(url) }
+            }
+        }
+        updateBannerContent.addView(updateBannerText)
+        updateBannerContent.addView(updateActionBtn)
+        updateBannerCard.addView(updateBannerContent)
+        container.addView(updateBannerCard)
         headerLayout.addView(titleContainer)
 
         container.addView(headerLayout)
@@ -1104,5 +1175,126 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    private fun resolveBaseUrl(): String {
+        val prefs = getSharedPreferences("vitaltrack_bridge_prefs", Context.MODE_PRIVATE)
+        val rawUrl = prefs.getString("webhook_url", null)
+            ?: "https://vital-track-one.vercel.app/api/webhooks/health-connect"
+        val uri = Uri.parse(rawUrl)
+        val scheme = uri.scheme ?: "https"
+        val authority = uri.authority ?: "vital-track-one.vercel.app"
+        return "$scheme://$authority"
+    }
+
+    private fun checkForAppUpdate() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val baseUrl = resolveBaseUrl()
+                val client = OkHttpClient()
+                val request = Request.Builder()
+                    .url("$baseUrl/api/bridge/version")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use
+                    val body = response.body?.string() ?: return@use
+                    val json = JSONObject(body)
+                    val remoteVersionCode = json.optInt("version_code", 0)
+                    val remoteVersionName = json.optString("version_name", "")
+                    val apkPath = json.optString("apk_url", "/static/downloads/vitaltrack-health-bridge.apk")
+                    val fullApkUrl = if (apkPath.startsWith("http")) apkPath else "$baseUrl$apkPath"
+
+                    if (remoteVersionCode > BuildConfig.VERSION_CODE) {
+                        withContext(Dispatchers.Main) {
+                            pendingApkUrl = fullApkUrl
+                            updateBannerText.text = if (remoteVersionName.isNotBlank()) {
+                                "Nouvelle version disponible (v$remoteVersionName)"
+                            } else {
+                                "Nouvelle version disponible"
+                            }
+                            updateBannerCard.visibility = View.VISIBLE
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Ignorer silencieusement les erreurs réseau lors du check de mise à jour
+            }
+        }
+    }
+
+    private fun startApkDownload(apkUrl: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(
+                this,
+                "Autorisez l'installation depuis cette source pour mettre à jour.",
+                Toast.LENGTH_LONG
+            ).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+            return
+        }
+
+        val apkFile = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "vitaltrack-health-bridge.apk")
+        if (apkFile.exists()) {
+            apkFile.delete()
+        }
+
+        val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
+            setTitle("VitalTrack Health Bridge")
+            setDescription("Téléchargement de la mise à jour...")
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalFilesDir(
+                this@MainActivity,
+                Environment.DIRECTORY_DOWNLOADS,
+                "vitaltrack-health-bridge.apk"
+            )
+            setMimeType("application/vnd.android.package-archive")
+        }
+
+        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        activeDownloadId = dm.enqueue(request)
+        updateActionBtn.isEnabled = false
+        updateActionBtn.text = "Téléchargement..."
+
+        downloadReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
+                if (id == activeDownloadId) {
+                    updateActionBtn.isEnabled = true
+                    updateActionBtn.text = "Mettre à jour"
+                    installDownloadedApk(apkFile)
+                }
+            }
+        }
+        downloadReceiver = receiver
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+    }
+
+    private fun installDownloadedApk(apkFile: File) {
+        if (!apkFile.exists()) {
+            Toast.makeText(this, "Fichier APK introuvable après téléchargement.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val apkUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(installIntent)
     }
 }
