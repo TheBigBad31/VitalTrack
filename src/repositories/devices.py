@@ -64,6 +64,24 @@ class DevicesRepository(BaseRepository):
             row = cursor.fetchone()
         return self._format_device_row(row, reveal_secrets=reveal_secrets)
 
+    def find_user_by_withings_id(self, withings_user_id: Any) -> Optional[Dict[str, Any]]:
+        """Résout l'utilisateur VitalTrack associé à un identifiant utilisateur Withings."""
+        if withings_user_id is None or not str(withings_user_id).strip():
+            return None
+        target = str(withings_user_id).strip()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_devices WHERE device_id = 'withings' AND is_active = 1")
+            rows = cursor.fetchall()
+        for row in rows:
+            dev = self._format_device_row(row, reveal_secrets=True)
+            if not dev:
+                continue
+            creds = dev.get("credentials") or {}
+            if str(creds.get("withings_user_id") or creds.get("userid") or "").strip() == target:
+                return dev
+        return None
+
     def find_user_by_device_token(self, token: str, device_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Identifie l'utilisateur et l'appareil associés à un token ou webhook secret dans user_devices.
         

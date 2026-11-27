@@ -74,7 +74,9 @@ def create_v2_weight(
     """Enregistrement d'une pesée via v2 avec calcul automatique de l'IMC et enveloppe v2."""
     db = app_module.db
     target_date = entry_in.date or dt_module.date.today()
-    bmi_val = round(entry_in.weight_kg / (1.78 ** 2), 1)
+    profile = db.get_user_profile(user_id=current_user.id) or {}
+    height_m = float(profile.get("height_cm") or 178.0) / 100.0
+    bmi_val = round(entry_in.weight_kg / (height_m ** 2), 1) if height_m > 0 else 0.0
 
     entry = WeightEntry(
         date=target_date,
@@ -99,7 +101,9 @@ async def get_v2_dashboard(
     current_user: AuthUser = Depends(app_module.get_current_user),
 ):
     """Dashboard agrégé v2 avec enveloppe standardisée."""
-    raw_dashboard = await app_module.get_dashboard_data(current_user=current_user)
+    from src.routers.dashboard import get_dashboard_data
+
+    raw_dashboard = await get_dashboard_data(current_user=current_user)
     return V2Response(
         data=raw_dashboard,
         meta={"version": "2.0.0", "user_id": current_user.id},

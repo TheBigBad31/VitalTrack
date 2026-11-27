@@ -767,6 +767,9 @@ class Database:
     def get_user_device(self, device_id: str, user_id: int = 1, reveal_secrets: bool = False) -> Optional[Dict[str, Any]]:
         return self.devices.get_user_device(device_id, user_id=user_id, reveal_secrets=reveal_secrets)
 
+    def find_user_by_withings_id(self, withings_user_id: Any) -> Optional[Dict[str, Any]]:
+        return self.devices.find_user_by_withings_id(withings_user_id)
+
     def get_devices_data_map(self, user_id: int = 1) -> Dict[str, Any]:
         return self.devices.get_devices_data_map(user_id=user_id)
 
