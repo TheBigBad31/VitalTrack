@@ -1,0 +1,5 @@
+# Dépendances dev/CI (tests, lint, sécurité) — hors bundle prod Vercel
+pytest-cov>=4.0.0
+bandit>=1.7.0
+pip-audit>=2.0.0
+mypy>=1.0.0

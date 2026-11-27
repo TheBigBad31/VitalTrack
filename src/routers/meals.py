@@ -344,7 +344,7 @@ def get_meals(
 
 
 @router.get("/api/meals/barcode/{barcode}")
-def get_barcode_product(barcode: str):
+def get_barcode_product(barcode: str, current_user: AuthUser = Depends(app_module.get_current_user)):
     """Recherche un produit par code-barres EAN-13 via OpenFoodFacts."""
     clean_code = barcode.strip().replace(" ", "").replace("-", "")
     if not clean_code or not clean_code.isdigit() or len(clean_code) < 8:
@@ -372,7 +372,7 @@ def get_analyze_photo_info():
 
 @router.post("/api/meals/analyze-photo", dependencies=[Depends(rate_limit_photo_analysis)])
 @router.post("/api/meals/estimate", dependencies=[Depends(rate_limit_photo_analysis)])
-def estimate_meal_calories(req: MealEstimateRequest):
+def estimate_meal_calories(req: MealEstimateRequest, current_user: AuthUser = Depends(app_module.get_current_user)):
     """Estime les calories et macronutriments à partir d'une photo ou d'une description.
 
     Prend en compte le curseur d'ajustement de portion interactive (0.5x - 2.0x).
@@ -442,7 +442,11 @@ def estimate_meal_calories(req: MealEstimateRequest):
         meal_type=req.meal_type
     )
     # Enregistrer la métrique métier observabilité
-    engine_used = "gemini_vision" if image_bytes else "nlp_local"
+    engine_used = (
+        result.get("source")
+        if isinstance(result, dict) and result.get("source")
+        else ("gemini_vision" if image_bytes else "local_database")
+    )
     record_photo_analysis_metric(engine=engine_used, status="success")
     # Aplatir les macros à la racine si présentes pour compatibilité client
     if isinstance(result, dict) and "macros" in result and isinstance(result["macros"], dict):
